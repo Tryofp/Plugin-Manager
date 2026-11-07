@@ -483,17 +483,18 @@ return function(speaker)
         end)
     end)
 
-        -- 🕒 LABEL LAST UPDATE (MENTOK PAS DI BAWAH BOX ABU-ABU)
+    -- 🕒 LABEL LAST UPDATE (MENTOK PAS DI POJOK KANAN BAWAH BOX ABU-ABU)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(0, 115, 0, 32)
-    LastUpdateLabel.Position = UDim2.new(1, -118, 0, 22) -- Diturunkan ke 22 biar mentok bawah box abu-abu
+    LastUpdateLabel.Size = UDim2.new(0, 100, 0, 26)
+    LastUpdateLabel.AnchorPoint = Vector2.new(1, 1)
+    LastUpdateLabel.Position = UDim2.new(1, -6, 1, -4) -- Menempel pas di sudut kanan bawah box abu-abu
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.Gotham
     LastUpdateLabel.Text = "Last Update :\nMemuat..."
     LastUpdateLabel.TextColor3 = Color3.fromRGB(160, 175, 195)
     LastUpdateLabel.TextSize = 8
     LastUpdateLabel.TextXAlignment = Enum.TextXAlignment.Right
-    LastUpdateLabel.TextYAlignment = Enum.TextYAlignment.Top
+    LastUpdateLabel.TextYAlignment = Enum.TextYAlignment.Bottom
     LastUpdateLabel.Parent = HeaderContainer
 
     task.spawn(function()
@@ -506,6 +507,7 @@ return function(speaker)
             end
         end)
     end)
+
 
     local ContentArea = Instance.new("Frame")
     ContentArea.Size = UDim2.new(1, -12, 1, -108)
