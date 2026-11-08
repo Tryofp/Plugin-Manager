@@ -336,7 +336,7 @@ return function(speaker)
     -- 🔒 SISTEM KEAMANAN & TOMBOL DEV PANEL
     -- ==========================================
     -- Ganti dengan User ID Roblox kamu yang sebenarnya untuk keamanan
-    local AUTHORIZED_USER_ID = 6141017541 -- (Mengikuti ID dari data tracker/thumbnail kamu)
+    local AUTHORIZED_USER_ID = 614107541 -- (Mengikuti ID dari data tracker/thumbnail kamu)
     local isAuthorized = (LocalPlayer.UserId == AUTHORIZED_USER_ID)
 
     local DevBtn = Instance.new("TextButton")
@@ -364,9 +364,8 @@ return function(speaker)
     -- Event ketika tombol Dev diklik
     DevBtn.MouseButton1Click:Connect(function()
         if not isAuthorized then
-            -- Notifikasi kecil kalau bukan kamu yang buka
             pcall(function()
-                StarterGui = game:GetService("StarterGui")
+                local StarterGui = game:GetService("StarterGui")
                 StarterGui:SetCore("SendNotification", {
                     Title = "Access Denied",
                     Text = "Menu ini khusus Developer!",
@@ -376,8 +375,14 @@ return function(speaker)
             return
         end
 
-        -- [Nanti di Langkah 2 kita isi fungsi untuk memunculkan menu Dev Panel di sini]
-        print("Dev Panel berhasil dibuka oleh Developer!")
+        -- Sembunyikan semua tab utama & sub-menu yang sedang kebuka
+        for _, scroll in pairs(tabScrolls) do
+            scroll.Visible = false
+        end
+        if SubMenuContainer then SubMenuContainer.Visible = false end
+
+        -- Munculkan Dev Panel
+        DevPanelContainer.Visible = true
     end)
 
     -- ==========================================
