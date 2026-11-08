@@ -434,9 +434,9 @@ return function(speaker)
         end)
     end)
 
-    -- 🕒 LABEL LAST UPDATE (FIX FORMAT JAM & TANGGAL)
+     -- 🕒 LABEL LAST UPDATE (FIX UKURAN & PARSING SPASI TANGGAL/JAM)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(0, 140, 0, 12)
+    LastUpdateLabel.Size = UDim2.new(0, 160, 0, 12) -- Lebar diperbesar jadi 160 biar muat lega
     LastUpdateLabel.Position = UDim2.new(0, 145, 0, 16)
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.Gotham
@@ -450,25 +450,27 @@ return function(speaker)
         pcall(function()
             local response = game:HttpGet(SHEETS_WEB_APP_URL)
             if response and response ~= "" and response ~= "Belum ada update" then
-                local raw = tostring(response):gsub("%s+", "")
+                local raw = tostring(response):gsub("^%s*(.-)%s*$", "%1") -- Trim spasi pinggir
                 
-                -- Pastikan panjang string sesuai format DDMMYYYYHHMM (12 digit)
+                -- Jika formatnya dari spreadsheet (DDMMYYYY HH:MM / DDMMYYYYHHMM)
                 if #raw >= 12 then
-                    local dd = raw:sub(1, 2)
-                    local mm = raw:sub(3, 4)
-                    local yyyy = raw:sub(5, 8)
-                    local hour = raw:sub(9, 10)
-                    local min = raw:sub(11, 12)
+                    local cleanStr = raw:gsub("%s+", "") -- Buang spasi di dalam untuk ambil angka
+                    local dd = cleanStr:sub(1, 2)
+                    local mm = cleanStr:sub(3, 4)
+                    local yyyy = cleanStr:sub(5, 8)
+                    local hour = cleanStr:sub(9, 10)
+                    local min = cleanStr:sub(11, 12)
                     
                     LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
                 else
-                    LastUpdateLabel.Text = "Last Update: " .. tostring(response)
+                    LastUpdateLabel.Text = "Last Update: " .. raw
                 end
             else
                 LastUpdateLabel.Text = "Last Update: -"
             end
         end)
     end)
+
 
     local ContentArea = Instance.new("Frame")
     ContentArea.Size = UDim2.new(1, -12, 1, -108)
