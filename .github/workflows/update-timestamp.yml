@@ -1,4 +1,4 @@
-name: Auto Update Hub Metadata & Timestamps (Smart RawUrl Matcher)
+name: Auto Update Hub Metadata & Timestamps (Multi-Match RawUrl Fix)
 
 on:
   push:
@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: '18'
 
-      # 1. STEP CERDAS: COCOKAN BERDASARKAN RAWURL DI LOADER.LUA
-      - name: Process Smart RawUrl Matching & Badge Updates
+      # 1. STEP MULTI-MATCH: UPDATE SEMUA FITUR YANG MEMILIKI RAWURL TERSEBUT
+      - name: Process Multi-Match RawUrl & Complete Badges
         run: |
           node -e '
             const fs = require("fs");
@@ -28,7 +28,6 @@ jobs:
 
             let changedFiles = [];
             try {
-              // Ambil daftar file yang berubah pada commit terakhir
               changedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD")
                 .toString()
                 .trim()
@@ -42,7 +41,6 @@ jobs:
               process.exit(0);
             }
 
-            // Format Waktu WIB (UTC+7)
             const now = new Date();
             now.setHours(now.getHours() + 7);
             const pad = (n) => String(n).padStart(2, "0");
@@ -57,22 +55,17 @@ jobs:
             let modified = false;
 
             changedFiles.forEach((file) => {
-              // Abaikan jika yang di-push adalah Loader.lua sendiri atau update.yml
               if (file === "Loader.lua" || file.includes("update.yml")) return;
 
               if (file.endsWith(".lua") || !file.includes(".")) {
-                // Ambil nama file bersih tanpa ekstensi (contoh: "SoundandView" dari "Plugin/SoundandView.lua")
                 const rawName = file.split("/").pop();
                 const cleanName = rawName.replace(".lua", "");
 
-                console.log(`\n🔍 Menganalisis file yang diubah: ${cleanName}`);
+                console.log(`\n🔍 Memproses file: ${cleanName}`);
 
-                // Logika Deteksi New! vs Update! sesuai ide bro Tryo:
-                // Cek apakah baris RawUrl yang memuat nama file ini baru ditambahkan di commit ini (New) atau sudah ada sebelumnya (Update)
                 let isNewFeature = false;
                 try {
                   const diffLine = execSync(`git log -p -1 -U1 -- "${file}"`).toString();
-                  // Jika di commit ini ada penambahan baris RawUrl atau file benar-benar baru
                   if (diffLine.includes("+") && (diffLine.includes("RawUrl") || execSync(`git status --short "${file}"`).toString().includes("A"))) {
                     isNewFeature = true;
                   }
@@ -80,14 +73,12 @@ jobs:
 
                 const badgeText = isNewFeature ? "New!" : "Update!";
                 const badgeColor = isNewFeature ? "yellow" : "green";
-                console.log(`-> Status Badge terpilih: ${badgeText} (${badgeColor})`);
+                console.log(`-> Badge: ${badgeText}, Warna: ${badgeColor}`);
 
-                // 🎯 INI INTI LOGIKANYA: Cari blok {} di Loader.lua yang di dalamnya ada RawUrl berakhiran /${cleanName} atau memuat nama file tersebut
-                // Ini membuat bot langsung fokus ke objek/fitur yang tepat tanpa merembet ke mana-mana
                 const escapedName = cleanName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
                 
-                // Regex mencakup blok kurung kurawal {} yang memiliki teks mengarah ke file tersebut
-                const regexBlock = new RegExp(`(\\{[\\s\\S]*?(?:RawUrl\\s*=\\s*"[^"]*\\/${escapedName}|${escapedName})[\\s\\S]*?\\})`, "g");
+                // Regex presisi tinggi: Menangkap seluruh blok tabel {} yang di dalamnya memuat RawUrl berakhiran nama file tersebut
+                const regexBlock = new RegExp(`(\\{[\\s\\S]*?RawUrl\\s*=\\s*"[^"]*\\/${escapedName}[\\s\\S]*?\\})`, "g");
 
                 let matchCount = 0;
                 loaderContent = loaderContent.replace(regexBlock, (match) => {
@@ -95,40 +86,40 @@ jobs:
                   matchCount++;
                   let block = match;
 
-                  // Update atau Tambah UpdateTimestamp
+                  // 1. Update atau Tambah UpdateTimestamp
                   if (/UpdateTimestamp\s*=\s*"[^"]*"/.test(block)) {
                     block = block.replace(/UpdateTimestamp\s*=\s*"[^"]*"/, `UpdateTimestamp = "${featureTimeStr}"`);
                   } else {
                     block = block.replace(/(\{)/, `$1\n        UpdateTimestamp = "${featureTimeStr}",`);
                   }
 
-                  // Update atau Tambah BadgeText
+                  // 2. Update atau Tambah BadgeText (DIJAMIN LENGKAP)
                   if (/BadgeText\s*=\s*"[^"]*"/.test(block)) {
                     block = block.replace(/BadgeText\s*=\s*"[^"]*"/, `BadgeText = "${badgeText}"`);
                   } else {
                     block = block.replace(/(\{)/, `$1\n        BadgeText = "${badgeText}",`);
                   }
 
-                  // Update atau Tambah BadgeColor
+                  // 3. Update atau Tambah BadgeColor (DIJAMIN LENGKAP)
                   if (/BadgeColor\s*=\s*"[^"]*"/.test(block)) {
                     block = block.replace(/BadgeColor\s*=\s*"[^"]*"/, `BadgeColor = "${badgeColor}"`);
                   } else {
                     block = block.replace(/(\{)/, `$1\n        BadgeColor = "${badgeColor}",`);
                   }
 
-                  console.log(`   ✔️ Berhasil memperbarui blok fitur ke-${matchCount} untuk ${cleanName}`);
+                  console.log(`   ✔️ Berhasil update blok fitur ke-${matchCount} untuk ${cleanName}`);
                   return block;
                 });
 
                 if (matchCount === 0) {
-                  console.log(`   ⚠️ Peringatan: Tidak ditemukan blok RawUrl yang cocok dengan "${cleanName}" di Loader.lua. Pastikan penulisannya sinkron!`);
+                  console.log(`   ⚠️ RawUrl dengan nama "${cleanName}" tidak ditemukan di Loader.lua.`);
                 }
               }
             });
 
             if (modified) {
               fs.writeFileSync("Loader.lua", loaderContent);
-              console.log("\n💾 Loader.lua berhasil disimpan ulang dengan timestamp baru!");
+              console.log("\n💾 Loader.lua berhasil disimpan!");
             }
           '
 
@@ -138,7 +129,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add Loader.lua
-          git diff --quiet && git diff --staged --quiet || (git commit -m "bot: smart auto update timestamps & badges via RawUrl" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "bot: multi-match rawurl update timestamps & complete badges" && git push)
 
       # 3. STEP KIRIM LAST UPDATE KE GOOGLE SHEETS
       - name: Send Timestamp to Google Sheets
