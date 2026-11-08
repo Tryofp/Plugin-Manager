@@ -434,10 +434,10 @@ return function(speaker)
         end)
     end)
 
-         -- 🕒 LABEL LAST UPDATE (DIBIKIN OTOMATIS MENYESUAIKAN TEKS & POSISI AMAN)
+         -- 🕒 LABEL LAST UPDATE (FIX PARSING JAM SUPAYA TIDAK DOUBLE TITIK DUA)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(1, -145, 0, 14) -- Lebar mengikuti sisa ruang header ke samping
-    LastUpdateLabel.Position = UDim2.new(0, 142, 0, 15) -- Pas di sebelah kanan ID Roblox
+    LastUpdateLabel.Size = UDim2.new(1, -145, 0, 14)
+    LastUpdateLabel.Position = UDim2.new(0, 142, 0, 15)
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.GothamBold
     LastUpdateLabel.Text = "Last Update: Memuat..."
@@ -450,18 +450,36 @@ return function(speaker)
         pcall(function()
             local response = game:HttpGet(SHEETS_WEB_APP_URL)
             if response and response ~= "" and response ~= "Belum ada update" then
-                local raw = tostring(response):gsub("%s+", "")
+                local raw = tostring(response)
                 
-                if #raw >= 12 then
-                    local dd = raw:sub(1, 2)
-                    local mm = raw:sub(3, 4)
-                    local yyyy = raw:sub(5, 8)
-                    local hour = raw:sub(9, 10)
-                    local min = raw:sub(11, 12)
+                -- Cek apakah mengandung spasi (format "DDMMYYYY HH:MM") atau rapat ("DDMMYYYYHHMM")
+                local datePart, timePart = raw:match("(%d+)%s+(%d+)")
+                
+                if datePart and timePart then
+                    local dd = datePart:sub(1, 2)
+                    local mm = datePart:sub(3, 4)
+                    local yyyy = datePart:sub(5, 8)
                     
-                    LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
+                    -- timePart biasanya "1841" -> kita sisipkan titik dua di tengah jadi "18:41"
+                    local formattedTime = timePart
+                    if #timePart == 4 then
+                        formattedTime = timePart:sub(1, 2) .. ":" .. timePart:sub(3, 4)
+                    end
+                    
+                    LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. formattedTime
                 else
-                    LastUpdateLabel.Text = "Last Update: " .. raw
+                    -- Fallback jika format rapat 12 digit
+                    local cleanStr = raw:gsub("%s+", "")
+                    if #cleanStr >= 12 then
+                        local dd = cleanStr:sub(1, 2)
+                        local mm = cleanStr:sub(3, 4)
+                        local yyyy = cleanStr:sub(5, 8)
+                        local hour = cleanStr:sub(9, 10)
+                        local min = cleanStr:sub(11, 12)
+                        LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
+                    else
+                        LastUpdateLabel.Text = "Last Update: " .. raw
+                    end
                 end
             else
                 LastUpdateLabel.Text = "Last Update: -"
