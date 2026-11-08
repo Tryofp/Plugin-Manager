@@ -89,12 +89,14 @@ local SharedFeatures = {
 
     -- 3. Waypoint & Teleport Sub-Features
     SCP = {
+            BadgeColor = "green",
+            BadgeText = "Update!",
         Name = "Radar Checkpoint",
         Desc = "Menampilkan Checkpoint yang belum di sentuh",
         Cmd = "scp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = "081120261818, 86400"
+        UpdateTimestamp = "091120260344, 86400"
     },
     CPN = {
         BadgeColor = "green",
@@ -104,7 +106,7 @@ local SharedFeatures = {
         Cmd = "cpn",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = "091120260255, 86400"
+        UpdateTimestamp = "091120260344, 86400"
     },
     PlayerTeleport = {
         Name = "Teleport to Player",
