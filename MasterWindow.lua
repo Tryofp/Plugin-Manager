@@ -336,7 +336,7 @@ return function(speaker)
     -- 🔒 SISTEM KEAMANAN & TOMBOL DEV PANEL
     -- ==========================================
     -- Ganti dengan User ID Roblox kamu yang sebenarnya untuk keamanan
-    local AUTHORIZED_USER_ID = 614107541 -- (Mengikuti ID dari data tracker/thumbnail kamu)
+    local AUTHORIZED_USER_ID = 6141017541 -- (Mengikuti ID dari data tracker/thumbnail kamu)
     local isAuthorized = (LocalPlayer.UserId == AUTHORIZED_USER_ID)
 
     local DevBtn = Instance.new("TextButton")
