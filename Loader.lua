@@ -214,21 +214,25 @@ local SharedFeatures = {
 
     -- 7. Aimbot Sub-Features
     Aimbot = {
+            BadgeColor = "green",
+            BadgeText = "Update!",
         Name = "Aimbot",
         Desc = "Mengaktifkan/Menonaktifkan Aimbot",
         Cmd = "startaimbot",
         UnCmd = "stopaimbot",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SimpleAimbot",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120260421, 86400"
     },
     SetRadius = {
+            BadgeColor = "green",
+            BadgeText = "Update!",
         Name = "Set Radius",
         Desc = "Menentukan Radius Aimbot",
         Cmd = "setradius",
         UnCmd = "",
         NeedInput = true,
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SimpleAimbot",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120260421, 86400"
     },
 
     -- 8. F1Lock Sub-Features
@@ -392,6 +396,9 @@ LoaderData.Main = {
         }
     },
     {
+            BadgeColor = "green",
+            BadgeText = "Update!",
+            UpdateTimestamp = "091120260421, 86400",
         Name = "Simple Aimbot",
         Desc = "Aimbot Untuk Map yang mempunyai fitur Shooter",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SimpleAimbot",
