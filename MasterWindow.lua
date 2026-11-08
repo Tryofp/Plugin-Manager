@@ -380,6 +380,117 @@ return function(speaker)
         print("Dev Panel berhasil dibuka oleh Developer!")
     end)
 
+    -- ==========================================
+    -- 🛠️ LANGKAH 2: MEMBUAT DEV PANEL CONTAINER & MENU
+    -- ==========================================
+    local DevPanelContainer = Instance.new("Frame")
+    DevPanelContainer.Size = UDim2.new(1, 0, 1, -30) -- Mengisi area di bawah TopBar
+    DevPanelContainer.Position = UDim2.new(0, 0, 0, 30)
+    DevPanelContainer.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
+    DevPanelContainer.BackgroundTransparency = 0.1
+    DevPanelContainer.BorderSizePixel = 0
+    DevPanelContainer.Visible = false
+    DevPanelContainer.ZIndex = 30 -- Berada di atas elemen tab utama
+    DevPanelContainer.Parent = Frame
+    Instance.new("UICorner", DevPanelContainer).CornerRadius = UDim.new(0, 6)
+
+    -- Judul di dalam Dev Panel
+    local DevTitle = Instance.new("TextLabel")
+    DevTitle.Size = UDim2.new(1, -70, 0, 30)
+    DevTitle.Position = UDim2.new(0, 10, 0, 5)
+    DevTitle.BackgroundTransparency = 1
+    DevTitle.Font = Enum.Font.GothamBold
+    DevTitle.Text = "⚙️ DEVELOPER CONTROL PANEL"
+    DevTitle.TextColor3 = Color3.fromRGB(0, 220, 255)
+    DevTitle.TextSize = 11
+    DevTitle.TextXAlignment = Enum.TextXAlignment.Left
+    DevTitle.ZIndex = 31
+    DevTitle.Parent = DevPanelContainer
+
+    -- Tombol Close / Kembali dari Dev Panel
+    local DevBackBtn = Instance.new("TextButton")
+    DevBackBtn.Size = UDim2.new(0, 50, 0, 20)
+    DevBackBtn.Position = UDim2.new(1, -60, 0, 8)
+    DevBackBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    DevBackBtn.BorderSizePixel = 0
+    DevBackBtn.Font = Enum.Font.GothamBold
+    DevBackBtn.Text = "CLOSE"
+    DevBackBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    DevBackBtn.TextSize = 9
+    DevBackBtn.ZIndex = 31
+    DevBackBtn.Parent = DevPanelContainer
+    Instance.new("UICorner", DevBackBtn).CornerRadius = UDim.new(0, 4)
+
+    DevBackBtn.MouseButton1Click:Connect(function()
+        DevPanelContainer.Visible = false
+        -- Munculkan kembali tab utama yang aktif sebelumnya
+        if currentActiveScroll then
+            currentActiveScroll.Visible = true
+        end
+    end)
+
+    -- ScrollingFrame untuk menampung list menu opsi Dev
+    local DevMenuList = Instance.new("ScrollingFrame")
+    DevMenuList.Size = UDim2.new(1, -16, 1, -45)
+    DevMenuList.Position = UDim2.new(0, 8, 0, 40)
+    DevMenuList.BackgroundTransparency = 1
+    DevMenuList.BorderSizePixel = 0
+    DevMenuList.ScrollBarThickness = 4
+    DevMenuList.ZIndex = 31
+    DevMenuList.Parent = DevPanelContainer
+
+    local DevMenuLayout = Instance.new("UIListLayout")
+    DevMenuLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    DevMenuLayout.Padding = UDim.new(0, 6)
+    DevMenuLayout.Parent = DevMenuList
+
+    -- Fungsi pembantu untuk membuat tombol menu pilihan di Dev Panel (Modular)
+    local function addDevMenuOption(titleText, descText, onClickCallback)
+        local OptionBtn = Instance.new("TextButton")
+        OptionBtn.Size = UDim2.new(1, 0, 0, 40)
+        OptionBtn.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
+        OptionBtn.BorderSizePixel = 0
+        OptionBtn.Text = ""
+        OptionBtn.ZIndex = 32
+        OptionBtn.Parent = DevMenuList
+        Instance.new("UICorner", OptionBtn).CornerRadius = UDim.new(0, 4)
+
+        local OptTitle = Instance.new("TextLabel")
+        OptTitle.Size = UDim2.new(1, -15, 0, 18)
+        OptTitle.Position = UDim2.new(0, 8, 0, 4)
+        OptTitle.BackgroundTransparency = 1
+        OptTitle.Font = Enum.Font.GothamBold
+        OptTitle.Text = titleText
+        OptTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        OptTitle.TextSize = 10
+        OptTitle.TextXAlignment = Enum.TextXAlignment.Left
+        OptTitle.ZIndex = 33
+        OptTitle.Parent = OptionBtn
+
+        local OptDesc = Instance.new("TextLabel")
+        OptDesc.Size = UDim2.new(1, -15, 0, 14)
+        OptDesc.Position = UDim2.new(0, 8, 0, 20)
+        OptDesc.BackgroundTransparency = 1
+        OptDesc.Font = Enum.Font.Gotham
+        OptDesc.Text = descText
+        OptDesc.TextColor3 = Color3.fromRGB(160, 175, 195)
+        OptDesc.TextSize = 8
+        OptDesc.TextXAlignment = Enum.TextXAlignment.Left
+        OptDesc.ZIndex = 33
+        OptDesc.Parent = OptionBtn
+
+        OptionBtn.MouseButton1Click:Connect(function()
+            if onClickCallback then onClickCallback() end
+        end)
+    end
+
+    -- Tambahkan Menu Opsi Pertama: Hapus Badge
+    addDevMenuOption("🗑️ Hapus Badge Fitur", "Pilih dan bersihkan badge update/new pada fitur secara real-time", function()
+        print("Menu Hapus Badge diklik!")
+        -- [Nanti di Langkah 3 kita isi logika list fitur badge-nya di sini]
+    end)
+    
+
     local TabBar = Instance.new("ScrollingFrame")
     TabBar.Size = UDim2.new(1, -12, 0, 24)
     TabBar.Position = UDim2.new(0, 6, 0, 34)
