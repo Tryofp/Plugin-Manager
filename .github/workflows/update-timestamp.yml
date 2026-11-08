@@ -75,8 +75,10 @@ jobs:
                 console.log(`Mendeteksi perubahan pada file: ${fileName}.lua (Badge: ${badgeText})`);
 
                 // === 100% DINAMIS: Cari blok tabel/objek di Loader.lua yang merujuk ke file ini ===
-                // Mencari blok {} di Loader.lua yang di dalamnya ada teks nama file tersebut (misal "Waypoint.lua")
-                const regexBlock = new RegExp(`(\\{[\\s\\S]*?${fileName}\\.lua[\\s\\S]*?\\})`, "g");
+                // Mencari blok {} di Loader.lua yang di dalamnya ada teks nama file tersebut (misal "Waypoint.lua / Waypoint")
+                   const cleanName = fileName.replace(".lua", "");
+                   const regexBlock = new RegExp(`(\\{[\\s\\S]*?${cleanName}[\\s\\S]*?\\})`, "g");
+
                 
                 loaderContent = loaderContent.replace(regexBlock, (match) => {
                   modified = true;
