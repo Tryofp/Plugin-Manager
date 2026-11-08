@@ -2,7 +2,7 @@ local Plugin = {
     ["PluginName"] = "Aimbot",
     ["PluginDescription"] = [[
 	hyper cool aimbot
-    ]],
+    ]], 
     ["Commands"] = {
         ["startaimbot"] = {
             ["ListName"] = "startaimbot",
