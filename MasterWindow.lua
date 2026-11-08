@@ -360,8 +360,8 @@ return function(speaker)
         DevBtn.Text = "LOCKED"
         DevBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
     end
-
-    -- Event ketika tombol Dev diklik
+    
+        -- Event ketika tombol Dev diklik
     DevBtn.MouseButton1Click:Connect(function()
         if not isAuthorized then
             pcall(function()
@@ -375,14 +375,18 @@ return function(speaker)
             return
         end
 
-        -- Sembunyikan semua tab utama & sub-menu yang sedang kebuka
-        for _, scroll in pairs(tabScrolls) do
-            scroll.Visible = false
+        -- Sembunyikan semua tab utama & sub-menu jika sudah ada
+        if tabScrolls then
+            for _, scroll in pairs(tabScrolls) do
+                if scroll then scroll.Visible = false end
+            end
         end
         if SubMenuContainer then SubMenuContainer.Visible = false end
 
         -- Munculkan Dev Panel
-        DevPanelContainer.Visible = true
+        if DevPanelContainer then
+            DevPanelContainer.Visible = true
+        end
     end)
 
     -- ==========================================
@@ -489,10 +493,9 @@ return function(speaker)
         end)
     end
 
-    -- Tambahkan Menu Opsi Pertama: Hapus Badge
+        -- Tambahkan Menu Opsi Pertama: Hapus Badge
     addDevMenuOption("🗑️ Hapus Badge Fitur", "Pilih dan bersihkan badge update/new pada fitur secara real-time", function()
-        print("Menu Hapus Badge diklik!")
-        -- [Nanti di Langkah 3 kita isi logika list fitur badge-nya di sini]
+        loadBadgeListForDev() -- Memuat daftar fitur ber-badge ke dalam list
     end)
 
         -- ==========================================
