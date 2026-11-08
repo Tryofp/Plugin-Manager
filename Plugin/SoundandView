@@ -23,7 +23,6 @@ _G.__VoiceSpyMuteState = _G.__VoiceSpyMuteState or {
     addedConn = nil
 }
 
-
 local state = _G.__SpectateState
 local muteState = _G.__VoiceSpyMuteState
 
