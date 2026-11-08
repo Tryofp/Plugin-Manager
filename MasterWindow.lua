@@ -434,10 +434,10 @@ return function(speaker)
         end)
     end)
 
-    -- 🕒 LABEL LAST UPDATE (DIBIKIN MEMANJANG DI SEBELAH KANAN ID)
+        -- 🕒 LABEL LAST UPDATE (DIGESER KE KANAN & FORMAT PAKAI SYMBOL "/")
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(0, 160, 0, 12)
-    LastUpdateLabel.Position = UDim2.new(0, 115, 0, 16) -- Berjajar rapi di sebelah kanan teks ID Roblox
+    LastUpdateLabel.Size = UDim2.new(0, 115, 0, 12)
+    LastUpdateLabel.Position = UDim2.new(0, 155, 0, 16) -- Digeser jauh ke kanan biar aman gak nabrak ID
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.Gotham
     LastUpdateLabel.Text = "Last Update: Memuat..."
@@ -450,13 +450,24 @@ return function(speaker)
         pcall(function()
             local response = game:HttpGet(SHEETS_WEB_APP_URL)
             if response and response ~= "" and response ~= "Belum ada update" then
-                LastUpdateLabel.Text = "Last Update: " .. tostring(response)
+                local timestamp = tostring(response)
+                
+                -- Otomatis ubah format tanggal jadi pakai garis miring (/) jika formatnya DDMMYYYYHHMM
+                if #timestamp >= 12 then
+                    local dd = timestamp:sub(1, 2)
+                    local mm = timestamp:sub(3, 4)
+                    local yyyy = timestamp:sub(5, 8)
+                    local hour = timestamp:sub(9, 10)
+                    local min = timestamp:sub(11, 12)
+                    timestamp = dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
+                end
+
+                LastUpdateLabel.Text = "Last Update: " .. timestamp
             else
                 LastUpdateLabel.Text = "Last Update: -"
             end
         end)
     end)
-
 
     local ContentArea = Instance.new("Frame")
     ContentArea.Size = UDim2.new(1, -12, 1, -108)
