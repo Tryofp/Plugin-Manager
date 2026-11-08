@@ -434,10 +434,10 @@ return function(speaker)
         end)
     end)
 
-    -- 🕒 LABEL LAST UPDATE (POSISI PAS DI KANAN & JAM UTUH)
+    -- 🕒 LABEL LAST UPDATE (POSISI FIX, JAM & MENIT DIJAMIN NORMAL)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(0, 160, 0, 14) -- Lebar luasin jadi 160 biar muat sampai ujung
-    LastUpdateLabel.Position = UDim2.new(0, 150, 0, 15) -- Geser ke kanan aman dari ID
+    LastUpdateLabel.Size = UDim2.new(0, 160, 0, 14)
+    LastUpdateLabel.Position = UDim2.new(0, 150, 0, 15)
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.GothamBold
     LastUpdateLabel.Text = "Last Update: Memuat..."
@@ -452,13 +452,13 @@ return function(speaker)
             if response and response ~= "" and response ~= "Belum ada update" then
                 local raw = tostring(response):gsub("%s+", "")
                 
-                -- Format data 12 digit: DDMMYYYYHHMM (Contoh: 081120261841)
+                -- Pastikan panjang string 12 digit (DDMMYYYYHHMM)
                 if #raw >= 12 then
                     local dd = raw:sub(1, 2)
                     local mm = raw:sub(3, 4)
                     local yyyy = raw:sub(5, 8)
-                    local hour = raw:sub(9, 10)
-                    local min = raw:sub(11, 12)
+                    local hour = raw:sub(9, 10)   -- Ambil 2 digit jam (posisi 9-10)
+                    local min = raw:sub(11, 12)   -- Ambil 2 digit menit (posisi 11-12)
                     
                     LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
                 else
@@ -469,7 +469,6 @@ return function(speaker)
             end
         end)
     end)
-
 
     local ContentArea = Instance.new("Frame")
     ContentArea.Size = UDim2.new(1, -12, 1, -108)
