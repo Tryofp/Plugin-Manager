@@ -13,7 +13,7 @@ local SharedFeatures = {
         Cmd = "itp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
-        UpdateTimestamp = "091120260248, 86400"
+        UpdateTimestamp = "091120260255, 86400"
     },
     PPESP = {
         Name = "PPESP",
@@ -104,7 +104,7 @@ local SharedFeatures = {
         Cmd = "cpn",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = "091120260248, 86400"
+        UpdateTimestamp = "091120260255, 86400"
     },
     PlayerTeleport = {
         Name = "Teleport to Player",
@@ -112,7 +112,7 @@ local SharedFeatures = {
         Cmd = "tp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/PlayerTeleport",
-        UpdateTimestamp = "091120260248, 86400"
+        UpdateTimestamp = "091120260255, 86400"
     },
 
     -- 4. Sound & View Sub-Features
@@ -366,7 +366,7 @@ LoaderData.Main = {
     {
         BadgeColor = "green",
         BadgeText = "Update!",
-        UpdateTimestamp = "091120260248, 86400",
+        UpdateTimestamp = "091120260255, 86400",
         Name = "Sound & View Manage",
         Desc = "Mengatur suara di map dan memutar Lagu",
         RawUrl = "",
