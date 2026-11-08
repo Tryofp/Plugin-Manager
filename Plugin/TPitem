@@ -7,7 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
 local playerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Bersihkan GUI sebelumnya jika ada
+-- Bersihkan GUI sebelumnya jika ada 
 pcall(function()
     if playerGui:FindFirstChild("MapSelectorGui") then playerGui.MapSelectorGui:Destroy() end
     if playerGui:FindFirstChild("PreciseGrabGui") then playerGui.PreciseGrabGui:Destroy() end
