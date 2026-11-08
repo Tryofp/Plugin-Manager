@@ -434,10 +434,10 @@ return function(speaker)
         end)
     end)
 
-         -- 🕒 LABEL LAST UPDATE (FIX PARSING JAM SUPAYA TIDAK DOUBLE TITIK DUA)
+         -- 🕒 LABEL LAST UPDATE (DISET PAS & AMAN DARI POTONGAN)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(1, -145, 0, 14)
-    LastUpdateLabel.Position = UDim2.new(0, 142, 0, 15)
+    LastUpdateLabel.Size = UDim2.new(0, 150, 0, 14) -- Lebar fix 150 pixel, dijamin muat sampai ujung
+    LastUpdateLabel.Position = UDim2.new(0, 132, 0, 15) -- Digeser sedikit ke kiri biar ruang kanannya lega
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.GothamBold
     LastUpdateLabel.Text = "Last Update: Memuat..."
@@ -452,7 +452,7 @@ return function(speaker)
             if response and response ~= "" and response ~= "Belum ada update" then
                 local raw = tostring(response)
                 
-                -- Cek apakah mengandung spasi (format "DDMMYYYY HH:MM") atau rapat ("DDMMYYYYHHMM")
+                -- Ambil angka bersih dari string
                 local datePart, timePart = raw:match("(%d+)%s+(%d+)")
                 
                 if datePart and timePart then
@@ -460,15 +460,13 @@ return function(speaker)
                     local mm = datePart:sub(3, 4)
                     local yyyy = datePart:sub(5, 8)
                     
-                    -- timePart biasanya "1841" -> kita sisipkan titik dua di tengah jadi "18:41"
                     local formattedTime = timePart
-                    if #timePart == 4 then
+                    if #timePart >= 4 then
                         formattedTime = timePart:sub(1, 2) .. ":" .. timePart:sub(3, 4)
                     end
                     
                     LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. formattedTime
                 else
-                    -- Fallback jika format rapat 12 digit
                     local cleanStr = raw:gsub("%s+", "")
                     if #cleanStr >= 12 then
                         local dd = cleanStr:sub(1, 2)
