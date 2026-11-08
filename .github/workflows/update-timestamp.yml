@@ -12,14 +12,14 @@ jobs:
       - name: Checkout Repository with History
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Ambil riwayat commit
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      # 1. STEP DINAMIS TANPA KAMUS / KEY
+      # 1. STEP DINAMIS UNTUK UPDATE LOADER.LUA (MENDUKUNG SHARED FEATURES & TAB)
       - name: Process Dynamic Timestamp & Badge Updates in Loader.lua
         run: |
           node -e '
@@ -56,10 +56,14 @@ jobs:
             let modified = false;
 
             changedFiles.forEach((file) => {
-              if (file.endsWith(".lua") || !file.includes(".")) {
-                const fileName = file.split("/").pop().replace(".lua", ""); // Contoh: "Waypoint"
+              if (file === "Loader.lua" || file.includes("update.yml")) return;
 
-                // Cek apakah file baru atau edit
+              if (file.endsWith(".lua") || !file.includes(".")) {
+                const rawName = file.split("/").pop();
+                const cleanName = rawName.replace(".lua", "");
+
+                console.log(`Mendeteksi perubahan pada file: ${cleanName}`);
+
                 let isNewFile = false;
                 try {
                   const status = execSync(`git status --short "${file}"`).toString().trim();
@@ -72,40 +76,32 @@ jobs:
                 const badgeText = isNewFile ? "New!" : "Update!";
                 const badgeColor = isNewFile ? "yellow" : "green";
 
-                console.log(`Mendeteksi perubahan pada file: ${fileName}.lua (Badge: ${badgeText})`);
+                // Regex yang lebih luas: Mencari blok objek yang mengandung ${cleanName} ATAU URL yang berakhiran /${cleanName}
+                const regexBlock = new RegExp(`(\\{[\\s\\S]*?(?:${cleanName}|\\/${cleanName})[\\s\\S]*?\\})`, "g");
 
-                // === 100% DINAMIS: Cari blok tabel/objek di Loader.lua yang merujuk ke file ini ===
-                // Mencari blok {} di Loader.lua yang di dalamnya ada teks nama file tersebut (misal "Waypoint.lua / Waypoint")
-                   const cleanName = fileName.replace(".lua", "");
-                   const regexBlock = new RegExp(`(\\{[\\s\\S]*?${cleanName}[\\s\\S]*?\\})`, "g");
-
-                
                 loaderContent = loaderContent.replace(regexBlock, (match) => {
                   modified = true;
                   let block = match;
 
-                  // Update atau Tambah UpdateTimestamp secara otomatis
                   if (/UpdateTimestamp\s*=\s*"[^"]*"/.test(block)) {
                     block = block.replace(/UpdateTimestamp\s*=\s*"[^"]*"/, `UpdateTimestamp = "${featureTimeStr}"`);
                   } else {
                     block = block.replace(/(\{)/, `$1\n        UpdateTimestamp = "${featureTimeStr}",`);
                   }
 
-                  // Update atau Tambah BadgeText secara otomatis
                   if (/BadgeText\s*=\s*"[^"]*"/.test(block)) {
                     block = block.replace(/BadgeText\s*=\s*"[^"]*"/, `BadgeText = "${badgeText}"`);
                   } else {
                     block = block.replace(/(\{)/, `$1\n        BadgeText = "${badgeText}",`);
                   }
 
-                  // Update atau Tambah BadgeColor secara otomatis
                   if (/BadgeColor\s*=\s*"[^"]*"/.test(block)) {
                     block = block.replace(/BadgeColor\s*=\s*"[^"]*"/, `BadgeColor = "${badgeColor}"`);
                   } else {
                     block = block.replace(/(\{)/, `$1\n        BadgeColor = "${badgeColor}",`);
                   }
 
-                  console.log(`-> Berhasil update otomatis blok untuk ${fileName}`);
+                  console.log(`-> Berhasil update otomatis badge & timestamp untuk: ${cleanName}`);
                   return block;
                 });
               }
@@ -124,7 +120,7 @@ jobs:
           git add Loader.lua
           git diff --quiet && git diff --staged --quiet || (git commit -m "bot: auto update dynamic timestamps & badges" && git push)
 
-      # 3. STEP KIRIM LAST UPDATE KE GOOGLE SHEETS (UNTUK RESET GLOBAL)
+      # 3. STEP KIRIM LAST UPDATE KE GOOGLE SHEETS
       - name: Send Timestamp to Google Sheets
         run: |
           CURRENT_TIME=$(TZ='Asia/Jakarta' date +'%d%m%Y %H:%M')
