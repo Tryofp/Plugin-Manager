@@ -1,4 +1,4 @@
-name: Auto Update Hub Metadata & Timestamps (Multi-Match RawUrl Fix)
+name: Auto Update Hub Metadata & Timestamps (Precise Block Parser)
 
 on:
   push:
@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: '18'
 
-      # 1. STEP MULTI-MATCH: UPDATE SEMUA FITUR YANG MEMILIKI RAWURL TERSEBUT
-      - name: Process Multi-Match RawUrl & Complete Badges
+      # 1. STEP PARSER PRESISI: UPDATE SEMUA BLOK FITUR BERDASARKAN RAWURL
+      - name: Process Precise RawUrl Block Parsing & Badges
         run: |
           node -e '
             const fs = require("fs");
@@ -75,51 +75,80 @@ jobs:
                 const badgeColor = isNewFeature ? "yellow" : "green";
                 console.log(`-> Badge: ${badgeText}, Warna: ${badgeColor}`);
 
-                const escapedName = cleanName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-                
-                // Regex presisi tinggi: Menangkap seluruh blok tabel {} yang di dalamnya memuat RawUrl berakhiran nama file tersebut
-                const regexBlock = new RegExp(`(\\{[\\s\\S]*?RawUrl\\s*=\\s*"[^"]*\\/${escapedName}[\\s\\S]*?\\})`, "g");
+                // 🎯 METODE PARSER PRESISI: Cari semua titik yang memiliki RawUrl berakhiran /${cleanName}
+                let pos = 0;
+                while (true) {
+                  const regexUrl = new RegExp(`RawUrl\\s*=\\s*"[^"]*\\/${cleanName}"`, "g");
+                  regexUrl.lastIndex = pos;
+                  const match = regexUrl.exec(loaderContent);
+                  if (!match) break;
 
-                let matchCount = 0;
-                loaderContent = loaderContent.replace(regexBlock, (match) => {
-                  modified = true;
-                  matchCount++;
-                  let block = match;
+                  const urlIndex = match.index;
+                  pos = urlIndex + match[0].length;
 
-                  // 1. Update atau Tambah UpdateTimestamp
-                  if (/UpdateTimestamp\s*=\s*"[^"]*"/.test(block)) {
-                    block = block.replace(/UpdateTimestamp\s*=\s*"[^"]*"/, `UpdateTimestamp = "${featureTimeStr}"`);
-                  } else {
-                    block = block.replace(/(\{)/, `$1\n        UpdateTimestamp = "${featureTimeStr}",`);
+                  // Lacak kurung kurawal buka { mundur ke belakang dari posisi RawUrl
+                  let braceCount = 0;
+                  let blockStart = -1;
+                  for (let i = urlIndex; i >= 0; i--) {
+                    if (loaderContent[i] === "}") braceCount++;
+                    if (loaderContent[i] === "{") {
+                      if (braceCount > 0) {
+                        braceCount--;
+                      } else {
+                        blockStart = i;
+                        break;
+                      }
+                    }
                   }
 
-                  // 2. Update atau Tambah BadgeText (DIJAMIN LENGKAP)
-                  if (/BadgeText\s*=\s*"[^"]*"/.test(block)) {
-                    block = block.replace(/BadgeText\s*=\s*"[^"]*"/, `BadgeText = "${badgeText}"`);
-                  } else {
-                    block = block.replace(/(\{)/, `$1\n        BadgeText = "${badgeText}",`);
+                  // Lacak kurung kurawal tutup } maju ke depan dari posisi RawUrl
+                  braceCount = 0;
+                  let blockEnd = -1;
+                  for (let i = urlIndex; i < loaderContent.length; i++) {
+                    if (loaderContent[i] === "{") braceCount++;
+                    if (loaderContent[i] === "}") {
+                      if (braceCount > 0) {
+                        braceCount--;
+                      } else {
+                        blockEnd = i;
+                        break;
+                      }
+                    }
                   }
 
-                  // 3. Update atau Tambah BadgeColor (DIJAMIN LENGKAP)
-                  if (/BadgeColor\s*=\s*"[^"]*"/.test(block)) {
-                    block = block.replace(/BadgeColor\s*=\s*"[^"]*"/, `BadgeColor = "${badgeColor}"`);
-                  } else {
-                    block = block.replace(/(\{)/, `$1\n        BadgeColor = "${badgeColor}",`);
+                  if (blockStart !== -1 && blockEnd !== -1) {
+                    let block = loaderContent.substring(blockStart, blockEnd + 1);
+                    let newBlock = block;
+
+                    // Fungsi pembantu untuk update atau insert properti di dalam blok
+                    function upsertProp(content, propName, propVal) {
+                      const propRegex = new RegExp(`${propName}\\s*=\\s*"[^"]*"`);
+                      if (propRegex.test(content)) {
+                        return content.replace(propRegex, `${propName} = "${propVal}"`);
+                      } else {
+                        // Jika belum ada, masukkan di bawah kurung kurawal buka {
+                        return content.replace(/(\{)/, `$1\n            ${propName} = "${propVal}",`);
+                      }
+                    }
+
+                    newBlock = upsertProp(newBlock, "UpdateTimestamp", featureTimeStr);
+                    newBlock = upsertProp(newBlock, "BadgeText", badgeText);
+                    newBlock = upsertProp(newBlock, "BadgeColor", badgeColor);
+
+                    if (newBlock !== block) {
+                      loaderContent = loaderContent.substring(0, blockStart) + newBlock + loaderContent.substring(blockEnd + 1);
+                      modified = true;
+                      pos = blockStart + newBlock.length;
+                      console.log(`   ✔️ Berhasil update lengkap (Timestamp & Badge) untuk blok ${cleanName}`);
+                    }
                   }
-
-                  console.log(`   ✔️ Berhasil update blok fitur ke-${matchCount} untuk ${cleanName}`);
-                  return block;
-                });
-
-                if (matchCount === 0) {
-                  console.log(`   ⚠️ RawUrl dengan nama "${cleanName}" tidak ditemukan di Loader.lua.`);
                 }
               }
             });
 
             if (modified) {
               fs.writeFileSync("Loader.lua", loaderContent);
-              console.log("\n💾 Loader.lua berhasil disimpan!");
+              console.log("\n💾 Loader.lua berhasil disimpan ulang!");
             }
           '
 
@@ -129,7 +158,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add Loader.lua
-          git diff --quiet && git diff --staged --quiet || (git commit -m "bot: multi-match rawurl update timestamps & complete badges" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "bot: precise block parser update timestamps & badges" && git push)
 
       # 3. STEP KIRIM LAST UPDATE KE GOOGLE SHEETS
       - name: Send Timestamp to Google Sheets
