@@ -434,10 +434,10 @@ return function(speaker)
         end)
     end)
 
-    -- 🕒 LABEL LAST UPDATE (DIPERLEBAR BIAR GAK KETUMPUK/NGEBUG)
+    -- 🕒 LABEL LAST UPDATE (FIX FORMAT JAM & TANGGAL)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(0, 140, 0, 12) -- Lebar ditambah jadi 140 biar muat satu baris panjang
-    LastUpdateLabel.Position = UDim2.new(0, 145, 0, 16) -- Posisi digeser pas di sebelah kanan ID Roblox
+    LastUpdateLabel.Size = UDim2.new(0, 140, 0, 12)
+    LastUpdateLabel.Position = UDim2.new(0, 145, 0, 16)
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.Gotham
     LastUpdateLabel.Text = "Last Update: Memuat..."
@@ -450,19 +450,20 @@ return function(speaker)
         pcall(function()
             local response = game:HttpGet(SHEETS_WEB_APP_URL)
             if response and response ~= "" and response ~= "Belum ada update" then
-                local timestamp = tostring(response)
+                local raw = tostring(response):gsub("%s+", "")
                 
-                -- Format string tanggal jadi pakai garis miring (/)
-                if #timestamp >= 12 then
-                    local dd = timestamp:sub(1, 2)
-                    local mm = timestamp:sub(3, 4)
-                    local yyyy = timestamp:sub(5, 8)
-                    local hour = timestamp:sub(9, 10)
-                    local min = timestamp:sub(11, 12)
-                    timestamp = dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
+                -- Pastikan panjang string sesuai format DDMMYYYYHHMM (12 digit)
+                if #raw >= 12 then
+                    local dd = raw:sub(1, 2)
+                    local mm = raw:sub(3, 4)
+                    local yyyy = raw:sub(5, 8)
+                    local hour = raw:sub(9, 10)
+                    local min = raw:sub(11, 12)
+                    
+                    LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
+                else
+                    LastUpdateLabel.Text = "Last Update: " .. tostring(response)
                 end
-
-                LastUpdateLabel.Text = "Last Update: " .. timestamp
             else
                 LastUpdateLabel.Text = "Last Update: -"
             end
