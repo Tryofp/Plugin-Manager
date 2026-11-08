@@ -13,7 +13,7 @@ local SharedFeatures = {
         Cmd = "itp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
-        UpdateTimestamp = "091120260326, 86400"
+        UpdateTimestamp = "091120260333, 86400"
     },
     PPESP = {
         Name = "PPESP",
@@ -132,7 +132,7 @@ local SharedFeatures = {
         Cmd = "mutesound",
         UnCmd = "unmutesound",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SoundandView",
-        UpdateTimestamp = "091120260326, 86400"
+        UpdateTimestamp = "091120260333, 86400"
     },
     PlayMusic = {
         Name = "Play Music",
