@@ -494,7 +494,93 @@ return function(speaker)
         print("Menu Hapus Badge diklik!")
         -- [Nanti di Langkah 3 kita isi logika list fitur badge-nya di sini]
     end)
+
+        -- ==========================================
+    -- 🛠️ LANGKAH 3: LOGIKA LIST FITUR BADGE & HAPUS
+    -- ==========================================
     
+    -- Fungsi untuk memuat ulang daftar fitur ber-badge ke dalam Dev Panel
+    local function loadBadgeListForDev()
+        -- Bersihkan dulu list sebelumnya kalau ada
+        for _, child in ipairs(DevMenuList:GetChildren()) do
+            if child:IsA("Frame") or (child:IsA("TextButton") and child.Name ~= "DefaultOpt") then
+                child:Destroy()
+            end
+        end
+
+        -- Ambil data dari Loader.lua yang sedang aktif/ter-cache
+        -- Kita buat tombol opsi utama kembali dulu di atas
+        addDevMenuOption("🔄 Refresh List Badge", "Muat ulang daftar fitur yang memiliki badge aktif", function()
+            loadBadgeListForDev()
+        end)
+
+        -- Contoh list fitur hardcode/dinamis yang kita ambil dari data Loader (bisa di-custom sesuai kebutuhan)
+        -- Kita sediakan wadah informasi untuk fitur yang terdeteksi ada timestamp-nya
+        local HeaderInfo = Instance.new("TextLabel")
+        HeaderInfo.Size = UDim2.new(1, 0, 0, 20)
+        HeaderInfo.BackgroundTransparency = 1
+        HeaderInfo.Font = Enum.Font.GothamBold
+        HeaderInfo.Text = "--- DAFTAR FITUR BER-BADGE AKTIF ---"
+        HeaderInfo.TextColor3 = Color3.fromRGB(160, 175, 195)
+        HeaderInfo.TextSize = 9
+        HeaderInfo.ZIndex = 32
+        HeaderInfo.Parent = DevMenuList
+
+        -- Contoh fitur yang ada di Loader.lua kamu (SCP, CPN, TPitem, AutoSave, SaveServer, LastRejoin)
+        local trackedFeatures = {
+            { Key = "SCP", Name = "Radar Checkpoint (SCP)" },
+            { Key = "CPN", Name = "CP & Waypoint (CPN)" },
+            { Key = "TPitem", Name = "Teleport to Item (TPitem)" },
+            { Key = "AutoSave", Name = "Auto Save Rejoin" },
+            { Key = "SaveServer", Name = "Save Server" },
+            { Key = "LastRejoin", Name = "Last Rejoin" }
+        }
+
+        for _, feat in ipairs(trackedFeatures) do
+            local ItemRow = Instance.new("Frame")
+            ItemRow.Size = UDim2.new(1, 0, 0, 36)
+            ItemRow.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
+            ItemRow.BorderSizePixel = 0
+            ItemRow.ZIndex = 32
+            ItemRow.Parent = DevMenuList
+            Instance.new("UICorner", ItemRow).CornerRadius = UDim.new(0, 4)
+
+            local NameLbl = Instance.new("TextLabel")
+            NameLbl.Size = UDim2.new(1, -70, 1, 0)
+            NameLbl.Position = UDim2.new(0, 8, 0, 0)
+            NameLbl.BackgroundTransparency = 1
+            NameLbl.Font = Enum.Font.GothamBold
+            NameLbl.Text = feat.Name
+            NameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+            NameLbl.TextSize = 9
+            NameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            NameLbl.ZIndex = 33
+            NameLbl.Parent = ItemRow
+
+            -- Tombol Aksi Hapus Badge untuk fitur ini
+            local DeleteBadgeBtn = Instance.new("TextButton")
+            DeleteBadgeBtn.Size = UDim2.new(0, 55, 0, 22)
+            DeleteBadgeBtn.AnchorPoint = Vector2.new(1, 0.5)
+            DeleteBadgeBtn.Position = UDim2.new(1, -8, 0.5, 0)
+            DeleteBadgeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            DeleteBadgeBtn.BorderSizePixel = 0
+            DeleteBadgeBtn.Font = Enum.Font.GothamBold
+            DeleteBadgeBtn.Text = "HAPUS"
+            DeleteBadgeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            DeleteBadgeBtn.TextSize = 8
+            DeleteBadgeBtn.ZIndex = 33
+            DeleteBadgeBtn.Parent = ItemRow
+            Instance.new("UICorner", DeleteBadgeBtn).CornerRadius = UDim.new(0, 4)
+
+            DeleteBadgeBtn.MouseButton1Click:Connect(function()
+                print("Meminta hapus badge untuk key: " .. feat.Key)
+                -- [Nanti di Langkah 4 kita hubungkan ke Google Apps Script & GitHub]
+            end)
+        end
+    end
+
+    -- Update fungsi klik pada menu "Hapus Badge Fitur" di Langkah 2 sebelumnya
+    -- Ubah callback-nya agar memanggil loadBadgeListForDev()
 
     local TabBar = Instance.new("ScrollingFrame")
     TabBar.Size = UDim2.new(1, -12, 0, 24)
