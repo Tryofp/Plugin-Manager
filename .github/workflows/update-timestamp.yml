@@ -3,31 +3,38 @@ name: Auto Update Hub Metadata & Timestamps
 on:
   push:
     branches:
-      - main  # Ganti jadi "master" kalau branch utama lu namanya master
+      - main
 
 jobs:
   update-metadata-and-sheets:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Repository with History
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Ambil riwayat commit biar bisa bedain file Baru vs File Edit
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      # 1. STEP AUTO UPDATE FEATURE TIMESTAMP (SESUAI LOADER.LUA TERBARU)
-      - name: Process Timestamp Updates in Loader.lua
+      # 1. STEP DETEKSI FILE NEW! DAN UPDATE! DI LOADER.LUA
+      - name: Process Timestamp & Badge Updates in Loader.lua
         run: |
           node -e '
             const fs = require("fs");
             const { execSync } = require("child_process");
 
-            const changedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD")
-              .toString()
-              .trim()
-              .split("\n");
+            let changedFiles = [];
+            try {
+              changedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD")
+                .toString()
+                .trim()
+                .split("\n");
+            } catch (e) {
+              process.exit(0);
+            }
 
             if (!changedFiles.length || (changedFiles.length === 1 && changedFiles[0] === "")) {
               console.log("Tidak ada perubahan file.");
@@ -48,9 +55,8 @@ jobs:
             let loaderContent = fs.readFileSync("Loader.lua", "utf8");
             let modified = false;
 
-            // Kamus Bundle Mapping Sesuai Loader.lua Lu yang Baru
             const bundleMapping = {
-              "Interactable": ["ITP", "PPESP", "CDESP", "ITESP", "DESP", "TESP"],
+              "Interactable": ["ITP", "PPESP", "CDESP", "ITESP", "DESP", "TESP", "LOOT"],
               "LastRejoin": ["AutoSave", "SaveServer", "LastRejoin"],
               "MusicTimeML": ["PlayMusic"],
               "SimpleAimbot": ["Aimbot", "SetRadius"],
@@ -58,8 +64,6 @@ jobs:
               "Waypoint": ["SCP", "CPN"],
               "colorESP": ["PESP", "EESP"],
               "AntiEffect": ["Anchor", "AntiWind", "AntiShake", "AntiTrigger"],
-              
-              // File Satuan / Standalone
               "PlayerTeleport": ["PlayerTeleport"],
               "TPitem": ["TPitem"],
               "clickinspector": ["Clickinspector"],
@@ -78,19 +82,49 @@ jobs:
             changedFiles.forEach((file) => {
               if (file.endsWith(".lua") || !file.includes(".")) {
                 const fileName = file.split("/").pop().replace(".lua", "");
-                
-                let keysToUpdate = [fileName]; 
-                if (bundleMapping[fileName]) {
-                  keysToUpdate = bundleMapping[fileName];
-                }
+                let keysToUpdate = bundleMapping[fileName] || [fileName];
+
+                // Cek apakah file ini baru pertama kali dibuat di Git (Added/New) atau sekadar Edit (Modified)
+                let isNewFile = false;
+                try {
+                  const status = execSync(`git status --short "${file}"`).toString().trim();
+                  const commitCount = execSync(`git rev-list --count HEAD -- "${file}"`).toString().trim();
+                  if (status.startsWith("A") || status.startsWith("??") || commitCount === "1") {
+                    isNewFile = true;
+                  }
+                } catch(e) {}
+
+                const badgeText = isNewFile ? "New!" : "Update!";
+                const badgeColor = isNewFile ? "yellow" : "green";
 
                 keysToUpdate.forEach((keyName) => {
-                  const regex = new RegExp(`(${keyName}[\\s\\S]*?UpdateTimestamp\\s*=\\s*")([^"]*)(")`, "g");
-                  if (regex.test(loaderContent)) {
-                    loaderContent = loaderContent.replace(regex, `$1${featureTimeStr}$3`);
+                  // Update Timestamp
+                  const timeRegex = new RegExp(`(${keyName}[\\s\\S]*?UpdateTimestamp\\s*=\\s*")([^"]*)(")`, "g");
+                  if (timeRegex.test(loaderContent)) {
+                    loaderContent = loaderContent.replace(timeRegex, `$1${featureTimeStr}$3`);
                     modified = true;
-                    console.log(`Updated UpdateTimestamp for feature key: ${keyName}`);
                   }
+
+                  // Update BadgeText (New! / Update!)
+                  const textRegex = new RegExp(`(${keyName}[\\s\\S]*?BadgeText\\s*=\\s*")([^"]*)(")`, "g");
+                  if (textRegex.test(loaderContent)) {
+                    loaderContent = loaderContent.replace(textRegex, `$1${badgeText}$3`);
+                  } else {
+                    // Jika property BadgeText belum ada di key tersebut, sisipkan otomatis
+                    const addTextRegex = new RegExp(`(${keyName}[\\s\\S]*?UpdateTimestamp\\s*=\\s*"[^"]*")`, "g");
+                    loaderContent = loaderContent.replace(addTextRegex, `$1,\n        BadgeText = "${badgeText}"`);
+                  }
+
+                  // Update BadgeColor (yellow untuk New!, green untuk Update!)
+                  const colorRegex = new RegExp(`(${keyName}[\\s\\S]*?BadgeColor\\s*=\\s*")([^"]*)(")`, "g");
+                  if (colorRegex.test(loaderContent)) {
+                    loaderContent = loaderContent.replace(colorRegex, `$1${badgeColor}$3`);
+                  } else {
+                    const addColorRegex = new RegExp(`(${keyName}[\\s\\S]*?BadgeText\\s*=\\s*"[^"]*")`, "g");
+                    loaderContent = loaderContent.replace(addColorRegex, `$1,\n        BadgeColor = "${badgeColor}"`);
+                  }
+
+                  console.log(`Updated ${keyName} -> Badge: [${badgeText}]`);
                 });
               }
             });
@@ -100,15 +134,15 @@ jobs:
             }
           '
 
-      # 2. STEP COMMIT & PUSH BILA ADA PERUBAHAN DI LOADER
+      # 2. STEP COMMIT & PUSH OTOMATIS KE GITHUB
       - name: Commit & Push Loader Changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add Loader.lua
-          git diff --quiet && git diff --staged --quiet || (git commit -m "bot: auto update bundled feature timestamps" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "bot: auto update feature timestamps & badges" && git push)
 
-      # 3. STEP KIRIM LAST UPDATE KE GOOGLE SHEETS
+      # 3. STEP KIRIM LAST UPDATE KE GOOGLE SHEETS (TETAP SAMA SEPERTI KEMAEN - GAK DISENGGOL)
       - name: Send Timestamp to Google Sheets
         run: |
           CURRENT_TIME=$(TZ='Asia/Jakarta' date +'%d%m%Y %H:%M')
