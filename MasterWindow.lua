@@ -368,7 +368,7 @@ return function(speaker)
         DevBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     else
         DevBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
-        DevBtn.Text = "LOCKED"
+        DevBtn.Text = "DEV PANEL"
         DevBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
     end
 
