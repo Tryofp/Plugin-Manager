@@ -434,10 +434,10 @@ return function(speaker)
         end)
     end)
 
-        -- 🕒 LABEL LAST UPDATE (DIGESER KE KANAN & FORMAT PAKAI SYMBOL "/")
+    -- 🕒 LABEL LAST UPDATE (DIPERLEBAR BIAR GAK KETUMPUK/NGEBUG)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(0, 115, 0, 12)
-    LastUpdateLabel.Position = UDim2.new(0, 155, 0, 16) -- Digeser jauh ke kanan biar aman gak nabrak ID
+    LastUpdateLabel.Size = UDim2.new(0, 140, 0, 12) -- Lebar ditambah jadi 140 biar muat satu baris panjang
+    LastUpdateLabel.Position = UDim2.new(0, 145, 0, 16) -- Posisi digeser pas di sebelah kanan ID Roblox
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.Gotham
     LastUpdateLabel.Text = "Last Update: Memuat..."
@@ -452,7 +452,7 @@ return function(speaker)
             if response and response ~= "" and response ~= "Belum ada update" then
                 local timestamp = tostring(response)
                 
-                -- Otomatis ubah format tanggal jadi pakai garis miring (/) jika formatnya DDMMYYYYHHMM
+                -- Format string tanggal jadi pakai garis miring (/)
                 if #timestamp >= 12 then
                     local dd = timestamp:sub(1, 2)
                     local mm = timestamp:sub(3, 4)
