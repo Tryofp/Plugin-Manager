@@ -352,12 +352,12 @@ return function(speaker)
     if isAuthorized then
         -- Jika yang buka kamu (Authorized)
         DevBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90) -- Hijau aktif
-        DevBtn.Text = "DEV"
+        DevBtn.Text = "DEV PANEL"
         DevBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     else
         -- Jika yang buka orang lain / teman kamu (Unauthorized)
         DevBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40) -- Merah terkunci
-        DevBtn.Text = "LOCKED"
+        DevBtn.Text = "DEV PANEL"
         DevBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
     end
     
