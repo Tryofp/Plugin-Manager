@@ -13,7 +13,7 @@ local SharedFeatures = {
         Cmd = "itp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
-        UpdateTimestamp = "091120260314, 86400"
+        UpdateTimestamp = "091120260326, 86400"
     },
     PPESP = {
         Name = "PPESP",
@@ -125,12 +125,14 @@ local SharedFeatures = {
         UpdateTimestamp = ""
     },
     MuteSound = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         Name = "Mute Sound",
         Desc = "Membisukan suara Latar Belakang Map",
         Cmd = "mutesound",
         UnCmd = "unmutesound",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SoundandView",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120260326, 86400"
     },
     PlayMusic = {
         Name = "Play Music",
