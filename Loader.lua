@@ -13,7 +13,7 @@ local SharedFeatures = {
         Cmd = "itp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
-        UpdateTimestamp = "091120260255, 86400"
+        UpdateTimestamp = "091120260314, 86400"
     },
     PPESP = {
         Name = "PPESP",
@@ -159,7 +159,7 @@ local SharedFeatures = {
         Cmd = "mobileinspector",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/clickinspector",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120260314, 86400"
     },
     AntiAFK = {
         Name = "Anti AFK",
