@@ -22,7 +22,7 @@ end)
 -- ================================================================
 local function loadMapA()
     local Workspace = game:GetService("Workspace")
-    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local VirtualInputManager = game:GetService("VirtualInputManager") 
     local Camera = Workspace.CurrentCamera
 
     local function lower(val)
