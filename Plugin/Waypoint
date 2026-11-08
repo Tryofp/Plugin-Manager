@@ -1,0 +1,1138 @@
+local gotonext = {
+    ["PluginName"] = "TeleportCP_Universal_Waypoint",
+    ["PluginDescription"] = "Universal Checkpoint Engine - Pure Event-Driven & Zero Lag",
+    ["Commands"] = {}
+}
+
+--==================================================
+-- SERVICES & CONSTANTS
+--==================================================
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+
+local LocalPlayer = Players.LocalPlayer
+local PlaceId = game.PlaceId
+
+local HEIGHT_OFFSET = 1.0
+local MASTER_FILE_NAME = "TeleportCP_MasterSaves.json"
+
+local function getMapKey()
+    return tostring(PlaceId)
+end
+
+local CURRENT_MAP_KEY = getMapKey()
+
+local IGNORE_KEYWORDS = {
+    "teleport", "tp", "tele", "coin", "gold", "reward", "cash", "money", "gem", "stop", "jump", "ready", "inner", "outer", "damage",
+    "time", "seluncur", "remove", "clone", "seat", "laying", "down", "fall", "jatuh", "chat", "block", "boost",
+    "cave", "lake", "goa", "tutorial", "hit", "same", "spin", "kill", "brick", "birhday", "gift", "fun", "needoh", "rintangan",
+    "tanjakan", "maut", "uang", "join", "community", "komunitas", "enter", "handle", "squish", "stand",
+    "adminzone", "run", "jaw", "sphere", "lompat", "long", "pop",
+    "crocodile", "alligator", "mob", "npc", "monster", "animal", "pet", "zombie", "boss", "bear",
+    "sky", "skypart", "skybox", "cloud", "atmosphere", "barrier", "invisible", "boundary",
+    "tree", "pohon", "branch", "trunk", "foliage", "leaf", "leaves", "mushroom", "axe", "ice", "shell", "cookie", "stick",
+    "fence", "pagar", "bridge", "jembatan", "ladder", "stair", "tangga", "fog", "hat", "skip", "skipboard",
+    "wood", "stone", "rock", "batu", "bambu", "raft", "platform", "floor", "step", "pijakan", "slime", "camera", "wax", 
+    "lamp", "lantern", "light", "street lamp", "speaker", "audio", "music", "sound", "fx", "effect", "butter",
+    "head", "torso", "humanoid", "character", "arm", "leg", "face", "hair", "holder", "neon", "oreo", "view",
+    "prop", "decoration", "wall", "roof", "ceiling", "window", "door", "table", "chair", "badge",
+    "particle", "sparkle", "fire", "smoke", "cewe", "cowo", "refresh", "ava", "chinese", "bubble", "ball",
+    "chinematic", "cinematic", "dance", "male", "female", "outfit", "suguhan", "big", "small"
+}
+
+--==================================================
+-- STATE & STORAGE
+--==================================================
+local streamingCache = {}
+local savedCheckpointsList = {}
+local visitedKeys = {}
+
+local radarGui, radarMainFrame, radarScrollContainer, isRadarMinimized = nil, nil, nil, false
+local cpnGui, cpnMainFrame, cpnScrollContainer, isCpnMinimized = nil, nil, nil, false
+local updateRadarGuiContent, updateCpnGuiContent = nil, nil
+
+local function notify(title, text, duration)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = duration or 2
+        })
+    end)
+end
+
+--==================================================
+-- FILE SYSTEM PERSISTENCE
+--==================================================
+local function saveCheckpointsToFile()
+    if writefile and readfile then
+        pcall(function()
+            local masterData = {}
+            if isfile(MASTER_FILE_NAME) then
+                local content = readfile(MASTER_FILE_NAME)
+                local decoded = HttpService:JSONDecode(content)
+                if type(decoded) == "table" then
+                    masterData = decoded
+                end
+            end
+            masterData[CURRENT_MAP_KEY] = savedCheckpointsList
+            writefile(MASTER_FILE_NAME, HttpService:JSONEncode(masterData))
+        end)
+    end
+end
+
+local function loadSavedCheckpoints()
+    savedCheckpointsList = {}
+    visitedKeys = {}
+
+    if writefile and readfile and isfile and listfiles then
+        pcall(function()
+            local masterData = {}
+            if isfile(MASTER_FILE_NAME) then
+                local content = readfile(MASTER_FILE_NAME)
+                local decoded = HttpService:JSONDecode(content)
+                if type(decoded) == "table" then masterData = decoded end
+            end
+
+            if masterData[CURRENT_MAP_KEY] then
+                savedCheckpointsList = masterData[CURRENT_MAP_KEY]
+                for _, item in ipairs(savedCheckpointsList) do
+                    if item.key ~= nil and item.cf then
+                        local itemCF = CFrame.new(unpack(item.cf))
+                        local pos = itemCF.Position
+                        local uniqueVisitKey = tostring(item.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+                        visitedKeys[uniqueVisitKey] = true
+                        visitedKeys[tostring(item.key) .. "_saved"] = true
+                    end
+                end
+            end
+        end)
+    end
+end
+
+loadSavedCheckpoints()
+
+--==================================================
+-- UTILITIES & STRICT FILTER LOGIC
+--==================================================
+local function getHRP()
+    local char = LocalPlayer.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function safeTeleport(targetCF)
+    local hrp = getHRP()
+    if not hrp then return end
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+    hrp.CFrame = targetCF + Vector3.new(0, HEIGHT_OFFSET, 0)
+end
+
+local function isBlacklisted(name)
+    local lower = string.lower(name)
+    for _, kw in ipairs(IGNORE_KEYWORDS) do
+        if string.find(lower, kw, 1, true) then return true end
+    end
+    return false
+end
+
+local function getInstancePath(obj)
+    local path = obj.Name
+    local current = obj.Parent
+    local depth = 0
+    while current and current ~= Workspace and depth < 5 do
+        path = current.Name .. "." .. path
+        current = current.Parent
+        depth = depth + 1
+    end
+    return path
+end
+
+local function getValidCheckpointPart(obj)
+    if not obj or not (obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("UnionOperation") or obj:IsA("Model")) then return nil end
+    if isBlacklisted(obj.Name) then return nil end
+
+    local hasTouch = obj:FindFirstChild("TouchInterest") or obj:FindFirstChildOfClass("TouchTransmitter")
+    if hasTouch then return obj end
+
+    local hasPrompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if hasPrompt then
+        if obj:IsA("Model") then
+            return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true) or obj
+        end
+        return obj
+    end
+
+    for _, desc in ipairs(obj:GetDescendants()) do
+        if (desc:IsA("BasePart") or desc:IsA("MeshPart") or desc:IsA("UnionOperation")) and not isBlacklisted(desc.Name) then
+            if desc:FindFirstChild("TouchInterest") or desc:FindFirstChildOfClass("TouchTransmitter") or desc:FindFirstChildOfClass("ProximityPrompt") then
+                return desc
+            end
+        end
+    end
+
+    return nil
+end
+
+local function parseCPIdentity(obj)
+    local validPart = getValidCheckpointPart(obj)
+    if not validPart then return nil, nil, nil, 0 end
+
+    local name = obj.Name
+    local lowerName = string.lower(name)
+    local parentName = obj.Parent and obj.Parent.Name or ""
+    local lowerParent = string.lower(parentName)
+
+    if lowerName == "text" or lowerParent == "text" or lowerName == "field" or lowerParent == "field" or lowerName == "base" or lowerParent == "base" or isBlacklisted(lowerName) or isBlacklisted(lowerParent) then 
+        return nil, nil, nil, 0 
+    end
+    if string.find(lowerName, "teleport", 1, true) or string.find(lowerName, "tp", 1, true) or string.find(lowerName, "tele", 1, true) then 
+        return nil, nil, nil, 0 
+    end
+
+    local folderContext = ""
+    local curr = validPart.Parent
+    while curr and curr ~= Workspace do
+        local lowerFolder = string.lower(curr.Name)
+        if string.find(lowerFolder, "gunung") or string.find(lowerFolder, "jalur") or string.find(lowerFolder, "track") or string.find(lowerFolder, "path") or string.find(lowerFolder, "route") or string.find(lowerFolder, "partsummitkit") or string.find(lowerFolder, "mainfolder") or string.find(lowerFolder, "checkpoints") then
+            folderContext = curr.Name
+            break
+        end
+        curr = curr.Parent
+    end
+
+    -- ==================================================
+    -- 1. DETEKSI SUMMIT
+    -- ==================================================
+    if string.find(lowerName, "summit", 1, true) or string.find(lowerParent, "summit", 1, true) or string.find(lowerName, "peak", 1, true) or string.find(lowerName, "finish", 1, true) or string.find(lowerName, "puncak", 1, true) then
+        local summitDesc = name
+        if folderContext ~= "" then
+            summitDesc = folderContext .. " - " .. name
+        end
+        return "SUMMIT", summitDesc, validPart, 10
+    end
+
+    local summitKeywords = {"reset"}
+    for _, kw in ipairs(summitKeywords) do
+        if string.find(lowerName, kw, 1, true) or string.find(lowerParent, kw, 1, true) then
+            local fullInstancePath = string.lower(getInstancePath(obj))
+            if string.find(fullInstancePath, "checkpoint") or string.find(fullInstancePath, "obby") or string.find(fullInstancePath, "gunung") then
+                local summitDesc = name
+                if folderContext ~= "" then
+                    summitDesc = folderContext .. " - " .. name
+                end
+                return "SUMMIT", summitDesc, validPart, 10
+            end
+        end
+    end
+
+    -- ==================================================
+    -- 2. PARSING NOMOR CHECKPOINT (Mendukung Checkpoint1, CP_1, CP 1)
+    -- ==================================================
+    local guiText = ""
+    local hasGui = validPart:FindFirstChildOfClass("BillboardGui") or validPart:FindFirstChildOfClass("SurfaceGui")
+    if not hasGui and validPart.Parent and validPart.Parent:IsA("Model") then
+        hasGui = validPart.Parent:FindFirstChildOfClass("BillboardGui") or validPart.Parent:FindFirstChildOfClass("SurfaceGui")
+    end
+    if hasGui then
+        local textLabel = hasGui:FindFirstChildOfClass("TextLabel")
+        if textLabel and textLabel.Text ~= "" then
+            guiText = string.lower(textLabel.Text)
+        end
+    end
+
+    local combined = lowerParent .. " " .. lowerName .. " " .. guiText
+
+    local num = string.match(combined, "checkpoints?%s*[_]?%s*(%d+%.?%d*)") or
+                string.match(combined, "checkpoint(%d+%.?%d*)") or
+                string.match(combined, "checkpoint%s*[_]?%s*(%d+%.?%d*)") or
+                string.match(combined, "cekpoin%s*[%s_]*(%d+%.?%d*)") or 
+                string.match(combined, "cp%s*[_]?%s*(%d+%.?%d*)") or
+                string.match(combined, "cp(%d+%.?%d*)") or 
+                string.match(combined, "stage%s*[_]?%s*(%d+%.?%d*)") or
+                string.match(combined, "stage(%d+%.?%d*)") or
+                string.match(combined, "pos%s*[_]?%s*(%d+%.?%d*)") or
+                string.match(combined, "waypoint%s*[_]?%s*(%d+%.?%d*)") or
+                string.match(combined, "wp%s*[_]?%s*(%d+%.?%d*)") or
+                string.match(combined, "ring%s*[_]?%s*(%d+%.?%d*)")
+
+    if not num and guiText ~= "" then
+        num = string.match(guiText, "(%d+%.?%d*)")
+    end
+
+    if not num then
+        num = string.match(name, "^(%d+%.?%d*)$")
+    end
+
+    if not num then
+        if string.find(combined, "cp") or string.find(combined, "checkpoint") or string.find(combined, "stage") or string.find(combined, "waypoint") then
+            return nil, nil, nil, 0
+        end
+        return nil, nil, nil, 0
+    end
+
+    local nVal = tonumber(num)
+    if not nVal or nVal < 0 or nVal > 500 then
+        return nil, nil, nil, 0
+    end
+
+    local priorityScore = 1
+    local hasExplicitKeyword = string.find(combined, "checkpoint") or 
+                               string.find(combined, "cekpoin") or 
+                               string.find(combined, "cp") or 
+                               string.find(combined, "waypoint") or 
+                               string.find(combined, "wp") or 
+                               string.find(combined, "stage") or 
+                               string.find(combined, "pos")
+
+    if hasExplicitKeyword then
+        priorityScore = 3
+    elseif string.find(combined, "ring") then
+        priorityScore = 2
+    else
+        priorityScore = 1
+    end
+
+    local descText = name
+    if folderContext ~= "" then
+        descText = folderContext .. " (" .. name .. ")"
+    end
+    if guiText ~= "" then
+        descText = folderContext ~= "" and (folderContext .. " - " .. guiText) or guiText
+    end
+
+    return nVal, descText, validPart, priorityScore
+end
+
+
+--==================================================
+-- AUTO-SAVE SYSTEM & VISITED TRACKER
+--==================================================
+local function addOrUpdateSavedCP(key, desc, cf)
+    local serializedCF = {cf:GetComponents()}
+    local pos = cf.Position
+    
+    local uniqueVisitKey = tostring(key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+    visitedKeys[uniqueVisitKey] = true
+
+    for _, item in ipairs(savedCheckpointsList) do
+        local itemCF = CFrame.new(unpack(item.cf))
+        local itemPos = itemCF.Position
+        if (itemPos - pos).Magnitude < 3 then
+            item.key = key
+            item.desc = desc
+            item.cf = serializedCF
+            saveCheckpointsToFile()
+            if updateCpnGuiContent then updateCpnGuiContent() end
+            if updateRadarGuiContent then updateRadarGuiContent() end
+            return
+        end
+    end
+
+    table.insert(savedCheckpointsList, {
+        key = key,
+        desc = desc,
+        cf = serializedCF
+    })
+    
+    table.sort(savedCheckpointsList, function(a, b)
+        local na, nb = tonumber(a.key), tonumber(b.key)
+        if na and nb then return na < nb end
+        return tostring(a.key) < tostring(b.key)
+    end)
+
+    saveCheckpointsToFile()
+    if updateCpnGuiContent then updateCpnGuiContent() end
+    if updateRadarGuiContent then updateRadarGuiContent() end
+    notify("Auto-Save CP", "Checkpoint tersimpan: " .. tostring(key), 2)
+end
+
+--==================================================
+-- PURE EVENT-DRIVEN SCANNER (ZERO BACKGROUND LOOP)
+--==================================================
+local hookedParts = {}
+
+local function processAndHookPart(obj)
+    if not obj or not (obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("UnionOperation") or obj:IsA("Model")) then return end
+    if hookedParts[obj] then return end
+
+    local cpKey, partDesc, realPart, pScore = parseCPIdentity(obj)
+    
+    if cpKey and realPart and not hookedParts[realPart] then
+        hookedParts[realPart] = true
+        
+        local targetCFrame = realPart:IsA("Model") and (realPart.PrimaryPart and realPart.PrimaryPart.CFrame or realPart:GetAttribute("CFrame") or realPart:GetPivot()) or realPart.CFrame
+
+        local uniqueKey = getInstancePath(realPart)
+        streamingCache[uniqueKey] = {
+            key = cpKey,
+            desc = partDesc,
+            part = realPart,
+            cf = targetCFrame,
+            priorityScore = pScore
+        }
+
+        if updateRadarGuiContent then updateRadarGuiContent() end
+
+        local function triggerAutoSave()
+            if realPart and realPart.Parent then
+                local pos = realPart.Position
+                local folderContext = ""
+                local curr = realPart.Parent
+                while curr and curr ~= Workspace do
+                    local lowerFolder = string.lower(curr.Name)
+                    if string.find(lowerFolder, "gunung") or string.find(lowerFolder, "jalur") or string.find(lowerFolder, "track") or string.find(lowerFolder, "path") or string.find(lowerFolder, "route") then
+                        folderContext = curr.Name
+                        break
+                    end
+                    curr = curr.Parent
+                end
+
+                local folderPrefix = folderContext ~= "" and folderContext or "Main"
+                local uniqueVisitKey = tostring(cpKey) .. "_" .. folderPrefix .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+                
+                if not visitedKeys[uniqueVisitKey] then
+                    addOrUpdateSavedCP(cpKey, partDesc, targetCFrame)
+                    if updateRadarGuiContent then updateRadarGuiContent() end
+                end
+            end
+        end
+
+        local touch = realPart:FindFirstChild("TouchInterest") or realPart:FindFirstChildOfClass("TouchTransmitter")
+        if touch then
+            local lastTouch = 0
+            realPart.Touched:Connect(function(hit)
+                local now = tick()
+                if now - lastTouch < 1.0 then return end
+                local char = LocalPlayer.Character
+                if char and hit:IsDescendantOf(char) then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid and humanoid.Health > 0 then
+                        lastTouch = now
+                        triggerAutoSave()
+                    end
+                end
+            end)
+        end
+
+        local prompt = realPart:FindFirstChildOfClass("ProximityPrompt") or realPart:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if prompt then
+            prompt.Triggered:Connect(function(playerWhoTriggered)
+                if playerWhoTriggered == LocalPlayer then
+                    triggerAutoSave()
+                end
+            end)
+        end
+    end
+end
+
+--==================================================
+-- GUI: SCP FLOATING WINDOW
+--==================================================
+updateRadarGuiContent = function()
+    if not radarScrollContainer then return end
+
+    for _, child in ipairs(radarScrollContainer:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+
+    local rawList = {}
+    for _, data in pairs(streamingCache) do
+        if data.part and data.part.Parent then
+            local pos = data.part.Position
+            local uniqueVisitKey = tostring(data.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+            
+            if not visitedKeys[uniqueVisitKey] then
+                table.insert(rawList, data)
+            end
+        end
+    end
+
+    local filteredMap = {}
+    for _, data in ipairs(rawList) do
+        local pos = data.part.Position
+        local mapKey = tostring(data.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Z)
+        
+        if not filteredMap[mapKey] then
+            filteredMap[mapKey] = data
+        else
+            if (data.priorityScore or 1) > (filteredMap[mapKey].priorityScore or 1) then
+                filteredMap[mapKey] = data
+            end
+        end
+    end
+
+    local list = {}
+    for _, data in pairs(filteredMap) do
+        table.insert(list, data)
+    end
+
+    table.sort(list, function(a, b)
+        local na, nb = tonumber(a.key), tonumber(b.key)
+        if na and nb then return na < nb end
+        return tostring(a.key) < tostring(b.key)
+    end)
+
+    local yOffset = 0
+    for _, data in ipairs(list) do
+        local itemFrame = Instance.new("Frame")
+        itemFrame.Size = UDim2.new(1, -10, 0, 28)
+        itemFrame.Position = UDim2.new(0, 5, 0, yOffset)
+        itemFrame.BackgroundColor3 = Color3.fromRGB(30, 36, 45)
+        itemFrame.BorderSizePixel = 0
+        itemFrame.Parent = radarScrollContainer
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 4)
+        corner.Parent = itemFrame
+
+        local leftLabel = Instance.new("TextLabel")
+        leftLabel.Size = UDim2.new(0, 75, 1, 0)
+        leftLabel.Position = UDim2.new(0, 5, 0, 0)
+        leftLabel.BackgroundTransparency = 1
+        
+        local keyStr = tostring(data.key)
+        if tonumber(keyStr) then
+            leftLabel.Text = "CP " .. keyStr
+        else
+            leftLabel.Text = keyStr
+        end
+        leftLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+        leftLabel.Font = Enum.Font.SourceSansBold
+        leftLabel.TextSize = 12
+        leftLabel.TextXAlignment = Enum.TextXAlignment.Left
+        leftLabel.Parent = itemFrame
+
+        local rightLabel = Instance.new("TextLabel")
+        rightLabel.Size = UDim2.new(1, -135, 1, 0)
+        rightLabel.Position = UDim2.new(0, 80, 0, 0)
+        rightLabel.BackgroundTransparency = 1
+        rightLabel.Text = tostring(data.desc)
+        rightLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+        rightLabel.Font = Enum.Font.SourceSans
+        rightLabel.TextSize = 12
+        rightLabel.TextXAlignment = Enum.TextXAlignment.Left
+        rightLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        rightLabel.Parent = itemFrame
+
+        local teleBtn = Instance.new("TextButton")
+        teleBtn.Size = UDim2.new(0, 45, 0, 20)
+        teleBtn.Position = UDim2.new(1, -50, 0, 4)
+        teleBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+        teleBtn.Text = "TELE"
+        teleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        teleBtn.Font = Enum.Font.SourceSansBold
+        teleBtn.TextSize = 11
+        teleBtn.Parent = itemFrame
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 4)
+        btnCorner.Parent = teleBtn
+
+        teleBtn.MouseButton1Click:Connect(function()
+            if data.part and data.part.Parent then
+                safeTeleport(data.part.CFrame)
+                addOrUpdateSavedCP(data.key, data.desc, data.part.CFrame)
+                notify("TeleportCP", "Berhasil Teleport & Disave!", 1.5)
+            end
+        end)
+
+        yOffset = yOffset + 32
+    end
+
+    radarScrollContainer.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+end
+
+local function createSCPWindow()
+    if radarGui then
+        radarGui.Enabled = not radarGui.Enabled
+        if radarGui.Enabled then updateRadarGuiContent() end
+        return
+    end
+
+    radarGui = Instance.new("ScreenGui")
+    radarGui.Name = "TeleportCP_SCP_Window"
+    radarGui.ResetOnSpawn = false
+    radarGui.Parent = CoreGui
+
+    radarMainFrame = Instance.new("Frame")
+    radarMainFrame.Size = UDim2.new(0, 280, 0, 240)
+    radarMainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
+    radarMainFrame.BackgroundColor3 = Color3.fromRGB(20, 25, 32)
+    radarMainFrame.BackgroundTransparency = 0.25
+    radarMainFrame.BorderSizePixel = 0
+    radarMainFrame.Active = true
+    radarMainFrame.Parent = radarGui
+
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.CornerRadius = UDim.new(0, 8)
+    mainCorner.Parent = radarMainFrame
+
+    -- Penambahan UIGradient mirip MasterWindow
+    local radarGradient = Instance.new("UIGradient")
+    radarGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0.0, Color3.fromRGB(28, 38, 52)),
+        ColorSequenceKeypoint.new(1.0, Color3.fromRGB(15, 20, 28))
+    })
+    radarGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0.0, 0.15),
+        NumberSequenceKeypoint.new(1.0, 0.35)
+    })
+    radarGradient.Rotation = 45
+    radarGradient.Parent = radarMainFrame
+
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 32)
+    header.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+    header.BackgroundTransparency = 0.3
+    header.BorderSizePixel = 0
+    header.Parent = radarMainFrame
+
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 8)
+    headerCorner.Parent = header
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -90, 1, 0)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Streaming Radar (SCP)"
+    title.TextColor3 = Color3.fromRGB(0, 200, 255)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = header
+
+    local refBtn = Instance.new("TextButton")
+    refBtn.Size = UDim2.new(0, 24, 0, 24)
+    refBtn.Position = UDim2.new(1, -78, 0, 4)
+    refBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 180)
+    refBtn.Text = "R"
+    refBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    refBtn.Font = Enum.Font.SourceSansBold
+    refBtn.TextSize = 14
+    refBtn.Parent = header
+
+    local refCorner = Instance.new("UICorner")
+    refCorner.CornerRadius = UDim.new(0, 4)
+    refCorner.Parent = refBtn
+
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 24, 0, 24)
+    minBtn.Position = UDim2.new(1, -52, 0, 4)
+    minBtn.BackgroundColor3 = Color3.fromRGB(45, 52, 65)
+    minBtn.Text = "-"
+    minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minBtn.Font = Enum.Font.SourceSansBold
+    minBtn.TextSize = 16
+    minBtn.Parent = header
+
+    local minCorner = Instance.new("UICorner")
+    minCorner.CornerRadius = UDim.new(0, 4)
+    minCorner.Parent = minBtn
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 24, 0, 24)
+    closeBtn.Position = UDim2.new(1, -26, 0, 4)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 60)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.TextSize = 14
+    closeBtn.Parent = header
+
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 4)
+    closeCorner.Parent = closeBtn
+
+    radarScrollContainer = Instance.new("ScrollingFrame")
+    radarScrollContainer.Size = UDim2.new(1, 0, 1, -32)
+    radarScrollContainer.Position = UDim2.new(0, 0, 0, 32)
+    radarScrollContainer.BackgroundTransparency = 1
+    radarScrollContainer.ScrollBarThickness = 4
+    radarScrollContainer.Parent = radarMainFrame
+
+    local dragging, dragInput, dragStart, startPos
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = radarMainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+
+    header.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            radarMainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    refBtn.MouseButton1Click:Connect(function()
+        task.spawn(function()
+            local allDescendants = Workspace:GetDescendants()
+            for i, obj in ipairs(allDescendants) do
+                processAndHookPart(obj)
+                if i % 50 == 0 then
+                    task.wait()
+                end
+            end
+            updateRadarGuiContent()
+            notify("SCP Radar", "Radar Discan Ulang & Diperbarui!", 1.5)
+        end)
+    end)
+
+    minBtn.MouseButton1Click:Connect(function()
+        isRadarMinimized = not isRadarMinimized
+        radarMainFrame.Size = isRadarMinimized and UDim2.new(0, 280, 0, 32) or UDim2.new(0, 280, 0, 240)
+        radarScrollContainer.Visible = not isRadarMinimized
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        radarGui.Enabled = false
+    end)
+
+    updateRadarGuiContent()
+end
+
+--==================================================
+-- GUI: CPN MANAGER WINDOW
+--==================================================
+local function showCustomNamePrompt(callback)
+    local pGui = Instance.new("ScreenGui")
+    pGui.Name = "TeleportCP_Prompt"
+    pGui.ResetOnSpawn = false
+    pGui.Parent = CoreGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 260, 0, 130)
+    frame.Position = UDim2.new(0.5, -130, 0.4, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(22, 28, 36)
+    frame.BorderSizePixel = 0
+    frame.Parent = pGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -20, 0, 30)
+    lbl.Position = UDim2.new(0, 10, 0, 10)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "Masukkan Nama Waypoint:"
+    lbl.TextColor3 = Color3.fromRGB(0, 200, 255)
+    lbl.Font = Enum.Font.SourceSansBold
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
+
+    local textBox = Instance.new("TextBox")
+    textBox.Size = UDim2.new(1, -20, 0, 32)
+    textBox.Position = UDim2.new(0, 10, 0, 45)
+    textBox.BackgroundColor3 = Color3.fromRGB(35, 42, 53)
+    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textBox.PlaceholderText = "Contoh: Checkpoint Manual 1"
+    textBox.Text = ""
+    textBox.Font = Enum.Font.SourceSans
+    textBox.TextSize = 13
+    textBox.Parent = frame
+
+    local tCorner = Instance.new("UICorner")
+    tCorner.CornerRadius = UDim.new(0, 4)
+    tCorner.Parent = textBox
+
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(0, 110, 0, 28)
+    saveBtn.Position = UDim2.new(0, 10, 0, 88)
+    saveBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+    saveBtn.Text = "SAVE"
+    saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.TextSize = 12
+    saveBtn.Parent = frame
+
+    local sCorner = Instance.new("UICorner")
+    sCorner.CornerRadius = UDim.new(0, 4)
+    sCorner.Parent = saveBtn
+
+    local cancelBtn = Instance.new("TextButton")
+    cancelBtn.Size = UDim2.new(0, 110, 0, 28)
+    cancelBtn.Position = UDim2.new(1, -120, 0, 88)
+    cancelBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 60)
+    cancelBtn.Text = "CANCEL"
+    cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    cancelBtn.Font = Enum.Font.SourceSansBold
+    cancelBtn.TextSize = 12
+    cancelBtn.Parent = frame
+
+    local cCorner = Instance.new("UICorner")
+    cCorner.CornerRadius = UDim.new(0, 4)
+    cCorner.Parent = cancelBtn
+
+    saveBtn.MouseButton1Click:Connect(function()
+        local txt = textBox.Text
+        pGui:Destroy()
+        if txt ~= "" then callback(txt) end
+    end)
+
+    cancelBtn.MouseButton1Click:Connect(function()
+        pGui:Destroy()
+    end)
+end
+
+updateCpnGuiContent = function()
+    if not cpnScrollContainer then return end
+
+    for _, child in ipairs(cpnScrollContainer:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+
+    local yOffset = 0
+    for index, data in ipairs(savedCheckpointsList) do
+        local itemFrame = Instance.new("Frame")
+        itemFrame.Size = UDim2.new(1, -10, 0, 28)
+        itemFrame.Position = UDim2.new(0, 5, 0, yOffset)
+        itemFrame.BackgroundColor3 = Color3.fromRGB(30, 36, 45)
+        itemFrame.BorderSizePixel = 0
+        itemFrame.Parent = cpnScrollContainer
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 4)
+        corner.Parent = itemFrame
+
+        if data.key == "" or data.key == "CP+" then
+            local fullLabel = Instance.new("TextLabel")
+            fullLabel.Size = UDim2.new(1, -95, 1, 0)
+            fullLabel.Position = UDim2.new(0, 8, 0, 0)
+            fullLabel.BackgroundTransparency = 1
+            fullLabel.Text = tostring(data.desc)
+            fullLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+            fullLabel.Font = Enum.Font.SourceSansBold
+            fullLabel.TextSize = 12
+            fullLabel.TextXAlignment = Enum.TextXAlignment.Left
+            fullLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            fullLabel.Parent = itemFrame
+        else
+            local leftLabel = Instance.new("TextLabel")
+            leftLabel.Size = UDim2.new(0, 75, 1, 0)
+            leftLabel.Position = UDim2.new(0, 5, 0, 0)
+            leftLabel.BackgroundTransparency = 1
+            local keyStr = tostring(data.key)
+            if tonumber(keyStr) then
+                leftLabel.Text = "CP " .. keyStr
+            else
+                leftLabel.Text = keyStr
+            end
+            leftLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+            leftLabel.Font = Enum.Font.SourceSansBold
+            leftLabel.TextSize = 12
+            leftLabel.TextXAlignment = Enum.TextXAlignment.Left
+            leftLabel.Parent = itemFrame
+
+            local rightLabel = Instance.new("TextLabel")
+            rightLabel.Size = UDim2.new(1, -135, 1, 0)
+            rightLabel.Position = UDim2.new(0, 80, 0, 0)
+            rightLabel.BackgroundTransparency = 1
+            rightLabel.Text = tostring(data.desc)
+            rightLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+            rightLabel.Font = Enum.Font.SourceSans
+            rightLabel.TextSize = 12
+            rightLabel.TextXAlignment = Enum.TextXAlignment.Left
+            rightLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            rightLabel.Parent = itemFrame
+        end
+
+        local teleBtn = Instance.new("TextButton")
+        teleBtn.Size = UDim2.new(0, 38, 0, 20)
+        teleBtn.Position = UDim2.new(1, -88, 0, 4)
+        teleBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+        teleBtn.Text = "TELE"
+        teleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        teleBtn.Font = Enum.Font.SourceSansBold
+        teleBtn.TextSize = 10
+        teleBtn.Parent = itemFrame
+
+        local tBtnCorner = Instance.new("UICorner")
+        tBtnCorner.CornerRadius = UDim.new(0, 4)
+        tBtnCorner.Parent = teleBtn
+
+       teleBtn.MouseButton1Click:Connect(function()
+            if data.cf then
+                local cf = CFrame.new(unpack(data.cf))
+                safeTeleport(cf)
+                notify("CPN Manager", "Teleport ke saved CP berhasil!", 1.5)
+            end
+        end)
+
+        local delBtn = Instance.new("TextButton")
+        delBtn.Size = UDim2.new(0, 38, 0, 20)
+        delBtn.Position = UDim2.new(1, -46, 0, 4)
+        delBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 60)
+        delBtn.Text = "DEL"
+        delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        delBtn.Font = Enum.Font.SourceSansBold
+        delBtn.TextSize = 10
+        delBtn.Parent = itemFrame
+
+        local dBtnCorner = Instance.new("UICorner")
+        dBtnCorner.CornerRadius = UDim.new(0, 4)
+        dBtnCorner.Parent = delBtn
+
+        delBtn.MouseButton1Click:Connect(function()
+            local removed = table.remove(savedCheckpointsList, index)
+            if removed and removed.cf then
+                local rCF = CFrame.new(unpack(removed.cf))
+                local rPos = rCF.Position
+                local removedVisitKey = tostring(removed.key) .. "_" .. math.floor(rPos.X) .. "_" .. math.floor(rPos.Y) .. "_" .. math.floor(rPos.Z)
+                visitedKeys[removedVisitKey] = nil
+            end
+            saveCheckpointsToFile()
+            updateCpnGuiContent()
+            if updateRadarGuiContent then updateRadarGuiContent() end
+            notify("CPN Manager", "Saved CP dihapus & dimunculkan kembali di SCP!", 1.5)
+        end)
+
+        yOffset = yOffset + 32
+    end
+
+    cpnScrollContainer.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+end
+
+local function createCPNWindow()
+    if cpnGui then
+        cpnGui.Enabled = not cpnGui.Enabled
+        if cpnGui.Enabled then updateCpnGuiContent() end
+        return
+    end
+
+    cpnGui = Instance.new("ScreenGui")
+    cpnGui.Name = "TeleportCP_CPN_Window"
+    cpnGui.ResetOnSpawn = false
+    cpnGui.Parent = CoreGui
+
+    cpnMainFrame = Instance.new("Frame")
+    cpnMainFrame.Size = UDim2.new(0, 280, 0, 240)
+    cpnMainFrame.Position = UDim2.new(0.5, 10, 0.3, 0)
+    cpnMainFrame.BackgroundColor3 = Color3.fromRGB(20, 25, 32)
+    cpnMainFrame.BackgroundTransparency = 0.25
+    cpnMainFrame.BorderSizePixel = 0
+    cpnMainFrame.Active = true
+    cpnMainFrame.Parent = cpnGui
+
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.CornerRadius = UDim.new(0, 8)
+    mainCorner.Parent = cpnMainFrame
+
+    -- Penambahan UIGradient mirip MasterWindow
+    local cpnGradient = Instance.new("UIGradient")
+    cpnGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0.0, Color3.fromRGB(28, 38, 52)),
+        ColorSequenceKeypoint.new(1.0, Color3.fromRGB(15, 20, 28))
+    })
+    cpnGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0.0, 0.15),
+        NumberSequenceKeypoint.new(1.0, 0.35)
+    })
+    cpnGradient.Rotation = 45
+    cpnGradient.Parent = cpnMainFrame
+
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 32)
+    header.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+    header.BackgroundTransparency = 0.3
+    header.BorderSizePixel = 0
+    header.Parent = cpnMainFrame
+
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 8)
+    headerCorner.Parent = header
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -90, 1, 0)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Waypoint Manager (CPN)"
+    title.TextColor3 = Color3.fromRGB(0, 200, 255)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = header
+
+    local plusBtn = Instance.new("TextButton")
+    plusBtn.Size = UDim2.new(0, 24, 0, 24)
+    plusBtn.Position = UDim2.new(1, -78, 0, 4)
+    plusBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+    plusBtn.Text = "+"
+    plusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    plusBtn.Font = Enum.Font.SourceSansBold
+    plusBtn.TextSize = 16
+    plusBtn.Parent = header
+
+    local pCorner = Instance.new("UICorner")
+    pCorner.CornerRadius = UDim.new(0, 4)
+    pCorner.Parent = plusBtn
+
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 24, 0, 24)
+    minBtn.Position = UDim2.new(1, -52, 0, 4)
+    minBtn.BackgroundColor3 = Color3.fromRGB(45, 52, 65)
+    minBtn.Text = "-"
+    minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minBtn.Font = Enum.Font.SourceSansBold
+    minBtn.TextSize = 16
+    minBtn.Parent = header
+
+    local minCorner = Instance.new("UICorner")
+    minCorner.CornerRadius = UDim.new(0, 4)
+    minCorner.Parent = minBtn
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 24, 0, 24)
+    closeBtn.Position = UDim2.new(1, -26, 0, 4)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 60)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.TextSize = 14
+    closeBtn.Parent = header
+
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 4)
+    closeCorner.Parent = closeBtn
+
+    cpnScrollContainer = Instance.new("ScrollingFrame")
+    cpnScrollContainer.Size = UDim2.new(1, 0, 1, -32)
+    cpnScrollContainer.Position = UDim2.new(0, 0, 0, 32)
+    cpnScrollContainer.BackgroundTransparency = 1
+    cpnScrollContainer.ScrollBarThickness = 4
+    cpnScrollContainer.Parent = cpnMainFrame
+
+    local dragging, dragInput, dragStart, startPos
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = cpnMainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+
+    header.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            cpnMainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    plusBtn.MouseButton1Click:Connect(function()
+        local hrp = getHRP()
+        if not hrp then
+            notify("CPN Manager", "HumanoidRootPart tidak ditemukan!", 2)
+            return
+        end
+
+        local nearestName, nearestKey = nil, nil
+        local nearestCF = nil
+        local pos = hrp.Position
+        
+        for _, data in pairs(streamingCache) do
+            if data.part and data.part.Parent then
+                local dist = (data.part.Position - pos).Magnitude
+                if dist <= 12 then
+                    if data.key ~= nil and data.desc ~= nil then
+                        nearestName = data.desc
+                        nearestKey = data.key
+                        nearestCF = data.part.CFrame
+                        break
+                    end
+                end
+            end
+        end
+
+        if not nearestName or nearestKey == nil then
+            showCustomNamePrompt(function(customText)
+                addOrUpdateSavedCP("", customText, hrp.CFrame)
+            end)
+        else
+            addOrUpdateSavedCP(nearestKey, nearestName, nearestCF)
+        end
+    end)
+
+    minBtn.MouseButton1Click:Connect(function()
+        isCpnMinimized = not isCpnMinimized
+        cpnMainFrame.Size = isCpnMinimized and UDim2.new(0, 280, 0, 32) or UDim2.new(0, 280, 0, 240)
+        cpnScrollContainer.Visible = not isCpnMinimized
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        cpnGui.Enabled = false
+    end)
+
+    updateCpnGuiContent()
+end
+
+--==================================================
+-- COMMAND REGISTRATION
+--==================================================
+gotonext.Commands["scp"] = {
+    ["ListName"] = "scp",
+    ["Description"] = "Buka Floating Radar SCP Real-time",
+    ["Aliases"] = {"streamcp"},
+    ["Function"] = function(args, speaker)
+        createSCPWindow()
+    end
+}
+
+gotonext.Commands["cpn"] = {
+    ["ListName"] = "cpn",
+    ["Description"] = "Buka Checkpoint/Waypoint Manager (Master JSON)",
+    Aliases = {"checkpointmanager", "cpmanager"},
+    ["Function"] = function(args, speaker)
+        createCPNWindow()
+    end
+}
+
+--==================================================
+-- MURNI EVENT-DRIVEN SCANNER (TANPA BACKGROUND LOOP)
+--==================================================
+Workspace.DescendantAdded:Connect(function(obj)
+    task.delay(0.2, function()
+        pcall(function()
+            processAndHookPart(obj)
+        end)
+    end)
+end)
+
+task.spawn(function()
+    local allDescendants = Workspace:GetDescendants()
+    for i, obj in ipairs(allDescendants) do
+        processAndHookPart(obj)
+        if i % 60 == 0 then
+            task.wait()
+        end
+    end
+end)
+
+return gotonext
