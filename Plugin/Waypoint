@@ -32,7 +32,7 @@ local IGNORE_KEYWORDS = {
     "time", "seluncur", "remove", "clone", "seat", "laying", "down", "fall", "jatuh", "chat", "block", "boost",
     "cave", "lake", "goa", "tutorial", "hit", "same", "spin", "kill", "brick", "birhday", "gift", "fun", "needoh", "rintangan",
     "tanjakan", "maut", "uang", "join", "community", "komunitas", "enter", "handle", "squish", "stand",
-    "adminzone", "run", "jaw", "sphere", "lompat", "long", "pop", "boat,
+    "adminzone", "run", "jaw", "sphere", "lompat", "long", "pop", "boat, "bot",
     "crocodile", "alligator", "mob", "npc", "monster", "animal", "pet", "zombie", "boss", "bear",
     "sky", "skypart", "skybox", "cloud", "atmosphere", "barrier", "invisible", "boundary",
     "tree", "pohon", "branch", "trunk", "foliage", "leaf", "leaves", "mushroom", "axe", "ice", "shell", "cookie", "stick",
