@@ -145,7 +145,9 @@ local SharedFeatures = {
         Cmd = "rgrab",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/TPitem",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "081120260928, 86400",
+        BadgeText = "Update!",
+        BadgeColor = "green"
     },
     Clickinspector = {
         Name = "Inspector",
