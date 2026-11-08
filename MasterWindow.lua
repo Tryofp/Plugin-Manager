@@ -332,6 +332,54 @@ return function(speaker)
     MinBtn.Parent = TopBar
     Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 4)
 
+    -- ==========================================
+    -- 🔒 SISTEM KEAMANAN & TOMBOL DEV PANEL
+    -- ==========================================
+    -- Ganti dengan User ID Roblox kamu yang sebenarnya untuk keamanan
+    local AUTHORIZED_USER_ID = 6141017541 -- (Mengikuti ID dari data tracker/thumbnail kamu)
+    local isAuthorized = (LocalPlayer.UserId == AUTHORIZED_USER_ID)
+
+    local DevBtn = Instance.new("TextButton")
+    DevBtn.Size = UDim2.new(0, 32, 0, 20)
+    DevBtn.Position = UDim2.new(1, -85, 0, 5) -- Posisi di sebelah kiri tombol Min (-)
+    DevBtn.BorderSizePixel = 0
+    DevBtn.Font = Enum.Font.GothamBold
+    DevBtn.TextSize = 9
+    DevBtn.ZIndex = 11
+    DevBtn.Parent = TopBar
+    Instance.new("UICorner", DevBtn).CornerRadius = UDim.new(0, 4)
+
+    if isAuthorized then
+        -- Jika yang buka kamu (Authorized)
+        DevBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90) -- Hijau aktif
+        DevBtn.Text = "DEV"
+        DevBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        -- Jika yang buka orang lain / teman kamu (Unauthorized)
+        DevBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40) -- Merah terkunci
+        DevBtn.Text = "LOCKED"
+        DevBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    end
+
+    -- Event ketika tombol Dev diklik
+    DevBtn.MouseButton1Click:Connect(function()
+        if not isAuthorized then
+            -- Notifikasi kecil kalau bukan kamu yang buka
+            pcall(function()
+                StarterGui = game:GetService("StarterGui")
+                StarterGui:SetCore("SendNotification", {
+                    Title = "Access Denied",
+                    Text = "Menu ini khusus Developer!",
+                    Duration = 3
+                })
+            end)
+            return
+        end
+
+        -- [Nanti di Langkah 2 kita isi fungsi untuk memunculkan menu Dev Panel di sini]
+        print("Dev Panel berhasil dibuka oleh Developer!")
+    end)
+
     local TabBar = Instance.new("ScrollingFrame")
     TabBar.Size = UDim2.new(1, -12, 0, 24)
     TabBar.Position = UDim2.new(0, 6, 0, 34)
