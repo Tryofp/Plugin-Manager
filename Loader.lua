@@ -1,4 +1,6 @@
-local LoaderData = {}
+local LoaderData = {
+        BadgeColor = "green",
+        BadgeText = "Update!",}
 
 -- ==========================================================
 -- 🛠️ GUDANG MASTER DATA (SEMUA FITUR SERAGAM & INDEPENDEN)
@@ -11,7 +13,7 @@ local SharedFeatures = {
         Cmd = "itp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120260244, 86400"
     },
     PPESP = {
         Name = "PPESP",
@@ -95,12 +97,14 @@ local SharedFeatures = {
         UpdateTimestamp = "081120261818, 86400"
     },
     CPN = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         Name = "CP & Waypoint",
         Desc = "Menampilkan Checkpoint atau Waypoint",
         Cmd = "cpn",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = "081120261818, 86400"
+        UpdateTimestamp = "091120260244, 86400"
     },
     PlayerTeleport = {
         Name = "Teleport to Player",
@@ -108,7 +112,7 @@ local SharedFeatures = {
         Cmd = "tp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/PlayerTeleport",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120260244, 86400"
     },
 
     -- 4. Sound & View Sub-Features
@@ -360,6 +364,9 @@ LoaderData.Main = {
         }
     },
     {
+        BadgeColor = "green",
+        BadgeText = "Update!",
+        UpdateTimestamp = "091120260244, 86400",
         Name = "Sound & View Manage",
         Desc = "Mengatur suara di map dan memutar Lagu",
         RawUrl = "",
