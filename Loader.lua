@@ -92,7 +92,7 @@ local SharedFeatures = {
         Cmd = "scp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "081120261818, 86400"
     },
     CPN = {
         Name = "CP & Waypoint",
@@ -100,7 +100,7 @@ local SharedFeatures = {
         Cmd = "cpn",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "081120261818, 86400"
     },
     PlayerTeleport = {
         Name = "Teleport to Player",
