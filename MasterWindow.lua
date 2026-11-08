@@ -434,10 +434,10 @@ return function(speaker)
         end)
     end)
 
-         -- 🕒 LABEL LAST UPDATE (DISET PAS & AMAN DARI POTONGAN)
+    -- 🕒 LABEL LAST UPDATE (POSISI PAS DI KANAN & JAM UTUH)
     local LastUpdateLabel = Instance.new("TextLabel")
-    LastUpdateLabel.Size = UDim2.new(0, 150, 0, 14) -- Lebar fix 150 pixel, dijamin muat sampai ujung
-    LastUpdateLabel.Position = UDim2.new(0, 132, 0, 15) -- Digeser sedikit ke kiri biar ruang kanannya lega
+    LastUpdateLabel.Size = UDim2.new(0, 160, 0, 14) -- Lebar luasin jadi 160 biar muat sampai ujung
+    LastUpdateLabel.Position = UDim2.new(0, 150, 0, 15) -- Geser ke kanan aman dari ID
     LastUpdateLabel.BackgroundTransparency = 1
     LastUpdateLabel.Font = Enum.Font.GothamBold
     LastUpdateLabel.Text = "Last Update: Memuat..."
@@ -450,40 +450,26 @@ return function(speaker)
         pcall(function()
             local response = game:HttpGet(SHEETS_WEB_APP_URL)
             if response and response ~= "" and response ~= "Belum ada update" then
-                local raw = tostring(response)
+                local raw = tostring(response):gsub("%s+", "")
                 
-                -- Ambil angka bersih dari string
-                local datePart, timePart = raw:match("(%d+)%s+(%d+)")
-                
-                if datePart and timePart then
-                    local dd = datePart:sub(1, 2)
-                    local mm = datePart:sub(3, 4)
-                    local yyyy = datePart:sub(5, 8)
+                -- Format data 12 digit: DDMMYYYYHHMM (Contoh: 081120261841)
+                if #raw >= 12 then
+                    local dd = raw:sub(1, 2)
+                    local mm = raw:sub(3, 4)
+                    local yyyy = raw:sub(5, 8)
+                    local hour = raw:sub(9, 10)
+                    local min = raw:sub(11, 12)
                     
-                    local formattedTime = timePart
-                    if #timePart >= 4 then
-                        formattedTime = timePart:sub(1, 2) .. ":" .. timePart:sub(3, 4)
-                    end
-                    
-                    LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. formattedTime
+                    LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
                 else
-                    local cleanStr = raw:gsub("%s+", "")
-                    if #cleanStr >= 12 then
-                        local dd = cleanStr:sub(1, 2)
-                        local mm = cleanStr:sub(3, 4)
-                        local yyyy = cleanStr:sub(5, 8)
-                        local hour = cleanStr:sub(9, 10)
-                        local min = cleanStr:sub(11, 12)
-                        LastUpdateLabel.Text = "Last Update: " .. dd .. "/" .. mm .. "/" .. yyyy .. " " .. hour .. ":" .. min
-                    else
-                        LastUpdateLabel.Text = "Last Update: " .. raw
-                    end
+                    LastUpdateLabel.Text = "Last Update: " .. tostring(response)
                 end
             else
                 LastUpdateLabel.Text = "Last Update: -"
             end
         end)
     end)
+
 
     local ContentArea = Instance.new("Frame")
     ContentArea.Size = UDim2.new(1, -12, 1, -108)
