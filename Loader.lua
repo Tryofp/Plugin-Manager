@@ -173,7 +173,9 @@ local SharedFeatures = {
         Cmd = "autosaveserver",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/LastRejoin",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "081120262105, 86400",
+        BadgeText = "Update!",
+        BadgeColor = "green"
     },
     SaveServer = {
         Name = "Save Server",
@@ -181,7 +183,9 @@ local SharedFeatures = {
         Cmd = "saveserver",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/LastRejoin",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "081120262105, 86400",
+        BadgeText = "Update!",
+        BadgeColor = "green"
     },
     LastRejoin = {
         Name = "Last Rejoin",
@@ -189,7 +193,7 @@ local SharedFeatures = {
         Cmd = "rejoinlast",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/LastRejoin",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "081120262105, 86400"
     },
     SmartRejoin = {
         Name = "Smart Rejoin",
