@@ -9,7 +9,7 @@ local Plugin = {
             ["Function"] = function(args, speaker)
                 if game.JobId ~= "" then
                     _G.SavedPlaceId = game.PlaceId
-                    _G.SavedJobId = game.JobId
+                    _G.SavedJobId = game.JobId 
 
 
                     notify("Save Server", "Berhasil menyimpan Server!\nPlaceId: " .. tostring(game.PlaceId))
