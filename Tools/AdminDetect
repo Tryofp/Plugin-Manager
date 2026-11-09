@@ -160,8 +160,12 @@ local function hasExplicitAdminRole(text)
         or string.match(lowerText, "%f[%a]mod%f[%A]") ~= nil
         or string.match(lowerText, "%f[%a]head%s+admin%f[%A]") ~= nil
         or string.match(lowerText, "%f[%a]super%s+admin%f[%A]") ~= nil
-        or string.match(lowerText, "%f[%a]developer%f[%A]") ~= nil
-        or string.match(lowerText, "%f[%a]dev%f[%A]") ~= nil
+        -- "Developer" / "Dev" tunggal sering dipakai game sebagai role umum,
+        -- bukan bukti hak admin. Terima hanya jabatan developer yang lebih spesifik.
+        or string.match(lowerText, "%f[%a]lead%s+developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]head%s+developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]senior%s+developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]game%s+developer%f[%A]") ~= nil
         or string.match(lowerText, "%f[%a]staff%f[%A]") ~= nil
 end
 
