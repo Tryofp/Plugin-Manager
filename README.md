@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-	The <em>cool</em> Hanya seorang yang membuat Plugin untuk Infinite Yield!
+<em></em> Hanya seorang yang membuat Plugin untuk Infinite Yield!
 </p>
 
 <p align="center">
@@ -28,5 +28,5 @@
 Skrip Plugin di sini selalu Up to date tanpa perlu mendownload ulang!
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/MasterWindow.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Main.lua"))()
 ```
