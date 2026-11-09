@@ -6,7 +6,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
 -- STORAGE GLOBAL & RESET MEMORI
-_G.AdminDetector_LockedAdmins = _G.AdminDetector_LockedAdmins or {}
+-- Reset hasil deteksi lama agar false positive dari eksekusi sebelumnya tidak terkunci.
+_G.AdminDetector_LockedAdmins = {}
 _G.AdminDetector_LastNotifyTime = _G.AdminDetector_LastNotifyTime or 0
 _G.AdminDetector_HadAdminsBefore = _G.AdminDetector_HadAdminsBefore or false
 _G.AdminDetector_NoAdminNotified = _G.AdminDetector_NoAdminNotified or false
@@ -148,14 +149,30 @@ end
 -- ==========================================
 -- 💬 CHAT PREFIX & TAG SCANNER
 -- ==========================================
+local function hasExplicitAdminRole(text)
+    local lowerText = string.lower(text or "")
+    if lowerText == "" or #lowerText > 64 then return false end
+
+    -- Harus ada kata jabatan yang utuh; emoji dekorasi saja bukan bukti admin.
+    return string.match(lowerText, "%f[%a]admin%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]administrator%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]moderator%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]mod%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]head%s+admin%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]super%s+admin%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]dev%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]staff%f[%A]") ~= nil
+end
+
 local function validatePrefixText(prefixStr)
     local lowerPrefix = string.lower(prefixStr or "")
     if string.find(lowerPrefix, "kekasih") or string.find(lowerPrefix, "abang") or string.find(lowerPrefix, "king") or string.find(lowerPrefix, "princess") or string.find(lowerPrefix, "pendaki") or string.find(lowerPrefix, "looking for more games") or string.find(lowerPrefix, "kohl's admin") or string.find(lowerPrefix, "vip") or string.find(lowerPrefix, "biduan") or string.find(lowerPrefix, "member") or string.find(lowerPrefix, "blonde") then
         return false, ""
     end
 
-    local isCrownOwner = string.find(prefixStr, "👑") and (string.find(lowerPrefix, "pemilik") or string.find(lowerPrefix, "owner") or string.find(lowerPrefix, "founder"))
-    if string.find(prefixStr, "🛡️") or string.find(prefixStr, "🔨") or isCrownOwner or string.match(lowerPrefix, "%f[%a]admin%f[%A]") or string.match(lowerPrefix, "%f[%a]dev%f[%A]") or string.match(lowerPrefix, "%f[%a]mod%f[%A]") or string.match(lowerPrefix, "%f[%a]staff%f[%A]") or lowerPrefix == "pemilik" then
+    local isCrownOwner = string.find(prefixStr or "", "👑", 1, true) and (string.find(lowerPrefix, "pemilik") or string.find(lowerPrefix, "owner") or string.find(lowerPrefix, "founder"))
+    if isCrownOwner or hasExplicitAdminRole(prefixStr) then
         return true, prefixStr ~= "" and prefixStr or "Chat Admin Tag"
     end
     return false, ""
@@ -343,16 +360,11 @@ function scanServerAdmins(isManual, isStateChange)
 
                                     if not isJustPlayerName then
                                         -- SYARAT KETAT: Kata owner/pemilik HANYA SAH jika dikelilingi simbol mahkota atau format tag khusus di kepala player
-                                        local hasCrownOwner = string.find(rawText, "👑") and (string.find(lowerText, "owner") or string.find(lowerText, "pemilik") or string.find(lowerText, "founder"))
-                                        local isFormalAdminTag = string.find(lowerText, "moderator") or string.find(lowerText, "headadmin") or string.find(lowerText, "head admin") or string.find(lowerText, "super admin") or string.find(lowerText, "co-owner") or string.find(lowerText, "photographer") or string.find(lowerText, "owner cantik")
+                                        local hasCrownOwner = string.find(rawText, "👑", 1, true) and (string.find(lowerText, "owner") or string.find(lowerText, "pemilik") or string.find(lowerText, "founder"))
+                                        local hasExplicitRole = hasExplicitAdminRole(rawText)
 
-                                        local hasSpecialTag = string.find(rawText, "🛡️") or string.find(rawText, "🔨") or hasCrownOwner or string.match(lowerText, "%[%s*admin%s*%]") or string.match(lowerText, "%[%s*dev%s*%]")
-                                        -- Tag Head Admin/Moderator sering lebih panjang dari 30 karakter
-                                        -- (mis. ada dekorasi/emoji). Beri batas khusus, bukan scan teks panjang bebas.
-                                        local validFormalRoleTag = isFormalAdminTag and #rawText <= 64
-                                        local validCompactRoleTag = hasSpecialTag and #rawText <= 30
-
-                                        if validFormalRoleTag or validCompactRoleTag then
+                                        -- Emoji perisai/palu hanya dekorasi; wajib disertai kata jabatan yang jelas.
+                                        if hasCrownOwner or hasExplicitRole then
                                             isTarget = true
                                             detectedRole = rawText
                                             break
