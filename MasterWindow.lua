@@ -1099,7 +1099,10 @@ return function(speaker)
                 toggle.Text = "..."
                 task.spawn(function()
                     local req = request or http_request or (syn and syn.request)
-                    local success = false
+                    local requestSent = false
+                    local expectedValue = (not enabled) and "ACTIVE" or ""
+                    local maintenanceKey = "FeatureMaintenance_" .. feature.id
+
                     if req then
                         local ok, response = pcall(function()
                             return req({
@@ -1114,22 +1117,28 @@ return function(speaker)
                                 })
                             })
                         end)
-                        if ok and response then
-                            local body = response.Body or response.body or ""
-                            local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(body) end)
-                            success = decodedOk and type(decoded) == "table" and decoded.status == "success"
+                        requestSent = ok and response ~= nil
+                    end
+
+                    -- Jangan menilai hasil dari JSON body POST saja.
+                    -- Beberapa executor mengembalikan respons redirect/format berbeda
+                    -- walaupun Apps Script sudah menjalankan perintahnya.
+                    -- Verifikasi status final langsung dari metadata server.
+                    local success = false
+                    if requestSent then
+                        for attempt = 1, 2 do
+                            local fetchOk = fetchRemoteMetadata()
+                            if fetchOk and tostring(remoteMetadata[maintenanceKey] or "") == expectedValue then
+                                success = true
+                                break
+                            end
+                            if attempt == 1 then task.wait(0.35) end
                         end
                     end
 
                     if success then
-                        local fetchOk = fetchRemoteMetadata()
-                        if fetchOk then
-                            if refreshBadgeUI then task.defer(refreshBadgeUI) end
-                            loadMaintenanceListForDev()
-                        else
-                            toggle.Text = "RETRY"
-                            toggle.Active = true
-                        end
+                        if refreshBadgeUI then task.defer(refreshBadgeUI) end
+                        loadMaintenanceListForDev()
                     else
                         toggle.Text = "ERROR"
                         toggle.Active = true
