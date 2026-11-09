@@ -315,7 +315,7 @@ jobs:
             local response
             response=$(curl --fail --silent --show-error --location \
               --retry 3 --retry-delay 2 \
-              -X POST -H 'Content-Type: application/json' \
+              -H 'Content-Type: application/json' \
               -d "$payload" "$SHEETS_WEB_APP_URL")
             echo "Google Sheets response: $response"
             echo "$response" | jq -e --arg key "$expected_key" \
@@ -349,7 +349,7 @@ jobs:
           payload=$(jq -n --arg ts "$CURRENT_TIME" '{Type:"LastUpdate", Timestamp:$ts}')
           response=$(curl --fail --silent --show-error --location \
             --retry 3 --retry-delay 2 \
-            -X POST -H 'Content-Type: application/json' \
+            -H 'Content-Type: application/json' \
             -d "$payload" "$SHEETS_WEB_APP_URL")
           echo "Google Sheets response: $response"
           echo "$response" | jq -e '.status == "success" and .key == "LastUpdate"' >/dev/null
