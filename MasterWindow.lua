@@ -1257,6 +1257,8 @@ return function(speaker)
     end
 
     local loadVersionHistoryFiles
+    local loadVersionHistoryForFile
+    local activeVersionHistoryFile = nil
     local selectedVersionCommit = nil
     local pendingVersionAction = nil
     local pendingVersionCommitSha = nil
@@ -1386,9 +1388,7 @@ return function(speaker)
         end
     end)
 
-    local activeVersionHistoryFile = nil
-
-    local function loadVersionHistoryForFile(fileInfo)
+    loadVersionHistoryForFile = function(fileInfo)
         activeVersionHistoryFile = fileInfo
         selectedVersionCommit = nil
         clearVersionHistoryRows()
