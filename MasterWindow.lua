@@ -670,9 +670,25 @@ return function(speaker)
     VersionHistoryInfo.ZIndex = 32
     VersionHistoryInfo.Parent = VersionHistoryView
 
+    local VersionHistoryAdminKeyBox = Instance.new("TextBox")
+    VersionHistoryAdminKeyBox.Size = UDim2.new(1, 0, 0, 26)
+    VersionHistoryAdminKeyBox.Position = UDim2.new(0, 0, 0, 64)
+    VersionHistoryAdminKeyBox.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
+    VersionHistoryAdminKeyBox.BorderSizePixel = 0
+    VersionHistoryAdminKeyBox.Font = Enum.Font.Gotham
+    VersionHistoryAdminKeyBox.PlaceholderText = "Masukkan kunci Dev Panel untuk restore"
+    VersionHistoryAdminKeyBox.Text = ""
+    VersionHistoryAdminKeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    VersionHistoryAdminKeyBox.PlaceholderColor3 = Color3.fromRGB(145, 160, 180)
+    VersionHistoryAdminKeyBox.TextSize = 9
+    VersionHistoryAdminKeyBox.ClearTextOnFocus = false
+    VersionHistoryAdminKeyBox.ZIndex = 33
+    VersionHistoryAdminKeyBox.Parent = VersionHistoryView
+    Instance.new("UICorner", VersionHistoryAdminKeyBox).CornerRadius = UDim.new(0, 4)
+
     local VersionHistoryScroll = Instance.new("ScrollingFrame")
-    VersionHistoryScroll.Size = UDim2.new(1, 0, 1, -66)
-    VersionHistoryScroll.Position = UDim2.new(0, 0, 0, 64)
+    VersionHistoryScroll.Size = UDim2.new(1, 0, 1, -96)
+    VersionHistoryScroll.Position = UDim2.new(0, 0, 0, 94)
     VersionHistoryScroll.BackgroundTransparency = 1
     VersionHistoryScroll.BorderSizePixel = 0
     VersionHistoryScroll.ScrollBarThickness = 4
@@ -1242,8 +1258,138 @@ return function(speaker)
 
     local loadVersionHistoryFiles
     local selectedVersionCommit = nil
+    local pendingVersionAction = nil
+    local pendingVersionCommitSha = nil
+
+    local VersionHistoryConfirm = Instance.new("Frame")
+    VersionHistoryConfirm.Size = UDim2.new(1, -24, 0, 116)
+    VersionHistoryConfirm.Position = UDim2.new(0, 12, 0.5, -58)
+    VersionHistoryConfirm.BackgroundColor3 = Color3.fromRGB(22, 30, 42)
+    VersionHistoryConfirm.BorderSizePixel = 0
+    VersionHistoryConfirm.Visible = false
+    VersionHistoryConfirm.ZIndex = 50
+    VersionHistoryConfirm.Parent = VersionHistoryView
+    Instance.new("UICorner", VersionHistoryConfirm).CornerRadius = UDim.new(0, 8)
+
+    local VersionHistoryConfirmText = Instance.new("TextLabel")
+    VersionHistoryConfirmText.Size = UDim2.new(1, -16, 0, 58)
+    VersionHistoryConfirmText.Position = UDim2.new(0, 8, 0, 6)
+    VersionHistoryConfirmText.BackgroundTransparency = 1
+    VersionHistoryConfirmText.Font = Enum.Font.GothamBold
+    VersionHistoryConfirmText.Text = "Konfirmasi tindakan Version Manager"
+    VersionHistoryConfirmText.TextColor3 = Color3.fromRGB(235, 240, 248)
+    VersionHistoryConfirmText.TextSize = 9
+    VersionHistoryConfirmText.TextWrapped = true
+    VersionHistoryConfirmText.ZIndex = 51
+    VersionHistoryConfirmText.Parent = VersionHistoryConfirm
+
+    local VersionHistoryConfirmYes = Instance.new("TextButton")
+    VersionHistoryConfirmYes.Size = UDim2.new(0.5, -12, 0, 30)
+    VersionHistoryConfirmYes.Position = UDim2.new(0, 8, 1, -38)
+    VersionHistoryConfirmYes.BackgroundColor3 = Color3.fromRGB(0, 125, 85)
+    VersionHistoryConfirmYes.BorderSizePixel = 0
+    VersionHistoryConfirmYes.Font = Enum.Font.GothamBold
+    VersionHistoryConfirmYes.Text = "YA, LANJUTKAN"
+    VersionHistoryConfirmYes.TextColor3 = Color3.fromRGB(255, 255, 255)
+    VersionHistoryConfirmYes.TextSize = 8
+    VersionHistoryConfirmYes.ZIndex = 51
+    VersionHistoryConfirmYes.Parent = VersionHistoryConfirm
+    Instance.new("UICorner", VersionHistoryConfirmYes).CornerRadius = UDim.new(0, 4)
+
+    local VersionHistoryConfirmNo = Instance.new("TextButton")
+    VersionHistoryConfirmNo.Size = UDim2.new(0.5, -12, 0, 30)
+    VersionHistoryConfirmNo.Position = UDim2.new(0.5, 4, 1, -38)
+    VersionHistoryConfirmNo.BackgroundColor3 = Color3.fromRGB(75, 85, 100)
+    VersionHistoryConfirmNo.BorderSizePixel = 0
+    VersionHistoryConfirmNo.Font = Enum.Font.GothamBold
+    VersionHistoryConfirmNo.Text = "BATAL"
+    VersionHistoryConfirmNo.TextColor3 = Color3.fromRGB(255, 255, 255)
+    VersionHistoryConfirmNo.TextSize = 8
+    VersionHistoryConfirmNo.ZIndex = 51
+    VersionHistoryConfirmNo.Parent = VersionHistoryConfirm
+    Instance.new("UICorner", VersionHistoryConfirmNo).CornerRadius = UDim.new(0, 4)
+
+    local function runVersionManagerAction(action, commitSha, fileInfo)
+        task.spawn(function()
+            local req = request or http_request or (syn and syn.request)
+            if not req then
+                VersionHistoryInfo.Text = "Executor tidak menyediakan HTTP request."
+                return
+            end
+
+            VersionHistoryInfo.Text = "Memproses " .. action .. "..."
+            local requestOk, response = pcall(function()
+                return req({
+                    Url = SHEETS_WEB_APP_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = HttpService:JSONEncode({
+                        Type = "VersionManager",
+                        Action = action,
+                        Path = fileInfo and fileInfo.path or "",
+                        CommitSha = commitSha or "",
+                        AdminKey = VersionHistoryAdminKeyBox.Text
+                    })
+                })
+            end)
+            if not requestOk or not response then
+                VersionHistoryInfo.Text = "Gagal menghubungi server Version Manager."
+                return
+            end
+
+            local body = response.Body or response.body or ""
+            local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
+            if not decodeOk or type(result) ~= "table" then
+                VersionHistoryInfo.Text = "Respons server tidak valid. Periksa deployment Apps Script."
+                return
+            end
+            if result.status ~= "success" then
+                VersionHistoryInfo.Text = "Gagal: " .. tostring(result.message or "Permintaan ditolak")
+                return
+            end
+
+            if action == "SetStable" then
+                VersionHistoryInfo.Text = "STABLE BACKUP tersimpan • " .. tostring(result.stableCommit or ""):sub(1, 7)
+            else
+                VersionHistoryInfo.Text = "Restore berhasil • commit baru " .. tostring(result.newCommit or ""):sub(1, 7)
+                task.wait(0.5)
+                loadVersionHistoryForFile(fileInfo)
+            end
+        end)
+    end
+
+    local function askVersionManagerConfirmation(action, commitSha, fileInfo)
+        pendingVersionAction = action
+        pendingVersionCommitSha = commitSha
+        local target = action == "SetStable" and "Simpan posisi main saat ini sebagai Stable Backup?"
+            or (action == "RestoreStable" and "Kembalikan " .. fileInfo.name .. " ke Stable Backup?"
+            or "Kembalikan " .. fileInfo.name .. " ke commit " .. tostring(commitSha):sub(1, 7) .. "?")
+        VersionHistoryConfirmText.Text = target .. "\\n\\nVersi aktif sebelum restore tetap tercatat di GitHub. Stable Backup tidak akan ditimpa."
+        VersionHistoryConfirm.Visible = true
+    end
+
+    VersionHistoryConfirmNo.MouseButton1Click:Connect(function()
+        VersionHistoryConfirm.Visible = false
+        pendingVersionAction = nil
+        pendingVersionCommitSha = nil
+    end)
+
+    VersionHistoryConfirmYes.MouseButton1Click:Connect(function()
+        local action = pendingVersionAction
+        local commitSha = pendingVersionCommitSha
+        pendingVersionAction = nil
+        pendingVersionCommitSha = nil
+        VersionHistoryConfirm.Visible = false
+        if action then
+            -- The active file is assigned by the detail view before the prompt opens.
+            runVersionManagerAction(action, commitSha, activeVersionHistoryFile)
+        end
+    end)
+
+    local activeVersionHistoryFile = nil
 
     local function loadVersionHistoryForFile(fileInfo)
+        activeVersionHistoryFile = fileInfo
         selectedVersionCommit = nil
         clearVersionHistoryRows()
         VersionHistoryInfo.Text = "Memuat " .. fileInfo.name .. "..."
@@ -1279,6 +1425,65 @@ return function(speaker)
             Instance.new("UICorner", fileBack).CornerRadius = UDim.new(0, 4)
             fileBack.MouseButton1Click:Connect(function()
                 loadVersionHistoryFiles()
+            end)
+
+            local function createVersionActionButton(text, color, callback)
+                local button = Instance.new("TextButton")
+                button.Size = UDim2.new(1, -4, 0, 26)
+                button.BackgroundColor3 = color
+                button.BorderSizePixel = 0
+                button.Font = Enum.Font.GothamBold
+                button.Text = text
+                button.TextColor3 = Color3.fromRGB(255, 255, 255)
+                button.TextSize = 8
+                button.ZIndex = 33
+                button.Parent = VersionHistoryScroll
+                Instance.new("UICorner", button).CornerRadius = UDim.new(0, 4)
+                button.MouseButton1Click:Connect(callback)
+                return button
+            end
+
+            createVersionActionButton("★ SIMPAN / PERBARUI STABLE BACKUP", Color3.fromRGB(35, 105, 75), function()
+                askVersionManagerConfirmation("SetStable", nil, fileInfo)
+            end)
+            createVersionActionButton("↩ RESTORE STABLE BACKUP", Color3.fromRGB(65, 90, 125), function()
+                askVersionManagerConfirmation("RestoreStable", nil, fileInfo)
+            end)
+            local restoreSelectedButton = createVersionActionButton("RESTORE COMMIT TERPILIH", Color3.fromRGB(125, 80, 35), function()
+                if not selectedVersionCommit then
+                    VersionHistoryInfo.Text = "Pilih salah satu commit terlebih dahulu."
+                    return
+                end
+                askVersionManagerConfirmation("RestoreSelected", selectedVersionCommit.sha, fileInfo)
+            end)
+
+            task.spawn(function()
+                local req = request or http_request or (syn and syn.request)
+                if req then
+                    local ok, response = pcall(function()
+                        return req({
+                            Url = SHEETS_WEB_APP_URL,
+                            Method = "POST",
+                            Headers = { ["Content-Type"] = "application/json" },
+                            Body = HttpService:JSONEncode({
+                                Type = "VersionManager",
+                                Action = "GetState",
+                                AdminKey = VersionHistoryAdminKeyBox.Text
+                            })
+                        })
+                    end)
+                    if ok and response then
+                        local decodeOk, state = pcall(function() return HttpService:JSONDecode(response.Body or response.body or "") end)
+                        if decodeOk and type(state) == "table" and state.status == "success" then
+                            local stable = tostring(state.stableCommit or "")
+                            if stable ~= "" then
+                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup " .. stable:sub(1, 7)
+                            else
+                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup belum disimpan"
+                            end
+                        end
+                    end
+                end
             end)
 
             if #decoded == 0 then
@@ -1358,7 +1563,8 @@ return function(speaker)
                         end
                     end
                     row.BackgroundColor3 = Color3.fromRGB(35, 85, 125)
-                    VersionHistoryInfo.Text = "Terpilih: " .. fileInfo.name .. " • " .. sha:sub(1, 7) .. " (belum ada restore)"
+                    restoreSelectedButton.Text = "RESTORE COMMIT " .. sha:sub(1, 7)
+                    VersionHistoryInfo.Text = "Terpilih: " .. fileInfo.name .. " • " .. sha:sub(1, 7)
                 end)
             end
 
@@ -1370,6 +1576,9 @@ return function(speaker)
     end
 
     loadVersionHistoryFiles = function()
+        VersionHistoryConfirm.Visible = false
+        activeVersionHistoryFile = nil
+        selectedVersionCommit = nil
         clearVersionHistoryRows()
         if not globalLoaderData then
             VersionHistoryInfo.Text = "Loader belum siap."
