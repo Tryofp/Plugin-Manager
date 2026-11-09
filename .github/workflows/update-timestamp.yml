@@ -1,170 +1,183 @@
-name: Auto Update Hub Metadata & Timestamps (Precise Block Parser)
+name: Auto Update Hub Metadata & Timestamps
 
 on:
   push:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   update-metadata-and-sheets:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository with History
-        uses: actions/checkout@v3
+      - name: Checkout repository with history
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      # 1. STEP PARSER PRESISI: UPDATE SEMUA BLOK FITUR BERDASARKAN RAWURL
-      - name: Process Precise RawUrl Block Parsing & Badges
+      # Update only Loader feature blocks whose matching plugin/tool file changed.
+      - name: Update matching feature blocks
+        id: feature_update
+        shell: bash
         run: |
-          node -e '
-            const fs = require("fs");
-            const { execSync } = require("child_process");
+          node <<'NODE'
+          const fs = require('fs');
+          const { execFileSync } = require('child_process');
+          const loaderPath = 'Loader.lua';
+          const sheetKeysPath = '/tmp/updated-badge-keys.txt';
+          let changedFiles = [];
+          try {
+            changedFiles = execFileSync('git', ['diff', '--name-only', 'HEAD^', 'HEAD'], { encoding: 'utf8' })
+              .split('\n').map(s => s.trim()).filter(Boolean);
+          } catch (_) {
+            changedFiles = execFileSync('git', ['show', '--pretty=', '--name-only', 'HEAD'], { encoding: 'utf8' })
+              .split('\n').map(s => s.trim()).filter(Boolean);
+          }
 
-            let changedFiles = [];
-            try {
-              changedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD")
-                .toString()
-                .trim()
-                .split("\n");
-            } catch (e) {
-              process.exit(0);
-            }
+          let previousLoader = '';
+          try { previousLoader = execFileSync('git', ['show', 'HEAD^:Loader.lua'], { encoding: 'utf8' }); } catch (_) {}
+          const previousFeatureKeys = new Set();
+          for (const oldBlock of (previousLoader.match(/\{[^{}]*\}/gs) || [])) {
+            const oldRaw = (oldBlock.match(/RawUrl\s*=\s*"([^"]*)"/) || [])[1];
+            const oldCmd = (oldBlock.match(/Cmd\s*=\s*"([^"]*)"/) || [])[1];
+            if (oldRaw && oldCmd) previousFeatureKeys.add(`${oldRaw}_${oldCmd}`);
+          }
+          const candidates = changedFiles.filter(file =>
+            file !== loaderPath && !file.startsWith('.github/') &&
+            (file.endsWith('.lua') || !file.split('/').pop().includes('.'))
+          );
+          if (!candidates.length) {
+            fs.writeFileSync(sheetKeysPath, '');
+            console.log('No plugin/tool source files changed.');
+            process.exit(0);
+          }
 
-            if (!changedFiles.length || (changedFiles.length === 1 && changedFiles[0] === "")) {
-              console.log("Tidak ada perubahan file.");
-              process.exit(0);
-            }
+          const now = new Date();
+          const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Jakarta', day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+          }).formatToParts(now).reduce((o, p) => (o[p.type] = p.value, o), {});
+          const stamp = `${parts.day}${parts.month}${parts.year}${parts.hour}${parts.minute}, 86400`;
+          let source = fs.readFileSync(loaderPath, 'utf8');
+          let changed = false;
+          const updatedKeys = new Set();
 
-            const now = new Date();
-            now.setHours(now.getHours() + 7);
-            const pad = (n) => String(n).padStart(2, "0");
-            const dd = pad(now.getDate());
-            const mm = pad(now.getMonth() + 1);
-            const yyyy = now.getFullYear();
-            const hh = pad(now.getHours());
-            const min = pad(now.getMinutes());
-            const featureTimeStr = `${dd}${mm}${yyyy}${hh}${min}, 86400`;
-
-            let loaderContent = fs.readFileSync("Loader.lua", "utf8");
-            let modified = false;
-
-            changedFiles.forEach((file) => {
-              if (file === "Loader.lua" || file.includes("update.yml")) return;
-
-              if (file.endsWith(".lua") || !file.includes(".")) {
-                const rawName = file.split("/").pop();
-                const cleanName = rawName.replace(".lua", "");
-
-                console.log(`\n🔍 Memproses file: ${cleanName}`);
-
-                let isNewFeature = false;
-                try {
-                  const diffLine = execSync(`git log -p -1 -U1 -- "${file}"`).toString();
-                  if (diffLine.includes("+") && (diffLine.includes("RawUrl") || execSync(`git status --short "${file}"`).toString().includes("A"))) {
-                    isNewFeature = true;
-                  }
-                } catch(e) {}
-
-                const badgeText = isNewFeature ? "New!" : "Update!";
-                const badgeColor = isNewFeature ? "yellow" : "green";
-                console.log(`-> Badge: ${badgeText}, Warna: ${badgeColor}`);
-
-                // 🎯 METODE PARSER PRESISI: Cari semua titik yang memiliki RawUrl berakhiran /${cleanName}
-                let pos = 0;
-                while (true) {
-                  const regexUrl = new RegExp(`RawUrl\\s*=\\s*"[^"]*\\/${cleanName}"`, "g");
-                  regexUrl.lastIndex = pos;
-                  const match = regexUrl.exec(loaderContent);
-                  if (!match) break;
-
-                  const urlIndex = match.index;
-                  pos = urlIndex + match[0].length;
-
-                  // Lacak kurung kurawal buka { mundur ke belakang dari posisi RawUrl
-                  let braceCount = 0;
-                  let blockStart = -1;
-                  for (let i = urlIndex; i >= 0; i--) {
-                    if (loaderContent[i] === "}") braceCount++;
-                    if (loaderContent[i] === "{") {
-                      if (braceCount > 0) {
-                        braceCount--;
-                      } else {
-                        blockStart = i;
-                        break;
-                      }
-                    }
-                  }
-
-                  // Lacak kurung kurawal tutup } maju ke depan dari posisi RawUrl
-                  braceCount = 0;
-                  let blockEnd = -1;
-                  for (let i = urlIndex; i < loaderContent.length; i++) {
-                    if (loaderContent[i] === "{") braceCount++;
-                    if (loaderContent[i] === "}") {
-                      if (braceCount > 0) {
-                        braceCount--;
-                      } else {
-                        blockEnd = i;
-                        break;
-                      }
-                    }
-                  }
-
-                  if (blockStart !== -1 && blockEnd !== -1) {
-                    let block = loaderContent.substring(blockStart, blockEnd + 1);
-                    let newBlock = block;
-
-                    // Fungsi pembantu untuk update atau insert properti di dalam blok
-                    function upsertProp(content, propName, propVal) {
-                      const propRegex = new RegExp(`${propName}\\s*=\\s*"[^"]*"`);
-                      if (propRegex.test(content)) {
-                        return content.replace(propRegex, `${propName} = "${propVal}"`);
-                      } else {
-                        // Jika belum ada, masukkan di bawah kurung kurawal buka {
-                        return content.replace(/(\{)/, `$1\n            ${propName} = "${propVal}",`);
-                      }
-                    }
-
-                    newBlock = upsertProp(newBlock, "UpdateTimestamp", featureTimeStr);
-                    newBlock = upsertProp(newBlock, "BadgeText", badgeText);
-                    newBlock = upsertProp(newBlock, "BadgeColor", badgeColor);
-
-                    if (newBlock !== block) {
-                      loaderContent = loaderContent.substring(0, blockStart) + newBlock + loaderContent.substring(blockEnd + 1);
-                      modified = true;
-                      pos = blockStart + newBlock.length;
-                      console.log(`   ✔️ Berhasil update lengkap (Timestamp & Badge) untuk blok ${cleanName}`);
-                    }
-                  }
+          function findBlockBounds(text, at) {
+            let depth = 0, start = -1, end = -1, inString = false, escaped = false;
+            for (let i = at; i >= 0; i--) {
+              const c = text[i];
+              if (c === '"' && !escaped) inString = !inString;
+              if (!inString) {
+                if (c === '}') depth++;
+                else if (c === '{') {
+                  if (depth === 0) { start = i; break; }
+                  depth--;
                 }
               }
-            });
-
-            if (modified) {
-              fs.writeFileSync("Loader.lua", loaderContent);
-              console.log("\n💾 Loader.lua berhasil disimpan ulang!");
+              escaped = c === '\\' && !escaped;
+              if (c !== '\\') escaped = false;
             }
-          '
+            if (start < 0) return null;
+            depth = 0; inString = false; escaped = false;
+            for (let i = start; i < text.length; i++) {
+              const c = text[i];
+              if (c === '"' && !escaped) inString = !inString;
+              if (!inString) {
+                if (c === '{') depth++;
+                else if (c === '}' && --depth === 0) { end = i; break; }
+              }
+              escaped = c === '\\' && !escaped;
+              if (c !== '\\') escaped = false;
+            }
+            return end >= 0 ? { start, end } : null;
+          }
 
-      # 2. STEP COMMIT & PUSH OTOMATIS KE GITHUB
-      - name: Commit & Push Loader Changes
+          function upsertString(block, prop, value) {
+            const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            const re = new RegExp(`(^|\\n)(\\s*)${prop}\\s*=\\s*"[^"]*"`, 'm');
+            if (re.test(block)) return block.replace(re, (_m, nl, indent) => `${nl}${indent}${prop} = "${escaped}"`);
+            return block.replace('{', ` {\n        ${prop} = "${escaped}",`.replace(/^ \{/, '{'));
+          }
+
+          for (const file of candidates) {
+            const base = file.split('/').pop().replace(/\.lua$/i, '');
+            console.log(`Checking changed source: ${file} (Loader RawUrl suffix: ${base})`);
+            let searchFrom = 0;
+            while (true) {
+              const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const urlRe = new RegExp(`RawUrl\\s*=\\s*"[^"]*\\/${escapedBase}"`, 'g');
+              urlRe.lastIndex = searchFrom;
+              const match = urlRe.exec(source);
+              if (!match) break;
+              const bounds = findBlockBounds(source, match.index);
+              if (!bounds) { searchFrom = match.index + match[0].length; continue; }
+              let block = source.slice(bounds.start, bounds.end + 1);
+              const raw = (block.match(/RawUrl\s*=\s*"([^"]*)"/) || [])[1];
+              const cmd = (block.match(/Cmd\s*=\s*"([^"]*)"/) || [])[1];
+              if (raw && cmd) {
+                const key = `${raw}_${cmd}`;
+                const isNew = !previousFeatureKeys.has(key);
+                const badgeText = isNew ? 'New!' : 'Update!';
+                const badgeColor = isNew ? 'yellow' : 'green';
+                let updated = upsertString(block, 'UpdateTimestamp', stamp);
+                updated = upsertString(updated, 'BadgeText', badgeText);
+                updated = upsertString(updated, 'BadgeColor', badgeColor);
+                if (updated !== block) {
+                  source = source.slice(0, bounds.start) + updated + source.slice(bounds.end + 1);
+                  changed = true;
+                  updatedKeys.add(key);
+                  searchFrom = bounds.start + updated.length;
+                  console.log(`Updated ${key}: ${badgeText}`);
+                } else {
+                  searchFrom = bounds.end + 1;
+                }
+              } else {
+                searchFrom = bounds.end + 1;
+              }
+            }
+          }
+
+          if (changed) fs.writeFileSync(loaderPath, source);
+          fs.writeFileSync(sheetKeysPath, [...updatedKeys].join('\n'));
+          console.log(`Updated ${updatedKeys.size} feature key(s).`);
+          NODE
+
+      - name: Commit Loader changes
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Loader.lua
-          git diff --quiet && git diff --staged --quiet || (git commit -m "bot: precise block parser update timestamps & badges" && git push)
+          if ! git diff --cached --quiet; then
+            git commit -m "bot: update feature badge timestamps"
+            git push
+          fi
 
-      # 3. STEP KIRIM LAST UPDATE KE GOOGLE SHEETS
-      - name: Send Timestamp to Google Sheets
+      # Reactivate only the exact feature keys whose source files changed.
+      - name: Reactivate updated feature badges
+        env:
+          SHEETS_WEB_APP_URL: https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec
         run: |
-          CURRENT_TIME=$(TZ='Asia/Jakarta' date +'%d%m%Y %H:%M')
-          curl -X POST -H "Content-Type: application/json" \
-          -d "{\"Type\":\"LastUpdate\",\"Timestamp\":\"$CURRENT_TIME\"}" \
-          "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
+          if [ -s /tmp/updated-badge-keys.txt ]; then
+            while IFS= read -r key; do
+              [ -z "$key" ] && continue
+              UPDATED_AT=$(date +%s%3N)
+              payload=$(jq -n --arg key "$key" --arg ts "$UPDATED_AT" '{Type:"FeatureUpdate", Key:$key, Timestamp:$ts}')
+              curl -fsSL -X POST -H 'Content-Type: application/json' -d "$payload" "$SHEETS_WEB_APP_URL"
+              echo
+            done < /tmp/updated-badge-keys.txt
+
+            CURRENT_TIME=$(TZ='Asia/Jakarta' date +'%d%m%Y %H:%M')
+            payload=$(jq -n --arg ts "$CURRENT_TIME" '{Type:"LastUpdate", Timestamp:$ts}')
+            curl -fsSL -X POST -H 'Content-Type: application/json' -d "$payload" "$SHEETS_WEB_APP_URL"
+            echo
+          else
+            echo 'No matching feature block changed; LastUpdate left untouched.'
+          fi
           
