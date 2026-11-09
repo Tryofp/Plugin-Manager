@@ -180,8 +180,32 @@ local function getValidCheckpointPart(obj)
     return nil
 end
 
+local function getPlainCheckpointPart(obj)
+    if not obj or string.lower(obj.Name) ~= "checkpoint" then return nil end
+
+    local parent = obj.Parent
+    if not parent or string.lower(parent.Name) ~= "checkpoint" then return nil end
+
+    if obj:IsA("BasePart") then
+        return obj
+    end
+
+    if obj:IsA("Model") then
+        return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    return nil
+end
+
 local function parseCPIdentity(obj)
     local validPart = getValidCheckpointPart(obj)
+    local isPlainCheckpoint = false
+
+    if not validPart then
+        validPart = getPlainCheckpointPart(obj)
+        isPlainCheckpoint = validPart ~= nil
+    end
+
     if not validPart then return nil, nil, nil, 0 end
 
     local name = obj.Name
@@ -230,6 +254,14 @@ local function parseCPIdentity(obj)
                 return "SUMMIT", summitDesc, validPart, 10
             end
         end
+    end
+
+    -- ==================================================
+    -- 1B. CHECKPOINT POLOS: Workspace.Checkpoint.checkpoint
+    -- Hanya menerima nama dan parent yang persis agar tidak menangkap dekorasi.
+    -- ==================================================
+    if isPlainCheckpoint then
+        return "CP+", parentName .. " - " .. name, validPart, 3, true
     end
 
     -- ==================================================
@@ -362,7 +394,7 @@ local function processAndHookPart(obj)
     if not obj or not (obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("UnionOperation") or obj:IsA("Model")) then return end
     if hookedParts[obj] then return end
 
-    local cpKey, partDesc, realPart, pScore = parseCPIdentity(obj)
+    local cpKey, partDesc, realPart, pScore, isPlainCheckpoint = parseCPIdentity(obj)
     
     if cpKey and realPart and not hookedParts[realPart] then
         hookedParts[realPart] = true
@@ -405,7 +437,7 @@ local function processAndHookPart(obj)
         end
 
         local touch = realPart:FindFirstChild("TouchInterest") or realPart:FindFirstChildOfClass("TouchTransmitter")
-        if touch then
+        if touch or isPlainCheckpoint then
             local lastTouch = 0
             realPart.Touched:Connect(function(hit)
                 local now = tick()
