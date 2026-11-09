@@ -100,6 +100,23 @@ local function stopSpectate()
     print("[Spectate] Keluar dari mode spectate.")
 end
 
+local function requestTargetStreaming(targetPlayer, rootPart)
+    if not targetPlayer or not rootPart or state.streamRequestBusy then return end
+
+    local position = rootPart.Position
+    state.streamRequestBusy = true
+    state.lastStreamRequestPosition = position
+
+    task.spawn(function()
+        -- Minta client memuat area di sekitar target, bukan hanya mengganti CameraSubject.
+        -- Ini membantu ketika target berada jauh di luar area StreamingEnabled lokal.
+        pcall(function()
+            LocalPlayer:RequestStreamAroundAsync(position, 5)
+        end)
+        state.streamRequestBusy = false
+    end)
+end
+
 local function startSpectate(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then
         print("[Spectate] Target tidak valid!")
@@ -108,6 +125,13 @@ local function startSpectate(targetPlayer)
 
     state.spectateTarget = targetPlayer
     state.isSpectating = true
+    state.streamRequestBusy = false
+    state.lastStreamRequestPosition = nil
+
+    local initialRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if initialRoot then
+        requestTargetStreaming(targetPlayer, initialRoot)
+    end
 
     if nameLabelRef and nameLabelRef.Parent then
         nameLabelRef.Text = targetPlayer.DisplayName .. " (@" .. targetPlayer.Name .. ")"
@@ -123,7 +147,19 @@ local function startSpectate(targetPlayer)
             return
         end
         local char = state.spectateTarget.Character
-        local hum = char:FindFirstChild("Humanoid")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+
+        if root then
+            local lastPos = state.lastStreamRequestPosition
+            -- Minta area baru hanya jika target berpindah cukup jauh.
+            -- Tidak membuat request setiap frame sehingga tetap ringan.
+            if not lastPos or (root.Position - lastPos).Magnitude >= 128 then
+                requestTargetStreaming(state.spectateTarget, root)
+            end
+            Camera.Focus = root.CFrame
+        end
+
         if hum and Camera.CameraSubject ~= hum then
             Camera.CameraSubject = hum
         end
