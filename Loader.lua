@@ -105,7 +105,7 @@ local SharedFeatures = {
         Cmd = "scp",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = "091120261329, 86400",
+        UpdateTimestamp = "091120261340, 86400",
         BadgeColor = "green",
         BadgeText = "Update!"
     },
@@ -118,7 +118,7 @@ local SharedFeatures = {
         Cmd = "cpn",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
-        UpdateTimestamp = "091120261329, 86400"
+        UpdateTimestamp = "091120261340, 86400"
     },
     PlayerTeleport = {
         FeatureId = "fid_playerteleport",
