@@ -171,8 +171,9 @@ local function validatePrefixText(prefixStr)
         return false, ""
     end
 
-    local isCrownOwner = string.find(prefixStr or "", "👑", 1, true) and (string.find(lowerPrefix, "pemilik") or string.find(lowerPrefix, "owner") or string.find(lowerPrefix, "founder"))
-    if isCrownOwner or hasExplicitAdminRole(prefixStr) then
+    -- Label OWNER bermahkota tidak dipakai sebagai bukti: beberapa game memasangnya
+    -- pada semua pemain. Owner asli diverifikasi lewat CreatorId / group rank di scanner.
+    if hasExplicitAdminRole(prefixStr) then
         return true, prefixStr ~= "" and prefixStr or "Chat Admin Tag"
     end
     return false, ""
@@ -360,11 +361,11 @@ function scanServerAdmins(isManual, isStateChange)
 
                                     if not isJustPlayerName then
                                         -- SYARAT KETAT: Kata owner/pemilik HANYA SAH jika dikelilingi simbol mahkota atau format tag khusus di kepala player
-                                        local hasCrownOwner = string.find(rawText, "👑", 1, true) and (string.find(lowerText, "owner") or string.find(lowerText, "pemilik") or string.find(lowerText, "founder"))
                                         local hasExplicitRole = hasExplicitAdminRole(rawText)
 
-                                        -- Emoji perisai/palu hanya dekorasi; wajib disertai kata jabatan yang jelas.
-                                        if hasCrownOwner or hasExplicitRole then
+                                        -- OWNER/crown overhead tidak dipercaya; bisa menjadi tag umum semua pemain.
+                                        -- Owner asli tetap terdeteksi melalui CreatorId atau group rank 255.
+                                        if hasExplicitRole then
                                             isTarget = true
                                             detectedRole = rawText
                                             break
