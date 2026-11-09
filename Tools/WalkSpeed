@@ -16,27 +16,35 @@ local plugin = {
                 _G.TargetWalkSpeed = speedValue
                 _G.ActiveAggressiveWS = true
 
-                local RunService = game:GetService("RunService")
                 local Players = game:GetService("Players")
                 local localPlayer = Players.LocalPlayer
 
+                -- Ganti koneksi/frame-loop lama dengan satu worker ringan.
+                -- Beberapa game menimpa WalkSpeed setelah frame berjalan;
+                -- loop task.wait() mengatur ulang nilainya secara berkala seperti loopws.
                 if _G.AggressiveWSConnection then
-                    _G.AggressiveWSConnection:Disconnect()
+                    pcall(function() _G.AggressiveWSConnection:Disconnect() end)
                     _G.AggressiveWSConnection = nil
                 end
 
-                _G.AggressiveWSConnection = RunService.RenderStepped:Connect(function()
-                    if not _G.ActiveAggressiveWS then return end
+                _G.AggressiveWSToken = (_G.AggressiveWSToken or 0) + 1
+                local myToken = _G.AggressiveWSToken
 
-                    local char = localPlayer.Character
-                    if char then
-                        local hum = char:FindFirstChildOfClass("Humanoid")
-                        if hum and hum.WalkSpeed ~= _G.TargetWalkSpeed then
-                            hum.WalkSpeed = _G.TargetWalkSpeed
+                task.spawn(function()
+                    while _G.ActiveAggressiveWS and _G.AggressiveWSToken == myToken do
+                        local char = localPlayer.Character
+                        if char then
+                            local hum = char:FindFirstChildOfClass("Humanoid")
+                            if hum and hum.Parent and hum.WalkSpeed ~= _G.TargetWalkSpeed then
+                                pcall(function()
+                                    hum.WalkSpeed = _G.TargetWalkSpeed
+                                end)
+                            end
                         end
+                        task.wait()
                     end
                 end)
-                print("[WalkSpeed] Mode agresif diaktifkan dengan speed:", speedValue)
+                print("[WalkSpeed] Loop aktif dengan speed:", speedValue)
             end
         },
         ["unws"] = {
@@ -45,8 +53,9 @@ local plugin = {
             ["Aliases"] = {"unwalkspeed", "resetws"},
             ["Function"] = function(args, speaker)
                 _G.ActiveAggressiveWS = false
+                _G.AggressiveWSToken = (_G.AggressiveWSToken or 0) + 1
                 if _G.AggressiveWSConnection then
-                    _G.AggressiveWSConnection:Disconnect()
+                    pcall(function() _G.AggressiveWSConnection:Disconnect() end)
                     _G.AggressiveWSConnection = nil
                 end
                 
