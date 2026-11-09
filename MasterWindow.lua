@@ -1233,7 +1233,11 @@ return function(speaker)
         label.Parent = VersionHistoryScroll
     end
 
+    local loadVersionHistoryFiles
+    local selectedVersionCommit = nil
+
     local function loadVersionHistoryForFile(fileInfo)
+        selectedVersionCommit = nil
         clearVersionHistoryRows()
         VersionHistoryInfo.Text = "Memuat " .. fileInfo.name .. "..."
         task.spawn(function()
@@ -1282,11 +1286,13 @@ return function(speaker)
                 local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
                 if #message > 90 then message = message:sub(1, 87) .. "..." end
 
-                local row = Instance.new("Frame")
+                local row = Instance.new("TextButton")
                 row.Size = UDim2.new(1, -4, 0, 48)
                 row.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
                 row.BackgroundTransparency = 0.15
                 row.BorderSizePixel = 0
+                row.Text = ""
+                row.AutoButtonColor = false
                 row.ZIndex = 33
                 row.Parent = VersionHistoryScroll
                 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
@@ -1315,6 +1321,23 @@ return function(speaker)
                 details.TextXAlignment = Enum.TextXAlignment.Left
                 details.ZIndex = 34
                 details.Parent = row
+
+                row.MouseButton1Click:Connect(function()
+                    selectedVersionCommit = {
+                        sha = sha,
+                        message = commitData.message or "Tanpa pesan",
+                        path = fileInfo.path,
+                        name = fileInfo.name,
+                        date = authorData.date or ""
+                    }
+                    for _, commitRow in ipairs(VersionHistoryScroll:GetChildren()) do
+                        if commitRow:IsA("TextButton") and commitRow ~= fileBack then
+                            commitRow.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
+                        end
+                    end
+                    row.BackgroundColor3 = Color3.fromRGB(35, 85, 125)
+                    VersionHistoryInfo.Text = "Terpilih: " .. fileInfo.name .. " • " .. sha:sub(1, 7) .. " (belum ada restore)"
+                end)
             end
 
             task.defer(function()
@@ -1327,7 +1350,7 @@ return function(speaker)
         end)
     end
 
-    local function loadVersionHistoryFiles()
+    loadVersionHistoryFiles = function()
         clearVersionHistoryRows()
         if not globalLoaderData then
             VersionHistoryInfo.Text = "Loader belum siap."
