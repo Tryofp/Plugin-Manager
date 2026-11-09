@@ -233,7 +233,7 @@ local function parseCPIdentity(obj)
     end
 
     -- ==================================================
-    -- 2. PARSING NOMOR CHECKPOINT (Mendukung Checkpoint1, CP_1, CP 1)
+    -- 2. PARSING NOMOR CHECKPOINT
     -- ==================================================
     local guiText = ""
     local hasGui = validPart:FindFirstChildOfClass("BillboardGui") or validPart:FindFirstChildOfClass("SurfaceGui")
@@ -270,9 +270,13 @@ local function parseCPIdentity(obj)
         num = string.match(name, "^(%d+%.?%d*)$")
     end
 
+    -- Penanganan khusus untuk part polos bernama "checkpoint" atau "cp" tanpa angka
     if not num then
+        if lowerName == "checkpoint" or lowerName == "cp" then
+            return "CP", (folderContext ~= "" and folderContext .. " - Checkpoint" or "Checkpoint"), validPart, 1
+        end
         if string.find(combined, "cp") or string.find(combined, "checkpoint") or string.find(combined, "stage") or string.find(combined, "waypoint") then
-            return nil, nil, nil, 0
+            return "CP", name, validPart, 1
         end
         return nil, nil, nil, 0
     end
@@ -309,7 +313,6 @@ local function parseCPIdentity(obj)
 
     return nVal, descText, validPart, priorityScore
 end
-
 
 --==================================================
 -- AUTO-SAVE SYSTEM & VISITED TRACKER
