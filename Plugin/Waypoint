@@ -160,6 +160,16 @@ local function getValidCheckpointPart(obj)
     if not obj or not (obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("UnionOperation") or obj:IsA("Model")) then return nil end
     if isBlacklisted(obj.Name) then return nil end
 
+    -- Jika nama objek sudah jelas mengindikasikan checkpoint/cp/waypoint/stage, langsung terima!
+    local lowerName = string.lower(obj.Name)
+    if string.find(lowerName, "checkpoint") or string.find(lowerName, "cp") or string.find(lowerName, "stage") or string.find(lowerName, "waypoint") or string.find(lowerName, "wp") or string.find(lowerName, "summit") or string.find(lowerName, "peak") or string.find(lowerName, "finish") or string.find(lowerName, "puncak") then
+        if obj:IsA("Model") then
+            return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true) or obj
+        end
+        return obj
+    end
+
+    -- Untuk objek lain, cek apakah memiliki Touch / Prompt
     local hasTouch = obj:FindFirstChild("TouchInterest") or obj:FindFirstChildOfClass("TouchTransmitter")
     if hasTouch then return obj end
 
@@ -181,6 +191,7 @@ local function getValidCheckpointPart(obj)
 
     return nil
 end
+
 
 local function parseCPIdentity(obj)
     local validPart = getValidCheckpointPart(obj)
@@ -272,16 +283,14 @@ local function parseCPIdentity(obj)
         num = string.match(name, "^(%d+%.?%d*)$")
     end
 
-    -- Penanganan otomatis untuk part polos tanpa angka (diberi nomor urut berurutan)
+    -- Jika part polos tanpa angka di namanya, gunakan koordinat posisi Z sebagai key pengenal stabil
     if not num then
-        if lowerName == "checkpoint" or lowerName == "cp" or string.find(combined, "cp") or string.find(combined, "checkpoint") then
-            if not unnumberedRegistry[validPart] then
-                unnumberedCounter = unnumberedCounter + 1
-                unnumberedRegistry[validPart] = unnumberedCounter
-            end
-            local cpNum = unnumberedRegistry[validPart]
-            local descText = folderContext ~= "" and (folderContext .. " - Checkpoint " .. cpNum) or ("Checkpoint " .. cpNum)
-            return cpNum, descText, validPart, 2
+        if lowerName == "checkpoint" or lowerName == "cp" or string.find(combined, "cp") or string.find(combined, "checkpoint") or string.find(combined, "stage") then
+            -- Gunakan nilai posisi bulat agar stabil sebagai pengenal unik
+            local pos = validPart.Position
+            local virtualKey = math.floor(math.abs(pos.Z + pos.X) % 999) + 1000
+            local descText = folderContext ~= "" and (folderContext .. " - Checkpoint") or "Checkpoint"
+            return virtualKey, descText, validPart, 1
         end
         return nil, nil, nil, 0
     end
@@ -318,6 +327,7 @@ local function parseCPIdentity(obj)
 
     return nVal, descText, validPart, priorityScore
 end
+
 
 --==================================================
 -- AUTO-SAVE SYSTEM & VISITED TRACKER
