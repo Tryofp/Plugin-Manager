@@ -1529,7 +1529,14 @@ return function(speaker)
                             end
                             local pluginMod = loadedModules[targetRaw]
                             if pluginMod and pluginMod.Commands then
-                                local targetCmd = isUnexec and subFeat.UnCmd or subFeat.Cmd
+                                -- WalkSpeed menyediakan command unws di modulnya.
+                                -- Fallback ini menjaga tombol tetap punya pasangan UNEXECUTE
+                                -- meskipun metadata submenu belum mengisi UnCmd.
+                                local unCommand = subFeat.UnCmd
+                                if (not unCommand or unCommand == "") and string.lower(tostring(subFeat.Cmd or "")) == "ws" then
+                                    unCommand = "unws"
+                                end
+                                local targetCmd = isUnexec and unCommand or subFeat.Cmd
                                 local foundFunc = nil
                                 for cmdName, cmdData in pairs(pluginMod.Commands) do
                                     if string.lower(cmdName) == string.lower(tostring(targetCmd)) then
@@ -1543,7 +1550,8 @@ return function(speaker)
                             end
                         end)
 
-                        local hasUnCmd = subFeat.UnCmd and subFeat.UnCmd ~= ""
+                        local hasUnCmd = (subFeat.UnCmd and subFeat.UnCmd ~= "")
+                            or string.lower(tostring(subFeat.Cmd or "")) == "ws"
                         if hasUnCmd then
                             featureStates[uniqueKey] = not featureStates[uniqueKey]
                             updateAllButtonStates(uniqueKey, featureStates[uniqueKey])
