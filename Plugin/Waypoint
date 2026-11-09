@@ -52,6 +52,7 @@ local IGNORE_KEYWORDS = {
 local streamingCache = {}
 local savedCheckpointsList = {}
 local visitedKeys = {}
+local plainNumberByPosition = {}
 
 local radarGui, radarMainFrame, radarScrollContainer, isRadarMinimized = nil, nil, nil, false
 local cpnGui, cpnMainFrame, cpnScrollContainer, isCpnMinimized = nil, nil, nil, false
@@ -132,24 +133,42 @@ end
 
 loadSavedCheckpoints()
 
--- Konversi checkpoint polos lama (CP+) menjadi CP bernomor agar masuk kategori CP,
--- bukan waypoint. Nomor ditentukan dari urutan ketinggian, bukan counter scan.
+-- Nomor checkpoint polos disimpan berdasarkan posisi agar tidak kembali menjadi CP1
+-- ketika objek keluar/masuk StreamingEnabled.
+local function getPlainPositionToken(pos)
+    return string.format("%.1f|%.1f|%.1f", pos.X, pos.Y, pos.Z)
+end
+
 local function normalizeLegacyPlainSavedCPs()
     local usedNumbers = {}
     local plainItems = {}
+    local changed = false
+
+    local character = LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
 
     for _, item in ipairs(savedCheckpointsList) do
         local numericKey = tonumber(item.key)
-        if numericKey then
-            usedNumbers[numericKey] = true
-        elseif item.key == "CP+" and item.cf then
+        local isLegacyPlain = item.desc == "Checkpoint - Checkpoint"
+
+        if item.cf and (item.key == "CP+" or isLegacyPlain) then
             table.insert(plainItems, item)
+        elseif numericKey then
+            -- Nomor CP bernama tetap dipertahankan dan tidak disentuh.
+            usedNumbers[numericKey] = true
         end
     end
 
     table.sort(plainItems, function(a, b)
         local ap = CFrame.new(unpack(a.cf)).Position
         local bp = CFrame.new(unpack(b.cf)).Position
+
+        if hrp then
+            local da = (ap - hrp.Position).Magnitude
+            local db = (bp - hrp.Position).Magnitude
+            if math.abs(da - db) > 0.01 then return da < db end
+        end
+
         if ap.Y == bp.Y then
             if ap.X == bp.X then return ap.Z < bp.Z end
             return ap.X < bp.X
@@ -162,23 +181,34 @@ local function normalizeLegacyPlainSavedCPs()
         while usedNumbers[nextNumber] do
             nextNumber = nextNumber + 1
         end
+
+        if tonumber(item.key) ~= nextNumber then
+            changed = true
+        end
         item.key = nextNumber
         usedNumbers[nextNumber] = true
+
+        local pos = CFrame.new(unpack(item.cf)).Position
+        plainNumberByPosition[getPlainPositionToken(pos)] = nextNumber
         nextNumber = nextNumber + 1
     end
 
-    -- Bangun ulang visitedKeys memakai key baru agar CP lama tidak muncul lagi di radar.
+    -- Bangun ulang visitedKeys memakai key hasil normalisasi.
     visitedKeys = {}
     for _, item in ipairs(savedCheckpointsList) do
         if item.key ~= nil and item.cf then
-            local pos = CFrame.new(unpack(item.cf)).Position
+            local itemCF = CFrame.new(unpack(item.cf))
+            local pos = itemCF.Position
             local uniqueVisitKey = tostring(item.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
             visitedKeys[uniqueVisitKey] = true
             visitedKeys[tostring(item.key) .. "_saved"] = true
         end
     end
-end
 
+    if changed then
+        saveCheckpointsToFile()
+    end
+end
 normalizeLegacyPlainSavedCPs()
 
 --==================================================
@@ -451,24 +481,59 @@ local function addOrUpdateSavedCP(key, desc, cf)
     notify("Auto-Save CP", "Checkpoint tersimpan: " .. tostring(key), 2)
 end
 
--- Nomor CP polos selalu dihitung dari urutan posisi (Y rendah ke tinggi).
--- Tidak memakai counter scan, sehingga hasilnya tidak bergantung urutan DescendantAdded.
-local function getOrderedPlainCheckpointNumbers()
+-- CP polos diberi nomor stabil. Saat beberapa checkpoint masuk render bersamaan,
+-- yang paling dekat dengan karakter mendapat nomor lebih kecil terlebih dahulu.
+local function getNextAvailablePlainNumber()
     local usedNumbers = {}
-    local plainList = {}
+
+    for _, item in ipairs(savedCheckpointsList) do
+        local n = tonumber(item.key)
+        if n then usedNumbers[n] = true end
+    end
 
     for _, data in pairs(streamingCache) do
-        local numericKey = tonumber(data.key)
-        if numericKey then
-            usedNumbers[numericKey] = true
-        elseif data.key == "CP+" and data.part and data.part.Parent then
-            table.insert(plainList, data)
+        local n = tonumber(data.key)
+        if n then usedNumbers[n] = true end
+        if data.plainNumber then usedNumbers[data.plainNumber] = true end
+    end
+
+    local number = 1
+    while usedNumbers[number] do
+        number = number + 1
+    end
+    return number
+end
+
+local function assignPendingPlainCheckpointNumbers()
+    local pending = {}
+
+    for _, data in pairs(streamingCache) do
+        if data.key == "CP+" and data.part and data.part.Parent and not data.plainNumber then
+            local token = getPlainPositionToken(data.part.Position)
+            local savedNumber = plainNumberByPosition[token]
+
+            if savedNumber then
+                data.plainNumber = savedNumber
+            else
+                table.insert(pending, data)
+            end
         end
     end
 
-    table.sort(plainList, function(a, b)
+    if #pending == 0 then return false end
+
+    local hrp = getHRP()
+    table.sort(pending, function(a, b)
         local ap = a.part.Position
         local bp = b.part.Position
+
+        if hrp then
+            local da = (ap - hrp.Position).Magnitude
+            local db = (bp - hrp.Position).Magnitude
+            if math.abs(da - db) > 0.01 then return da < db end
+        end
+
+        -- Tie-breaker deterministik bila jaraknya hampir sama atau HRP belum tersedia.
         if ap.Y == bp.Y then
             if ap.X == bp.X then return ap.Z < bp.Z end
             return ap.X < bp.X
@@ -476,19 +541,45 @@ local function getOrderedPlainCheckpointNumbers()
         return ap.Y < bp.Y
     end)
 
-    local result = {}
-    local nextNumber = 1
-    for _, data in ipairs(plainList) do
-        while usedNumbers[nextNumber] do
-            nextNumber = nextNumber + 1
+    for _, data in ipairs(pending) do
+        local token = getPlainPositionToken(data.part.Position)
+        local number = plainNumberByPosition[token]
+
+        if not number then
+            number = getNextAvailablePlainNumber()
+            plainNumberByPosition[token] = number
         end
-        result[data] = nextNumber
-        usedNumbers[nextNumber] = true
-        nextNumber = nextNumber + 1
+
+        data.plainNumber = number
+    end
+
+    return true
+end
+
+local function getOrderedPlainCheckpointNumbers()
+    local result = {}
+    for _, data in pairs(streamingCache) do
+        if data.key == "CP+" and data.plainNumber then
+            result[data] = data.plainNumber
+        end
     end
     return result
 end
 
+local plainNumberingGeneration = 0
+local function queuePlainCheckpointNumbering()
+    plainNumberingGeneration = plainNumberingGeneration + 1
+    local generation = plainNumberingGeneration
+
+    -- Debounce memberi waktu agar satu gelombang objek StreamingEnabled terkumpul,
+    -- sehingga penomoran batch dapat dimulai dari checkpoint yang paling dekat.
+    task.delay(0.6, function()
+        if generation ~= plainNumberingGeneration then return end
+        if assignPendingPlainCheckpointNumbers() then
+            requestRadarRefresh()
+        end
+    end)
+end
 --==================================================
 -- PURE EVENT-DRIVEN SCANNER (ZERO BACKGROUND LOOP)
 --==================================================
@@ -505,14 +596,21 @@ local function processAndHookPart(obj)
         
         local targetCFrame = realPart:IsA("Model") and (realPart.PrimaryPart and realPart.PrimaryPart.CFrame or realPart:GetAttribute("CFrame") or realPart:GetPivot()) or realPart.CFrame
 
-        local uniqueKey = getInstancePath(realPart)
+        -- Nama/path checkpoint polos sering identik (mis. Checkpoint.Checkpoint).
+        -- Gunakan instance part sebagai key agar objek tidak saling menimpa di cache.
+        local uniqueKey = isPlainCheckpoint and realPart or getInstancePath(realPart)
         streamingCache[uniqueKey] = {
             key = cpKey,
             desc = partDesc,
             part = realPart,
             cf = targetCFrame,
-            priorityScore = pScore
+            priorityScore = pScore,
+            isPlainCheckpoint = isPlainCheckpoint == true
         }
+
+        if isPlainCheckpoint then
+            queuePlainCheckpointNumbering()
+        end
 
         requestRadarRefresh()
 
@@ -531,6 +629,9 @@ local function processAndHookPart(obj)
                 end
 
                 local folderPrefix = folderContext ~= "" and folderContext or "Main"
+                if cpKey == "CP+" then
+                    assignPendingPlainCheckpointNumbers()
+                end
                 local orderedNumbers = getOrderedPlainCheckpointNumbers()
                 local saveKey = cpKey == "CP+" and (orderedNumbers[streamingCache[uniqueKey]] or 1) or cpKey
                 local uniqueVisitKey = tostring(saveKey) .. "_" .. folderPrefix .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
@@ -597,7 +698,12 @@ updateRadarGuiContent = function()
     local filteredMap = {}
     for _, data in ipairs(rawList) do
         local pos = data.part.Position
-        local mapKey = tostring(data.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Z)
+        local mapKey
+        if data.key == "CP+" then
+            mapKey = "CP+_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+        else
+            mapKey = tostring(data.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Z)
+        end
         
         if not filteredMap[mapKey] then
             filteredMap[mapKey] = data
@@ -614,8 +720,11 @@ updateRadarGuiContent = function()
     end
 
     table.sort(list, function(a, b)
-        local na, nb = tonumber(a.key), tonumber(b.key)
+        local na = tonumber(a.key) or (a.key == "CP+" and a.plainNumber)
+        local nb = tonumber(b.key) or (b.key == "CP+" and b.plainNumber)
         if na and nb then return na < nb end
+        if na then return true end
+        if nb then return false end
         return tostring(a.key) < tostring(b.key)
     end)
 
@@ -685,6 +794,9 @@ updateRadarGuiContent = function()
 
         teleBtn.MouseButton1Click:Connect(function()
             if data.part and data.part.Parent then
+                if data.key == "CP+" then
+                    assignPendingPlainCheckpointNumbers()
+                end
                 safeTeleport(data.part.CFrame)
                 local orderedNumbers = getOrderedPlainCheckpointNumbers()
                 local saveKey = data.key == "CP+" and (orderedNumbers[data] or 1) or data.key
@@ -1206,6 +1318,7 @@ local function createCPNWindow()
 
         local nearestName, nearestKey = nil, nil
         local nearestCF = nil
+        local nearestData = nil
         local pos = hrp.Position
         
         for _, data in pairs(streamingCache) do
@@ -1216,10 +1329,17 @@ local function createCPNWindow()
                         nearestName = data.desc
                         nearestKey = data.key
                         nearestCF = data.part.CFrame
+                        nearestData = data
                         break
                     end
                 end
             end
+        end
+
+        if nearestKey == "CP+" and nearestData then
+            assignPendingPlainCheckpointNumbers()
+            local orderedNumbers = getOrderedPlainCheckpointNumbers()
+            nearestKey = orderedNumbers[nearestData] or nearestKey
         end
 
         if not nearestName or nearestKey == nil then
