@@ -1343,21 +1343,26 @@ return function(speaker)
             local function readVersionManagerResponse(httpResponse)
                 if type(httpResponse) ~= "table" then return nil, "Format respons HTTP tidak dikenali." end
                 local responseBody = httpResponse.Body or httpResponse.body or httpResponse.ResponseBody or ""
-                if type(responseBody) == "string" and responseBody ~= "" then
-                    return responseBody
-                end
-
-                -- Apps Script ContentService dapat mengembalikan redirect ke
-                -- script.googleusercontent.com sebelum mengirim body JSON.
                 local headers = httpResponse.Headers or httpResponse.headers or {}
-                local redirectUrl = headers.Location or headers.location or headers.LOCATION
+                local redirectUrl
+                for headerName, headerValue in pairs(headers) do
+                    if tostring(headerName):lower() == "location" then
+                        redirectUrl = tostring(headerValue)
+                        break
+                    end
+                end
                 local statusCode = tonumber(httpResponse.StatusCode or httpResponse.Status or httpResponse.status_code)
-                if redirectUrl and statusCode and statusCode >= 300 and statusCode < 400 then
+                local isHtml = type(responseBody) == "string" and responseBody:lower():find("<html", 1, true) ~= nil
+
+                -- Apps Script ContentService mengalihkan output ke URL googleusercontent.
+                -- Coba ikuti Location SEBELUM menerima body HTML sebagai hasil final.
+                if redirectUrl and (not responseBody or responseBody == "" or isHtml or (statusCode and statusCode >= 300 and statusCode < 400)) then
                     local redirectOk, redirectResponse = pcall(function()
                         return req({
                             Url = redirectUrl,
                             Method = "GET",
-                            Headers = { ["Accept"] = "application/json" }
+                            Headers = { ["Accept"] = "application/json" },
+                            FollowRedirects = true
                         })
                     end)
                     if redirectOk and type(redirectResponse) == "table" then
@@ -1368,8 +1373,15 @@ return function(speaker)
                     end
                 end
 
+                if type(responseBody) == "string" and responseBody ~= "" then
+                    return responseBody
+                end
+
+                local responseUrl = tostring(httpResponse.Url or httpResponse.url or httpResponse.FinalUrl or httpResponse.final_url or "")
                 return nil, "HTTP " .. tostring(statusCode or "tidak diketahui") ..
-                    " • body kosong" .. (redirectUrl and " • redirect tidak menghasilkan JSON" or "")
+                    " • body kosong" ..
+                    (redirectUrl and " • redirect gagal diikuti" or " • Location tidak tersedia") ..
+                    (responseUrl ~= "" and " • URL: " .. responseUrl:sub(1, 100) or "")
             end
 
             local body, responseError = readVersionManagerResponse(response)
