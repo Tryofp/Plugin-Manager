@@ -25,7 +25,6 @@ local function getMapKey()
     return tostring(PlaceId)
 end
 
-
 local CURRENT_MAP_KEY = getMapKey() 
 
 local IGNORE_KEYWORDS = {
