@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   update-metadata-and-sheets:
+    # The workflow commits Loader.lua itself. Ignore that bot push to avoid a
+    # second run racing the first run's FeatureIdentity registry registration.
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository with history
@@ -22,89 +25,28 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Update matching feature blocks
+      - name: Detect feature updates and prepare permanent IDs
         id: feature_update
         shell: bash
         env:
           BASE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          SHEETS_WEB_APP_URL: https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec
         run: |
           set -euo pipefail
           node <<'NODE'
           const fs = require('fs');
           const { execFileSync } = require('child_process');
+          const crypto = require('crypto');
 
           const loaderPath = 'Loader.lua';
-          const keysPath = '/tmp/updated-badge-keys.txt';
+          const actionsPath = '/tmp/feature-metadata-actions.json';
           const sourceFlagPath = '/tmp/source-files-changed.txt';
-
-          let changedFiles = [];
-          try {
-            const base = process.env.BASE_SHA;
-            const head = process.env.HEAD_SHA || 'HEAD';
-            if (base && !/^0+$/.test(base)) {
-              changedFiles = execFileSync('git', ['diff', '--name-only', base, head], { encoding: 'utf8' })
-                .split('\n').map(s => s.trim()).filter(Boolean);
-            } else {
-              changedFiles = execFileSync('git', ['show', '--pretty=', '--name-only', head], { encoding: 'utf8' })
-                .split('\n').map(s => s.trim()).filter(Boolean);
-            }
-          } catch (err) {
-            console.error('Could not determine changed files:', err.message);
-            process.exit(1);
-          }
-
-          // Source scripts only. Loader/workflow-only commits do not count as plugin updates.
-          const candidates = changedFiles.filter(file => {
-            if (file === loaderPath || file.startsWith('.github/')) return false;
-            const name = file.split('/').pop();
-            return /\.(lua|iy)$/i.test(name) || !name.includes('.');
-          });
-
-          fs.writeFileSync(sourceFlagPath, candidates.length ? 'true' : 'false');
-          if (!candidates.length) {
-            fs.writeFileSync(keysPath, '');
-            console.log('No plugin/tool source files changed; LastUpdate will remain unchanged.');
-            process.exit(0);
-          }
-
-          console.log('Changed plugin/tool source files:', candidates.join(', '));
-
-          const parts = new Intl.DateTimeFormat('en-GB', {
-            timeZone: 'Asia/Jakarta',
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
-          }).formatToParts(new Date()).reduce((obj, part) => {
-            obj[part.type] = part.value;
-            return obj;
-          }, {});
-          const stamp = `${parts.day}${parts.month}${parts.year}${parts.hour}${parts.minute}, 86400`;
-
-          let previousLoader = '';
-          try {
-            const base = process.env.BASE_SHA;
-            previousLoader = execFileSync(
-              'git',
-              ['show', `${base && !/^0+$/.test(base) ? base : 'HEAD^'}:Loader.lua`],
-              { encoding: 'utf8' }
-            );
-          } catch (_) {}
-
-          const previousFeatureKeys = new Set();
-          for (const block of (previousLoader.match(/\{[^{}]*\}/gs) || [])) {
-            const raw = (block.match(/RawUrl\s*=\s*"([^"]*)"/) || [])[1];
-            const cmd = (block.match(/Cmd\s*=\s*"([^"]*)"/) || [])[1];
-            if (raw && cmd) previousFeatureKeys.add(`${raw}_${cmd}`);
-          }
-
-          let source = fs.readFileSync(loaderPath, 'utf8');
-          let loaderChanged = false;
-          const updatedKeys = new Set();
+          const loader = fs.readFileSync(loaderPath, 'utf8');
 
           function findBlockBounds(text, at) {
             let depth = 0, start = -1, end = -1;
             let inString = false, escaped = false;
-
             for (let i = at; i >= 0; i--) {
               const c = text[i];
               if (c === '"' && !escaped) inString = !inString;
@@ -119,7 +61,6 @@ jobs:
               else escaped = false;
             }
             if (start < 0) return null;
-
             depth = 0; inString = false; escaped = false;
             for (let i = start; i < text.length; i++) {
               const c = text[i];
@@ -138,7 +79,7 @@ jobs:
           }
 
           function upsertString(block, prop, value) {
-            const escapedValue = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            const escapedValue = String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
             const re = new RegExp(`(^|\\n)(\\s*)${prop}\\s*=\\s*"[^"]*"`, 'm');
             if (re.test(block)) {
               return block.replace(re, (_m, nl, indent) => `${nl}${indent}${prop} = "${escapedValue}"`);
@@ -146,59 +87,205 @@ jobs:
             return block.replace('{', `{\n        ${prop} = "${escapedValue}",`);
           }
 
-          for (const file of candidates) {
-            const base = file.split('/').pop().replace(/\.(lua|iy)$/i, '');
-            const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const urlRe = new RegExp(`RawUrl\\s*=\\s*"[^"]*\\/${escapedBase}"`, 'g');
-            console.log(`Checking ${file}; Loader RawUrl suffix: ${base}`);
-
-            let searchFrom = 0;
-            while (true) {
-              urlRe.lastIndex = searchFrom;
-              const match = urlRe.exec(source);
-              if (!match) break;
-
-              const bounds = findBlockBounds(source, match.index);
-              if (!bounds) {
-                searchFrom = match.index + match[0].length;
-                continue;
-              }
-
-              const block = source.slice(bounds.start, bounds.end + 1);
-              const raw = (block.match(/RawUrl\s*=\s*"([^"]*)"/) || [])[1];
-              const cmd = (block.match(/Cmd\s*=\s*"([^"]*)"/) || [])[1];
-              if (!raw || !cmd) {
-                searchFrom = bounds.end + 1;
-                continue;
-              }
-
-              const key = `${raw}_${cmd}`;
-              const isNew = !previousFeatureKeys.has(key);
-              updatedKeys.add(key); // Reactivate every mapped feature, even if its stamp already matches.
-
-              let updated = upsertString(block, 'UpdateTimestamp', stamp);
-              updated = upsertString(updated, 'BadgeText', isNew ? 'New!' : 'Update!');
-              updated = upsertString(updated, 'BadgeColor', isNew ? 'yellow' : 'green');
-
-              if (updated !== block) {
-                source = source.slice(0, bounds.start) + updated + source.slice(bounds.end + 1);
-                loaderChanged = true;
-                searchFrom = bounds.start + updated.length;
+          function getChangedFiles() {
+            const base = process.env.BASE_SHA;
+            const head = process.env.HEAD_SHA || 'HEAD';
+            let raw;
+            try {
+              if (base && !/^0+$/.test(base)) {
+                raw = execFileSync('git', ['diff', '--name-status', '-M', base, head], { encoding: 'utf8' });
               } else {
-                searchFrom = bounds.end + 1;
+                raw = execFileSync('git', ['diff-tree', '--root', '--no-commit-id', '--name-status', '-r', head], { encoding: 'utf8' });
               }
+            } catch (err) {
+              console.error('Could not determine changed files:', err.message);
+              process.exit(1);
             }
+
+            const files = [];
+            for (const line of raw.split('\n').filter(Boolean)) {
+              const parts = line.split('\t');
+              const status = parts[0] || '';
+              if (status.startsWith('D')) continue; // Deletion alone is not a feature release.
+              const file = status.startsWith('R') || status.startsWith('C') ? parts[2] : parts[1];
+              if (!file || file === loaderPath || file.startsWith('.github/')) continue;
+              const name = file.split('/').pop();
+              if (/\.(lua|iy)$/i.test(name) || !name.includes('.')) files.push(file);
+            }
+            return [...new Set(files)];
           }
 
-          if (loaderChanged) {
+          function getTableKey(source, blockStart) {
+            const prefix = source.slice(Math.max(0, blockStart - 180), blockStart);
+            const match = prefix.match(/([A-Za-z_][A-Za-z0-9_]*)\s*=\s*$/);
+            return match ? match[1] : '';
+          }
+
+          function parseFeatures(source) {
+            const features = [];
+            const seen = new Set();
+            const cmdRe = /\bCmd\s*=\s*"([^"]+)"/g;
+            let m;
+            while ((m = cmdRe.exec(source))) {
+              const bounds = findBlockBounds(source, m.index);
+              if (!bounds) continue;
+              const block = source.slice(bounds.start, bounds.end + 1);
+              const cmd = (block.match(/\bCmd\s*=\s*"([^"]+)"/) || [])[1];
+              const raw = (block.match(/\bRawUrl\s*=\s*"([^"]*)"/) || [])[1] || '';
+              const name = (block.match(/\bName\s*=\s*"([^"]*)"/) || [])[1] || cmd;
+              if (!cmd || !raw) continue;
+
+              let id = (block.match(/\bFeatureId\s*=\s*"([^"]+)"/) || [])[1] || '';
+              if (!id) {
+                const tableKey = getTableKey(source, bounds.start) || cmd;
+                const slug = tableKey.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+                id = 'fid_' + (slug || crypto.createHash('sha1').update(raw + '|' + cmd).digest('hex').slice(0, 12));
+                const updated = upsertString(block, 'FeatureId', id);
+                source = source.slice(0, bounds.start) + updated + source.slice(bounds.end + 1);
+                cmdRe.lastIndex = bounds.start + updated.length;
+              }
+              if (seen.has(id)) {
+                console.error(`Duplicate FeatureId detected: ${id}`);
+                process.exit(1);
+              }
+              seen.add(id);
+              features.push({
+                Id: id,
+                Cmd: cmd,
+                Name: name,
+                RawUrl: raw,
+                LegacyKey: raw + '_' + cmd
+              });
+            }
+            return { source, features };
+          }
+
+          function basenameWithoutExtension(value) {
+            const name = value.split('/').pop() || '';
+            return name.replace(/\.(lua|iy)$/i, '');
+          }
+
+          async function main() {
+            const changedFiles = getChangedFiles();
+            const parsed = parseFeatures(fs.readFileSync(loaderPath, 'utf8'));
+            let source = parsed.source;
+            const features = parsed.features;
+
+            // Fetch the live registry. A missing deployment/response is a hard failure,
+            // because silently classifying features would risk changing New/Update labels.
+            const getResponse = await fetch(process.env.SHEETS_WEB_APP_URL);
+            if (!getResponse.ok) throw new Error(`Metadata GET failed: HTTP ${getResponse.status}`);
+            const metadata = await getResponse.json();
+            if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+              throw new Error('Metadata endpoint returned an invalid JSON object.');
+            }
+
+            const initialized = String(metadata.FeatureRegistryInitialized || '').toLowerCase() === 'true';
+            const updated = new Map();
+            let registryAction = null;
+
+            if (!initialized) {
+              // One-time migration: current features are existing, not newly released.
+              registryAction = { Type: 'InitializeFeatureRegistry', Features: features };
+              console.log(`First-run migration: registering ${features.length} existing features without changing their badge labels.`);
+            } else {
+              const registered = new Set(
+                features.filter(f => metadata['FeatureIdentity_' + f.Id] != null).map(f => f.Id)
+              );
+
+              // Any feature newly added to Loader is genuinely new, even if its source
+              // file was uploaded in an earlier commit.
+              for (const feature of features) {
+                if (!registered.has(feature.Id)) updated.set(feature.Id, 'New!');
+              }
+
+              // A RawUrl change for an already-registered FeatureId is a rename/move,
+              // not a new feature. This also works when the file rename and Loader edit
+              // are committed separately.
+              try {
+                const base = process.env.BASE_SHA;
+                const previousText = base && !/^0+$/.test(base)
+                  ? execFileSync('git', ['show', `${base}:Loader.lua`], { encoding: 'utf8' })
+                  : '';
+                if (previousText) {
+                  const previousParsed = parseFeatures(previousText).features;
+                  const previousById = new Map(previousParsed.map(f => [f.Id, f.RawUrl]));
+                  for (const feature of features) {
+                    if (registered.has(feature.Id) &&
+                        previousById.has(feature.Id) &&
+                        previousById.get(feature.Id) !== feature.RawUrl) {
+                      updated.set(feature.Id, 'Update!');
+                      console.log(`Detected RawUrl rename/move for ${feature.Id}: ${previousById.get(feature.Id)} -> ${feature.RawUrl}`);
+                    }
+                  }
+                }
+              } catch (err) {
+                console.log(`Previous Loader comparison skipped: ${err.message}`);
+              }
+
+              // Source changes update every feature mapped to that source file.
+              for (const file of changedFiles) {
+                const fileBase = basenameWithoutExtension(file);
+                let matched = 0;
+                for (const feature of features) {
+                  const rawBase = basenameWithoutExtension(feature.RawUrl);
+                  if (rawBase !== fileBase) continue;
+                  matched++;
+                  if (!updated.has(feature.Id)) {
+                    updated.set(feature.Id, registered.has(feature.Id) ? 'Update!' : 'New!');
+                  }
+                }
+                console.log(`Changed source ${file}: ${matched} matching Loader feature(s).`);
+              }
+
+              for (const [id, badgeText] of updated) {
+                const feature = features.find(f => f.Id === id);
+                if (!feature) continue;
+                const bounds = (() => {
+                  const marker = `FeatureId = "${id}"`;
+                  const at = source.indexOf(marker);
+                  return at >= 0 ? findBlockBounds(source, at) : null;
+                })();
+                if (!bounds) throw new Error(`Could not find Loader block for ${id}`);
+                let block = source.slice(bounds.start, bounds.end + 1);
+                const stamp = new Intl.DateTimeFormat('en-GB', {
+                  timeZone: 'Asia/Jakarta',
+                  day: '2-digit', month: '2-digit', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+                }).formatToParts(new Date()).reduce((o, p) => (o[p.type] = p.value, o), {});
+                const timestamp = `${stamp.day}${stamp.month}${stamp.year}${stamp.hour}${stamp.minute}, 86400`;
+                block = upsertString(block, 'UpdateTimestamp', timestamp);
+                block = upsertString(block, 'BadgeText', badgeText);
+                block = upsertString(block, 'BadgeColor', badgeText === 'New!' ? 'yellow' : 'green');
+                source = source.slice(0, bounds.start) + block + source.slice(bounds.end + 1);
+              }
+
+              registryAction = { Type: 'RegisterFeatures', Features: features };
+            }
+
             fs.writeFileSync(loaderPath, source);
-            console.log('Loader.lua updated.');
-          } else {
-            console.log('Loader.lua content already matches; feature reactivation is still queued.');
+            fs.writeFileSync('/tmp/changed-source-files.json', JSON.stringify(changedFiles));
+            fs.writeFileSync('/tmp/feature-metadata-actions.json', JSON.stringify({
+              Registry: registryAction,
+              Updates: initialized ? [...updated.entries()].map(([id, badgeText]) => ({
+                Type: 'FeatureUpdate',
+                Key: 'FeatureBadge_' + id,
+                Timestamp: String(Date.now()),
+                BadgeText: badgeText
+              })) : []
+            }));
+
+            const shouldUpdateLast = changedFiles.length > 0 || (initialized && updated.size > 0);
+            fs.writeFileSync('/tmp/source-files-changed.txt', shouldUpdateLast ? 'true' : 'false');
+            console.log(`Permanent feature IDs found: ${features.length}`);
+            console.log(`Badge updates prepared: ${updated.size}`);
+            console.log(`Changed source files: ${changedFiles.length}`);
           }
 
-          fs.writeFileSync(keysPath, [...updatedKeys].join('\n'));
-          console.log(`Feature keys to reactivate: ${updatedKeys.size}`);
+          main().catch(err => {
+            console.error(err && err.stack || err);
+            process.exit(1);
+          });
           NODE
 
       - name: Commit Loader changes
@@ -209,58 +296,62 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Loader.lua
           if ! git diff --cached --quiet; then
-            git commit -m "bot: update feature badge timestamps"
+            git commit -m "bot: maintain permanent feature identities and badges"
             git push
           else
             echo "No Loader.lua content changes to commit."
           fi
 
-      - name: Update Google Sheets metadata
+      - name: Register identities and update feature badges
         shell: bash
         env:
           SHEETS_WEB_APP_URL: https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec
         run: |
           set -euo pipefail
 
-          if [ ! -s /tmp/source-files-changed.txt ] || [ "$(cat /tmp/source-files-changed.txt)" != "true" ]; then
-            echo "No plugin/tool source update detected. LastUpdate remains unchanged."
-            exit 0
-          fi
-
           post_metadata() {
             local payload="$1"
             local expected_key="$2"
             local response
-
             response=$(curl --fail --silent --show-error --location \
               --retry 3 --retry-delay 2 \
               -X POST -H 'Content-Type: application/json' \
               -d "$payload" "$SHEETS_WEB_APP_URL")
-
             echo "Google Sheets response: $response"
             echo "$response" | jq -e --arg key "$expected_key" \
               '.status == "success" and .key == $key' >/dev/null
           }
 
-          # Reactivate only the feature keys matched to changed source files.
-          if [ -s /tmp/updated-badge-keys.txt ]; then
-            while IFS= read -r key; do
-              [ -z "$key" ] && continue
-              UPDATED_AT=$(date +%s%3N)
-              payload=$(jq -n --arg key "$key" --arg ts "$UPDATED_AT" \
-                '{Type:"FeatureUpdate", Key:$key, Timestamp:$ts}')
-              echo "Reactivating feature: $key"
-              post_metadata "$payload" "$key"
-            done < /tmp/updated-badge-keys.txt
-          else
-            echo "Source file changed but no matching Loader feature key was found."
+          REGISTRY=$(jq -c '.Registry' /tmp/feature-metadata-actions.json)
+          REGISTRY_TYPE=$(echo "$REGISTRY" | jq -r '.Type')
+          post_metadata "$REGISTRY" "$REGISTRY_TYPE"
+
+          jq -c '.Updates[]' /tmp/feature-metadata-actions.json | while IFS= read -r item; do
+            [ -z "$item" ] && continue
+            key=$(echo "$item" | jq -r '.Key')
+            payload=$(echo "$item" | jq -c '{Type, Key, Timestamp}')
+            echo "Updating permanent badge key: $key"
+            post_metadata "$payload" "$key"
+          done
+
+      - name: Update Google Sheets LastUpdate
+        shell: bash
+        env:
+          SHEETS_WEB_APP_URL: https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec
+        run: |
+          set -euo pipefail
+          if [ ! -s /tmp/source-files-changed.txt ] || [ "$(cat /tmp/source-files-changed.txt)" != "true" ]; then
+            echo "No plugin/tool source update detected. LastUpdate remains unchanged."
+            exit 0
           fi
 
-          # Always update LastUpdate for source changes, independent of badge keys.
           CURRENT_TIME=$(TZ='Asia/Jakarta' date +'%d%m%Y %H:%M')
-          payload=$(jq -n --arg ts "$CURRENT_TIME" \
-            '{Type:"LastUpdate", Timestamp:$ts}')
-          echo "Sending LastUpdate (Asia/Jakarta): $CURRENT_TIME"
-          post_metadata "$payload" "LastUpdate"
+          payload=$(jq -n --arg ts "$CURRENT_TIME" '{Type:"LastUpdate", Timestamp:$ts}')
+          response=$(curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 2 \
+            -X POST -H 'Content-Type: application/json' \
+            -d "$payload" "$SHEETS_WEB_APP_URL")
+          echo "Google Sheets response: $response"
+          echo "$response" | jq -e '.status == "success" and .key == "LastUpdate"' >/dev/null
           echo "LastUpdate successfully saved to Google Sheets."
           
