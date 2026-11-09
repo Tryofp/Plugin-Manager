@@ -514,6 +514,45 @@ updateRadarGuiContent = function()
         return tostring(a.key) < tostring(b.key)
     end)
 
+    -- Beri nomor tampilan CP1, CP2, dst. untuk checkpoint polos (CP+).
+    -- Urutkan checkpoint polos berdasarkan ketinggian Y dari rendah ke tinggi,
+    -- tanpa mengubah key asli, auto-save, CP bernomor yang sudah terdeteksi,
+    -- ataupun identitas Summit.
+    local usedCPNumbers = {}
+    local plainCPList = {}
+
+    for _, data in ipairs(list) do
+        local numericKey = tonumber(data.key)
+        if numericKey then
+            usedCPNumbers[numericKey] = true
+        elseif data.key == "CP+" then
+            table.insert(plainCPList, data)
+        end
+    end
+
+    table.sort(plainCPList, function(a, b)
+        local ay = a.part and a.part.Position.Y or 0
+        local by = b.part and b.part.Position.Y or 0
+        if ay == by then
+            local ap = a.part and a.part.Position or Vector3.zero
+            local bp = b.part and b.part.Position or Vector3.zero
+            if ap.X == bp.X then return ap.Z < bp.Z end
+            return ap.X < bp.X
+        end
+        return ay < by
+    end)
+
+    local nextCPNumber = 1
+    local displayKeys = {}
+    for _, data in ipairs(plainCPList) do
+        while usedCPNumbers[nextCPNumber] do
+            nextCPNumber = nextCPNumber + 1
+        end
+        displayKeys[data] = "CP " .. tostring(nextCPNumber)
+        usedCPNumbers[nextCPNumber] = true
+        nextCPNumber = nextCPNumber + 1
+    end
+
     local yOffset = 0
     for _, data in ipairs(list) do
         local itemFrame = Instance.new("Frame")
@@ -533,7 +572,9 @@ updateRadarGuiContent = function()
         leftLabel.BackgroundTransparency = 1
         
         local keyStr = tostring(data.key)
-        if tonumber(keyStr) then
+        if displayKeys[data] then
+            leftLabel.Text = displayKeys[data]
+        elseif tonumber(keyStr) then
             leftLabel.Text = "CP " .. keyStr
         else
             leftLabel.Text = keyStr
