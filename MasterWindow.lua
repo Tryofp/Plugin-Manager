@@ -1339,10 +1339,46 @@ return function(speaker)
                 return
             end
 
-            local body = response.Body or response.body or ""
+            local function readVersionManagerResponse(httpResponse)
+                if type(httpResponse) ~= "table" then return nil, "Format respons HTTP tidak dikenali." end
+                local responseBody = httpResponse.Body or httpResponse.body or httpResponse.ResponseBody or ""
+                if type(responseBody) == "string" and responseBody ~= "" then
+                    return responseBody
+                end
+
+                -- Apps Script ContentService dapat mengembalikan redirect ke
+                -- script.googleusercontent.com sebelum mengirim body JSON.
+                local headers = httpResponse.Headers or httpResponse.headers or {}
+                local redirectUrl = headers.Location or headers.location or headers.LOCATION
+                local statusCode = tonumber(httpResponse.StatusCode or httpResponse.Status or httpResponse.status_code)
+                if redirectUrl and statusCode and statusCode >= 300 and statusCode < 400 then
+                    local redirectOk, redirectResponse = pcall(function()
+                        return req({
+                            Url = redirectUrl,
+                            Method = "GET",
+                            Headers = { ["Accept"] = "application/json" }
+                        })
+                    end)
+                    if redirectOk and type(redirectResponse) == "table" then
+                        local redirectedBody = redirectResponse.Body or redirectResponse.body or redirectResponse.ResponseBody or ""
+                        if type(redirectedBody) == "string" and redirectedBody ~= "" then
+                            return redirectedBody
+                        end
+                    end
+                end
+
+                return nil, "HTTP " .. tostring(statusCode or "tidak diketahui") ..
+                    " • body kosong" .. (redirectUrl and " • redirect tidak menghasilkan JSON" or "")
+            end
+
+            local body, responseError = readVersionManagerResponse(response)
+            if not body then
+                VersionHistoryInfo.Text = "Respons server tidak terbaca: " .. tostring(responseError)
+                return
+            end
             local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
             if not decodeOk or type(result) ~= "table" then
-                VersionHistoryInfo.Text = "Respons server tidak valid. Periksa deployment Apps Script."
+                VersionHistoryInfo.Text = "Balasan server bukan JSON: " .. string.sub(tostring(body), 1, 90)
                 return
             end
             if result.status ~= "success" then
