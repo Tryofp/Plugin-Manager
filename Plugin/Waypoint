@@ -88,6 +88,35 @@ local function saveCheckpointsToFile()
 end
 
 local function loadSavedCheckpoints()
+    savedCheckpointsList = {}
+    visitedKeys = {}
+
+    if writefile and readfile and isfile and listfiles then
+        pcall(function()
+            local masterData = {}
+            if isfile(MASTER_FILE_NAME) then
+                local content = readfile(MASTER_FILE_NAME)
+                local decoded = HttpService:JSONDecode(content)
+                if type(decoded) == "table" then masterData = decoded end
+            end
+
+            if masterData[CURRENT_MAP_KEY] then
+                savedCheckpointsList = masterData[CURRENT_MAP_KEY]
+                for _, item in ipairs(savedCheckpointsList) do
+                    if item.key ~= nil and item.cf then
+                        local itemCF = CFrame.new(unpack(item.cf))
+                        local pos = itemCF.Position
+                        local uniqueVisitKey = tostring(item.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+                        visitedKeys[uniqueVisitKey] = true
+                        visitedKeys[tostring(item.key) .. "_saved"] = true
+                    end
+                end
+            end
+        end)
+    end
+end
+
+loadSavedCheckpoints()
 
 -- Konversi checkpoint polos lama (CP+) menjadi CP bernomor agar masuk kategori CP,
 -- bukan waypoint. Nomor ditentukan dari urutan ketinggian, bukan counter scan.
@@ -138,35 +167,8 @@ end
 
 normalizeLegacyPlainSavedCPs()
 
-    savedCheckpointsList = {}
-    visitedKeys = {}
 
-    if writefile and readfile and isfile and listfiles then
-        pcall(function()
-            local masterData = {}
-            if isfile(MASTER_FILE_NAME) then
-                local content = readfile(MASTER_FILE_NAME)
-                local decoded = HttpService:JSONDecode(content)
-                if type(decoded) == "table" then masterData = decoded end
-            end
-
-            if masterData[CURRENT_MAP_KEY] then
-                savedCheckpointsList = masterData[CURRENT_MAP_KEY]
-                for _, item in ipairs(savedCheckpointsList) do
-                    if item.key ~= nil and item.cf then
-                        local itemCF = CFrame.new(unpack(item.cf))
-                        local pos = itemCF.Position
-                        local uniqueVisitKey = tostring(item.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
-                        visitedKeys[uniqueVisitKey] = true
-                        visitedKeys[tostring(item.key) .. "_saved"] = true
-                    end
-                end
-            end
-        end)
-    end
-end
-
-loadSavedCheckpoints()
+normalizeLegacyPlainSavedCPs()
 
 --==================================================
 -- UTILITIES & STRICT FILTER LOGIC
