@@ -676,6 +676,8 @@ return function(speaker)
     VersionHistoryScroll.BackgroundTransparency = 1
     VersionHistoryScroll.BorderSizePixel = 0
     VersionHistoryScroll.ScrollBarThickness = 4
+    VersionHistoryScroll.Active = true
+    VersionHistoryScroll.ScrollingEnabled = true
     VersionHistoryScroll.ZIndex = 32
     VersionHistoryScroll.Parent = VersionHistoryView
 
@@ -683,6 +685,11 @@ return function(speaker)
     VersionHistoryLayout.SortOrder = Enum.SortOrder.LayoutOrder
     VersionHistoryLayout.Padding = UDim.new(0, 6)
     VersionHistoryLayout.Parent = VersionHistoryScroll
+
+    -- Keep the canvas matched to the real content height, including TextButton rows.
+    VersionHistoryLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, VersionHistoryLayout.AbsoluteContentSize.Y + 8)
+    end)
 
     local MaintenanceBackBtn = Instance.new("TextButton")
     MaintenanceBackBtn.Size = UDim2.new(1, 0, 0, 28)
@@ -1298,7 +1305,7 @@ return function(speaker)
                 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
 
                 local title = Instance.new("TextLabel")
-                title.Size = UDim2.new(1, -12, 0, 18)
+                title.Size = UDim2.new(1, index == 1 and -104 or -12, 0, 18)
                 title.Position = UDim2.new(0, 6, 0, 3)
                 title.BackgroundTransparency = 1
                 title.Font = Enum.Font.GothamBold
@@ -1309,6 +1316,21 @@ return function(speaker)
                 title.TextTruncate = Enum.TextTruncate.AtEnd
                 title.ZIndex = 34
                 title.Parent = row
+
+                if index == 1 then
+                    local currentBadge = Instance.new("TextLabel")
+                    currentBadge.Size = UDim2.new(0, 92, 0, 16)
+                    currentBadge.Position = UDim2.new(1, -98, 0, 4)
+                    currentBadge.BackgroundColor3 = Color3.fromRGB(35, 105, 75)
+                    currentBadge.BorderSizePixel = 0
+                    currentBadge.Font = Enum.Font.GothamBold
+                    currentBadge.Text = "CURRENT VERSION"
+                    currentBadge.TextColor3 = Color3.fromRGB(190, 255, 215)
+                    currentBadge.TextSize = 6
+                    currentBadge.ZIndex = 35
+                    currentBadge.Parent = row
+                    Instance.new("UICorner", currentBadge).CornerRadius = UDim.new(0, 4)
+                end
 
                 local details = Instance.new("TextLabel")
                 details.Size = UDim2.new(1, -12, 0, 14)
@@ -1341,11 +1363,8 @@ return function(speaker)
             end
 
             task.defer(function()
-                local total = 0
-                for _, child in ipairs(VersionHistoryScroll:GetChildren()) do
-                    if child:IsA("Frame") or child:IsA("TextLabel") then total = total + child.AbsoluteSize.Y + 6 end
-                end
-                VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, total)
+                VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, VersionHistoryLayout.AbsoluteContentSize.Y + 8)
+                VersionHistoryScroll.CanvasPosition = Vector2.new(0, 0)
             end)
         end)
     end
@@ -1398,11 +1417,8 @@ return function(speaker)
         end
 
         task.defer(function()
-            local total = 0
-            for _, child in ipairs(VersionHistoryScroll:GetChildren()) do
-                if child:IsA("TextButton") then total = total + child.AbsoluteSize.Y + 6 end
-            end
-            VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, total)
+            VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, VersionHistoryLayout.AbsoluteContentSize.Y + 8)
+            VersionHistoryScroll.CanvasPosition = Vector2.new(0, 0)
         end)
     end
 
