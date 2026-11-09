@@ -1391,7 +1391,24 @@ return function(speaker)
             end
             local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
             if not decodeOk or type(result) ~= "table" then
-                VersionHistoryInfo.Text = "Balasan server bukan JSON: " .. string.sub(tostring(body), 1, 90)
+                local html = tostring(body)
+                local pageTitle = html:match("<title[^>]*>(.-)</title>") or html:match("<TITLE[^>]*>(.-)</TITLE>") or "judul tidak ditemukan"
+                pageTitle = pageTitle:gsub("%s+", " "):sub(1, 100)
+                local responseHeaders = response.Headers or response.headers or {}
+                local locationHeader = ""
+                for headerName, headerValue in pairs(responseHeaders) do
+                    if tostring(headerName):lower() == "location" then
+                        locationHeader = tostring(headerValue):sub(1, 120)
+                        break
+                    end
+                end
+                local responseStatus = tostring(response.StatusCode or response.Status or response.status_code or "?")
+                local responseUrl = tostring(response.Url or response.url or response.FinalUrl or response.final_url or "")
+                VersionHistoryInfo.Text = "Respons Google bukan JSON • HTTP " .. responseStatus ..
+                    " • " .. pageTitle ..
+                    (responseUrl ~= "" and " • URL: " .. responseUrl:sub(1, 100) or "") ..
+                    (locationHeader ~= "" and " • Location: " .. locationHeader or "") ..
+                    " • Cuplikan: " .. html:gsub("%s+", " "):sub(1, 220)
                 return
             end
             if result.status ~= "success" then
