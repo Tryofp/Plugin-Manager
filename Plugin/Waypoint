@@ -19,7 +19,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlaceId = game.PlaceId
 
 local HEIGHT_OFFSET = 1.0
-local MASTER_FILE_NAME = "TeleportCP_MasterSaves.json" 
+local MASTER_FILE_NAME = "TeleportCP_MasterSaves.json"
 
 local function getMapKey()
     return tostring(PlaceId)
