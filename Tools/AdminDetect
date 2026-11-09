@@ -209,21 +209,66 @@ pcall(function()
     end
 end)
 
+-- Tool detector dibuat berbasis nama tool yang benar-benar mengarah ke alat moderasi.
+-- Nama item biasa seperti "Admin Potion" tidak boleh dianggap bukti admin.
 local function checkPlayerTools(player)
-    if not player.Character then return nil end
-    local containers = {player.Backpack, player.Character}
+    local containers = {player:FindFirstChildOfClass("Backpack"), player.Character}
+
+    local excludedToolWords = {
+        "potion", "elixir", "consumable", "drink", "food",
+        "vip", "pass", "product", "crate", "chest", "reward"
+    }
+
+    local function hasExcludedWord(name)
+        for _, word in ipairs(excludedToolWords) do
+            if string.find(name, word, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function isAdminToolName(name)
+        if name == "" or hasExcludedWord(name) then return false end
+
+        -- Kata admin harus berdiri sendiri/menjadi nama alat, bukan bagian kata lain.
+        local hasAdminWord =
+            string.match(name, "%f[%a]admin%f[%A]") ~= nil or
+            string.match(name, "%f[%a]moderator%f[%A]") ~= nil or
+            string.match(name, "%f[%a]mod%f[%A]") ~= nil or
+            string.match(name, "%f[%a]staff%f[%A]") ~= nil or
+            string.match(name, "%f[%a]head%s*admin%f[%A]") ~= nil
+
+        local hasKnownModerationTool =
+            string.find(name, "ban hammer", 1, true) ~= nil or
+            string.find(name, "banhammer", 1, true) ~= nil or
+            string.find(name, "mod wand", 1, true) ~= nil or
+            string.find(name, "moderator wand", 1, true) ~= nil or
+            string.find(name, "admin panel", 1, true) ~= nil or
+            string.find(name, "admin command", 1, true) ~= nil or
+            string.find(name, "admin tool", 1, true) ~= nil
+
+        return hasKnownModerationTool or (hasAdminWord and (
+            name == "admin" or name == "moderator" or name == "mod" or
+            name == "staff" or name == "head admin" or name == "headadmin" or
+            string.find(name, "admin wand", 1, true) ~= nil or
+            string.find(name, "admin gun", 1, true) ~= nil
+        ))
+    end
+
     for _, container in ipairs(containers) do
         if container then
             for _, item in ipairs(container:GetChildren()) do
                 if item:IsA("Tool") then
-                    local toolName = string.lower(item.Name)
-                    if (string.find(toolName, "admin") or string.find(toolName, "ban hammer") or string.find(toolName, "mod wand")) and not string.find(toolName, "vip") then
+                    local toolName = string.lower(item.Name or "")
+                    if isAdminToolName(toolName) then
                         return "Stealth Admin 🕵️ (Tool: " .. item.Name .. ")"
                     end
                 end
             end
         end
     end
+
     return nil
 end
 
@@ -301,9 +346,13 @@ function scanServerAdmins(isManual, isStateChange)
                                         local hasCrownOwner = string.find(rawText, "👑") and (string.find(lowerText, "owner") or string.find(lowerText, "pemilik") or string.find(lowerText, "founder"))
                                         local isFormalAdminTag = string.find(lowerText, "moderator") or string.find(lowerText, "headadmin") or string.find(lowerText, "head admin") or string.find(lowerText, "super admin") or string.find(lowerText, "co-owner") or string.find(lowerText, "photographer") or string.find(lowerText, "owner cantik")
 
-                                        local hasSpecialTag = string.find(rawText, "🛡️") or string.find(rawText, "🔨") or hasCrownOwner or isFormalAdminTag or string.match(lowerText, "%[%s*admin%s*%]") or string.match(lowerText, "%[%s*dev%s*%]")
-                                        
-                                        if hasSpecialTag and #rawText <= 30 then
+                                        local hasSpecialTag = string.find(rawText, "🛡️") or string.find(rawText, "🔨") or hasCrownOwner or string.match(lowerText, "%[%s*admin%s*%]") or string.match(lowerText, "%[%s*dev%s*%]")
+                                        -- Tag Head Admin/Moderator sering lebih panjang dari 30 karakter
+                                        -- (mis. ada dekorasi/emoji). Beri batas khusus, bukan scan teks panjang bebas.
+                                        local validFormalRoleTag = isFormalAdminTag and #rawText <= 64
+                                        local validCompactRoleTag = hasSpecialTag and #rawText <= 30
+
+                                        if validFormalRoleTag or validCompactRoleTag then
                                             isTarget = true
                                             detectedRole = rawText
                                             break
