@@ -67,6 +67,20 @@ local function notify(title, text, duration)
     end)
 end
 
+local radarRefreshQueued = false
+
+local function requestRadarRefresh()
+    if radarRefreshQueued or not radarGui or not radarGui.Enabled then return end
+    radarRefreshQueued = true
+    task.delay(0.25, function()
+        radarRefreshQueued = false
+        if radarGui and radarGui.Enabled and updateRadarGuiContent then
+            updateRadarGuiContent()
+        end
+    end)
+end
+
+
 --==================================================
 -- FILE SYSTEM PERSISTENCE
 --==================================================
@@ -414,7 +428,7 @@ local function addOrUpdateSavedCP(key, desc, cf)
             item.cf = serializedCF
             saveCheckpointsToFile()
             if updateCpnGuiContent then updateCpnGuiContent() end
-            if updateRadarGuiContent then updateRadarGuiContent() end
+            requestRadarRefresh()
             return
         end
     end
@@ -433,7 +447,7 @@ local function addOrUpdateSavedCP(key, desc, cf)
 
     saveCheckpointsToFile()
     if updateCpnGuiContent then updateCpnGuiContent() end
-    if updateRadarGuiContent then updateRadarGuiContent() end
+    requestRadarRefresh()
     notify("Auto-Save CP", "Checkpoint tersimpan: " .. tostring(key), 2)
 end
 
@@ -500,7 +514,7 @@ local function processAndHookPart(obj)
             priorityScore = pScore
         }
 
-        if updateRadarGuiContent then updateRadarGuiContent() end
+        requestRadarRefresh()
 
         local function triggerAutoSave()
             if realPart and realPart.Parent then
@@ -523,7 +537,7 @@ local function processAndHookPart(obj)
 
                 if not visitedKeys[uniqueVisitKey] then
                     addOrUpdateSavedCP(saveKey, partDesc, targetCFrame)
-                    if updateRadarGuiContent then updateRadarGuiContent() end
+                    requestRadarRefresh()
                 end
             end
         end
@@ -1039,7 +1053,7 @@ updateCpnGuiContent = function()
             end
             saveCheckpointsToFile()
             updateCpnGuiContent()
-            if updateRadarGuiContent then updateRadarGuiContent() end
+            requestRadarRefresh()
             notify("CPN Manager", "Saved CP dihapus & dimunculkan kembali di SCP!", 1.5)
         end)
 
