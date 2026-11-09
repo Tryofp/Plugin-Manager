@@ -1366,7 +1366,7 @@ return function(speaker)
         local target = action == "SetStable" and "Simpan posisi main saat ini sebagai Stable Backup?"
             or (action == "RestoreStable" and "Kembalikan " .. fileInfo.name .. " ke Stable Backup?"
             or "Kembalikan " .. fileInfo.name .. " ke commit " .. tostring(commitSha):sub(1, 7) .. "?")
-        VersionHistoryConfirmText.Text = target .. "\\n\\nVersi aktif sebelum restore tetap tercatat di GitHub. Stable Backup tidak akan ditimpa."
+        VersionHistoryConfirmText.Text = target .. "\n\nVersi aktif sebelum restore tetap tercatat di GitHub. Stable Backup tidak akan ditimpa."
         VersionHistoryConfirm.Visible = true
     end
 
