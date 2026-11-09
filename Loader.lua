@@ -331,6 +331,8 @@ local SharedFeatures = {
         UpdateTimestamp = ""
     },
     WalkSpeed = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_walkspeed",
         Name = "Walk Speed",
         Desc = "Masukan angka speed yang kami mau, misal 20 ( tergantung map )",
@@ -338,7 +340,7 @@ local SharedFeatures = {
         UnCmd = "unws",
         NeedInput = true,
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/WalkSpeed",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "101120260014, 86400"
     },
     InfiniteJump = {
         FeatureId = "fid_infinitejump",
