@@ -22,55 +22,89 @@ jobs:
         with:
           node-version: '20'
 
-      # Update only Loader feature blocks whose matching plugin/tool file changed.
       - name: Update matching feature blocks
         id: feature_update
         shell: bash
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
           node <<'NODE'
           const fs = require('fs');
           const { execFileSync } = require('child_process');
+
           const loaderPath = 'Loader.lua';
-          const sheetKeysPath = '/tmp/updated-badge-keys.txt';
+          const keysPath = '/tmp/updated-badge-keys.txt';
+          const sourceFlagPath = '/tmp/source-files-changed.txt';
+
           let changedFiles = [];
           try {
-            changedFiles = execFileSync('git', ['diff', '--name-only', 'HEAD^', 'HEAD'], { encoding: 'utf8' })
-              .split('\n').map(s => s.trim()).filter(Boolean);
-          } catch (_) {
-            changedFiles = execFileSync('git', ['show', '--pretty=', '--name-only', 'HEAD'], { encoding: 'utf8' })
-              .split('\n').map(s => s.trim()).filter(Boolean);
+            const base = process.env.BASE_SHA;
+            const head = process.env.HEAD_SHA || 'HEAD';
+            if (base && !/^0+$/.test(base)) {
+              changedFiles = execFileSync('git', ['diff', '--name-only', base, head], { encoding: 'utf8' })
+                .split('\n').map(s => s.trim()).filter(Boolean);
+            } else {
+              changedFiles = execFileSync('git', ['show', '--pretty=', '--name-only', head], { encoding: 'utf8' })
+                .split('\n').map(s => s.trim()).filter(Boolean);
+            }
+          } catch (err) {
+            console.error('Could not determine changed files:', err.message);
+            process.exit(1);
           }
 
-          let previousLoader = '';
-          try { previousLoader = execFileSync('git', ['show', 'HEAD^:Loader.lua'], { encoding: 'utf8' }); } catch (_) {}
-          const previousFeatureKeys = new Set();
-          for (const oldBlock of (previousLoader.match(/\{[^{}]*\}/gs) || [])) {
-            const oldRaw = (oldBlock.match(/RawUrl\s*=\s*"([^"]*)"/) || [])[1];
-            const oldCmd = (oldBlock.match(/Cmd\s*=\s*"([^"]*)"/) || [])[1];
-            if (oldRaw && oldCmd) previousFeatureKeys.add(`${oldRaw}_${oldCmd}`);
-          }
-          const candidates = changedFiles.filter(file =>
-            file !== loaderPath && !file.startsWith('.github/') &&
-            (file.endsWith('.lua') || !file.split('/').pop().includes('.'))
-          );
+          // Source scripts only. Loader/workflow-only commits do not count as plugin updates.
+          const candidates = changedFiles.filter(file => {
+            if (file === loaderPath || file.startsWith('.github/')) return false;
+            const name = file.split('/').pop();
+            return /\.(lua|iy)$/i.test(name) || !name.includes('.');
+          });
+
+          fs.writeFileSync(sourceFlagPath, candidates.length ? 'true' : 'false');
           if (!candidates.length) {
-            fs.writeFileSync(sheetKeysPath, '');
-            console.log('No plugin/tool source files changed.');
+            fs.writeFileSync(keysPath, '');
+            console.log('No plugin/tool source files changed; LastUpdate will remain unchanged.');
             process.exit(0);
           }
 
-          const now = new Date();
+          console.log('Changed plugin/tool source files:', candidates.join(', '));
+
           const parts = new Intl.DateTimeFormat('en-GB', {
-            timeZone: 'Asia/Jakarta', day: '2-digit', month: '2-digit', year: 'numeric',
+            timeZone: 'Asia/Jakarta',
+            day: '2-digit', month: '2-digit', year: 'numeric',
             hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
-          }).formatToParts(now).reduce((o, p) => (o[p.type] = p.value, o), {});
+          }).formatToParts(new Date()).reduce((obj, part) => {
+            obj[part.type] = part.value;
+            return obj;
+          }, {});
           const stamp = `${parts.day}${parts.month}${parts.year}${parts.hour}${parts.minute}, 86400`;
+
+          let previousLoader = '';
+          try {
+            const base = process.env.BASE_SHA;
+            previousLoader = execFileSync(
+              'git',
+              ['show', `${base && !/^0+$/.test(base) ? base : 'HEAD^'}:Loader.lua`],
+              { encoding: 'utf8' }
+            );
+          } catch (_) {}
+
+          const previousFeatureKeys = new Set();
+          for (const block of (previousLoader.match(/\{[^{}]*\}/gs) || [])) {
+            const raw = (block.match(/RawUrl\s*=\s*"([^"]*)"/) || [])[1];
+            const cmd = (block.match(/Cmd\s*=\s*"([^"]*)"/) || [])[1];
+            if (raw && cmd) previousFeatureKeys.add(`${raw}_${cmd}`);
+          }
+
           let source = fs.readFileSync(loaderPath, 'utf8');
-          let changed = false;
+          let loaderChanged = false;
           const updatedKeys = new Set();
 
           function findBlockBounds(text, at) {
-            let depth = 0, start = -1, end = -1, inString = false, escaped = false;
+            let depth = 0, start = -1, end = -1;
+            let inString = false, escaped = false;
+
             for (let i = at; i >= 0; i--) {
               const c = text[i];
               if (c === '"' && !escaped) inString = !inString;
@@ -81,104 +115,152 @@ jobs:
                   depth--;
                 }
               }
-              escaped = c === '\\' && !escaped;
-              if (c !== '\\') escaped = false;
+              if (c === '\\' && !escaped) escaped = true;
+              else escaped = false;
             }
             if (start < 0) return null;
+
             depth = 0; inString = false; escaped = false;
             for (let i = start; i < text.length; i++) {
               const c = text[i];
               if (c === '"' && !escaped) inString = !inString;
               if (!inString) {
                 if (c === '{') depth++;
-                else if (c === '}' && --depth === 0) { end = i; break; }
+                else if (c === '}') {
+                  depth--;
+                  if (depth === 0) { end = i; break; }
+                }
               }
-              escaped = c === '\\' && !escaped;
-              if (c !== '\\') escaped = false;
+              if (c === '\\' && !escaped) escaped = true;
+              else escaped = false;
             }
             return end >= 0 ? { start, end } : null;
           }
 
           function upsertString(block, prop, value) {
-            const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            const escapedValue = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
             const re = new RegExp(`(^|\\n)(\\s*)${prop}\\s*=\\s*"[^"]*"`, 'm');
-            if (re.test(block)) return block.replace(re, (_m, nl, indent) => `${nl}${indent}${prop} = "${escaped}"`);
-            return block.replace('{', ` {\n        ${prop} = "${escaped}",`.replace(/^ \{/, '{'));
+            if (re.test(block)) {
+              return block.replace(re, (_m, nl, indent) => `${nl}${indent}${prop} = "${escapedValue}"`);
+            }
+            return block.replace('{', `{\n        ${prop} = "${escapedValue}",`);
           }
 
           for (const file of candidates) {
-            const base = file.split('/').pop().replace(/\.lua$/i, '');
-            console.log(`Checking changed source: ${file} (Loader RawUrl suffix: ${base})`);
+            const base = file.split('/').pop().replace(/\.(lua|iy)$/i, '');
+            const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const urlRe = new RegExp(`RawUrl\\s*=\\s*"[^"]*\\/${escapedBase}"`, 'g');
+            console.log(`Checking ${file}; Loader RawUrl suffix: ${base}`);
+
             let searchFrom = 0;
             while (true) {
-              const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const urlRe = new RegExp(`RawUrl\\s*=\\s*"[^"]*\\/${escapedBase}"`, 'g');
               urlRe.lastIndex = searchFrom;
               const match = urlRe.exec(source);
               if (!match) break;
+
               const bounds = findBlockBounds(source, match.index);
-              if (!bounds) { searchFrom = match.index + match[0].length; continue; }
-              let block = source.slice(bounds.start, bounds.end + 1);
+              if (!bounds) {
+                searchFrom = match.index + match[0].length;
+                continue;
+              }
+
+              const block = source.slice(bounds.start, bounds.end + 1);
               const raw = (block.match(/RawUrl\s*=\s*"([^"]*)"/) || [])[1];
               const cmd = (block.match(/Cmd\s*=\s*"([^"]*)"/) || [])[1];
-              if (raw && cmd) {
-                const key = `${raw}_${cmd}`;
-                const isNew = !previousFeatureKeys.has(key);
-                const badgeText = isNew ? 'New!' : 'Update!';
-                const badgeColor = isNew ? 'yellow' : 'green';
-                let updated = upsertString(block, 'UpdateTimestamp', stamp);
-                updated = upsertString(updated, 'BadgeText', badgeText);
-                updated = upsertString(updated, 'BadgeColor', badgeColor);
-                // Setiap fitur yang cocok dengan file sumber harus direaktivasi.
-                   updatedKeys.add(key);
+              if (!raw || !cmd) {
+                searchFrom = bounds.end + 1;
+                continue;
+              }
+
+              const key = `${raw}_${cmd}`;
+              const isNew = !previousFeatureKeys.has(key);
+              updatedKeys.add(key); // Reactivate every mapped feature, even if its stamp already matches.
+
+              let updated = upsertString(block, 'UpdateTimestamp', stamp);
+              updated = upsertString(updated, 'BadgeText', isNew ? 'New!' : 'Update!');
+              updated = upsertString(updated, 'BadgeColor', isNew ? 'yellow' : 'green');
 
               if (updated !== block) {
                 source = source.slice(0, bounds.start) + updated + source.slice(bounds.end + 1);
-                changed = true;
+                loaderChanged = true;
                 searchFrom = bounds.start + updated.length;
-                } else {
-               searchFrom = bounds.end + 1;
-              }
               } else {
                 searchFrom = bounds.end + 1;
               }
             }
           }
 
-          if (changed) fs.writeFileSync(loaderPath, source);
-          fs.writeFileSync(sheetKeysPath, [...updatedKeys].join('\n'));
-          console.log(`Updated ${updatedKeys.size} feature key(s).`);
+          if (loaderChanged) {
+            fs.writeFileSync(loaderPath, source);
+            console.log('Loader.lua updated.');
+          } else {
+            console.log('Loader.lua content already matches; feature reactivation is still queued.');
+          }
+
+          fs.writeFileSync(keysPath, [...updatedKeys].join('\n'));
+          console.log(`Feature keys to reactivate: ${updatedKeys.size}`);
           NODE
 
       - name: Commit Loader changes
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Loader.lua
           if ! git diff --cached --quiet; then
             git commit -m "bot: update feature badge timestamps"
             git push
+          else
+            echo "No Loader.lua content changes to commit."
           fi
 
-      # Reactivate only the exact feature keys whose source files changed.
-      - name: Reactivate updated feature badges
+      - name: Update Google Sheets metadata
+        shell: bash
         env:
           SHEETS_WEB_APP_URL: https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec
         run: |
+          set -euo pipefail
+
+          if [ ! -s /tmp/source-files-changed.txt ] || [ "$(cat /tmp/source-files-changed.txt)" != "true" ]; then
+            echo "No plugin/tool source update detected. LastUpdate remains unchanged."
+            exit 0
+          fi
+
+          post_metadata() {
+            local payload="$1"
+            local expected_key="$2"
+            local response
+
+            response=$(curl --fail --silent --show-error --location \
+              --retry 3 --retry-delay 2 \
+              -X POST -H 'Content-Type: application/json' \
+              -d "$payload" "$SHEETS_WEB_APP_URL")
+
+            echo "Google Sheets response: $response"
+            echo "$response" | jq -e --arg key "$expected_key" \
+              '.status == "success" and .key == $key' >/dev/null
+          }
+
+          # Reactivate only the feature keys matched to changed source files.
           if [ -s /tmp/updated-badge-keys.txt ]; then
             while IFS= read -r key; do
               [ -z "$key" ] && continue
               UPDATED_AT=$(date +%s%3N)
-              payload=$(jq -n --arg key "$key" --arg ts "$UPDATED_AT" '{Type:"FeatureUpdate", Key:$key, Timestamp:$ts}')
-              curl -fsSL -X POST -H 'Content-Type: application/json' -d "$payload" "$SHEETS_WEB_APP_URL"
-              echo
+              payload=$(jq -n --arg key "$key" --arg ts "$UPDATED_AT" \
+                '{Type:"FeatureUpdate", Key:$key, Timestamp:$ts}')
+              echo "Reactivating feature: $key"
+              post_metadata "$payload" "$key"
             done < /tmp/updated-badge-keys.txt
-
-            CURRENT_TIME=$(TZ='Asia/Jakarta' date +'%d%m%Y %H:%M')
-            payload=$(jq -n --arg ts "$CURRENT_TIME" '{Type:"LastUpdate", Timestamp:$ts}')
-            curl -fsSL -X POST -H 'Content-Type: application/json' -d "$payload" "$SHEETS_WEB_APP_URL"
-            echo
           else
-            echo 'No matching feature block changed; LastUpdate left untouched.'
+            echo "Source file changed but no matching Loader feature key was found."
           fi
+
+          # Always update LastUpdate for source changes, independent of badge keys.
+          CURRENT_TIME=$(TZ='Asia/Jakarta' date +'%d%m%Y %H:%M')
+          payload=$(jq -n --arg ts "$CURRENT_TIME" \
+            '{Type:"LastUpdate", Timestamp:$ts}')
+          echo "Sending LastUpdate (Asia/Jakarta): $CURRENT_TIME"
+          post_metadata "$payload" "LastUpdate"
+          echo "LastUpdate successfully saved to Google Sheets."
           
