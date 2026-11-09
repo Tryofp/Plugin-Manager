@@ -52,6 +52,8 @@ local IGNORE_KEYWORDS = {
 local streamingCache = {}
 local savedCheckpointsList = {}
 local visitedKeys = {}
+local unnumberedRegistry = {} -- Tambahan registry penomoran otomatis
+local unnumberedCounter = 0   -- Penghitung urutan checkpoint polos
 
 local radarGui, radarMainFrame, radarScrollContainer, isRadarMinimized = nil, nil, nil, false
 local cpnGui, cpnMainFrame, cpnScrollContainer, isCpnMinimized = nil, nil, nil, false
@@ -270,13 +272,16 @@ local function parseCPIdentity(obj)
         num = string.match(name, "^(%d+%.?%d*)$")
     end
 
-    -- Penanganan khusus untuk part polos bernama "checkpoint" atau "cp" tanpa angka
+    -- Penanganan otomatis untuk part polos tanpa angka (diberi nomor urut berurutan)
     if not num then
-        if lowerName == "checkpoint" or lowerName == "cp" then
-            return "CP", (folderContext ~= "" and folderContext .. " - Checkpoint" or "Checkpoint"), validPart, 1
-        end
-        if string.find(combined, "cp") or string.find(combined, "checkpoint") or string.find(combined, "stage") or string.find(combined, "waypoint") then
-            return "CP", name, validPart, 1
+        if lowerName == "checkpoint" or lowerName == "cp" or string.find(combined, "cp") or string.find(combined, "checkpoint") then
+            if not unnumberedRegistry[validPart] then
+                unnumberedCounter = unnumberedCounter + 1
+                unnumberedRegistry[validPart] = unnumberedCounter
+            end
+            local cpNum = unnumberedRegistry[validPart]
+            local descText = folderContext ~= "" and (folderContext .. " - Checkpoint " .. cpNum) or ("Checkpoint " .. cpNum)
+            return cpNum, descText, validPart, 2
         end
         return nil, nil, nil, 0
     end
