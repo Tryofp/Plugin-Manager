@@ -199,11 +199,14 @@ end
 
 local function parseCPIdentity(obj)
     local validPart = getValidCheckpointPart(obj)
-    local isPlainCheckpoint = false
+    local parent = obj and obj.Parent
+    local isPlainCheckpoint = obj
+        and string.lower(obj.Name) == "checkpoint"
+        and parent
+        and string.lower(parent.Name) == "checkpoint"
 
     if not validPart then
         validPart = getPlainCheckpointPart(obj)
-        isPlainCheckpoint = validPart ~= nil
     end
 
     if not validPart then return nil, nil, nil, 0 end
