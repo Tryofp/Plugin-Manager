@@ -637,6 +637,53 @@ return function(speaker)
     MaintenanceListView.ZIndex = 31
     MaintenanceListView.Parent = DevPanelContainer
 
+    local VersionHistoryView = Instance.new("Frame")
+    VersionHistoryView.Size = UDim2.new(1, -16, 1, -45)
+    VersionHistoryView.Position = UDim2.new(0, 8, 0, 40)
+    VersionHistoryView.BackgroundTransparency = 1
+    VersionHistoryView.Visible = false
+    VersionHistoryView.ZIndex = 31
+    VersionHistoryView.Parent = DevPanelContainer
+
+    local VersionHistoryBackBtn = Instance.new("TextButton")
+    VersionHistoryBackBtn.Size = UDim2.new(1, 0, 0, 28)
+    VersionHistoryBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+    VersionHistoryBackBtn.BorderSizePixel = 0
+    VersionHistoryBackBtn.Font = Enum.Font.GothamBold
+    VersionHistoryBackBtn.Text = "< KEMBALI KE MENU DEV"
+    VersionHistoryBackBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
+    VersionHistoryBackBtn.TextSize = 10
+    VersionHistoryBackBtn.ZIndex = 32
+    VersionHistoryBackBtn.Parent = VersionHistoryView
+    Instance.new("UICorner", VersionHistoryBackBtn).CornerRadius = UDim.new(0, 4)
+
+    local VersionHistoryInfo = Instance.new("TextLabel")
+    VersionHistoryInfo.Size = UDim2.new(1, 0, 0, 30)
+    VersionHistoryInfo.Position = UDim2.new(0, 0, 0, 32)
+    VersionHistoryInfo.BackgroundTransparency = 1
+    VersionHistoryInfo.Font = Enum.Font.Gotham
+    VersionHistoryInfo.Text = "Pilih file untuk melihat riwayat commit GitHub."
+    VersionHistoryInfo.TextColor3 = Color3.fromRGB(160, 175, 195)
+    VersionHistoryInfo.TextSize = 8
+    VersionHistoryInfo.TextWrapped = true
+    VersionHistoryInfo.TextXAlignment = Enum.TextXAlignment.Left
+    VersionHistoryInfo.ZIndex = 32
+    VersionHistoryInfo.Parent = VersionHistoryView
+
+    local VersionHistoryScroll = Instance.new("ScrollingFrame")
+    VersionHistoryScroll.Size = UDim2.new(1, 0, 1, -66)
+    VersionHistoryScroll.Position = UDim2.new(0, 0, 0, 64)
+    VersionHistoryScroll.BackgroundTransparency = 1
+    VersionHistoryScroll.BorderSizePixel = 0
+    VersionHistoryScroll.ScrollBarThickness = 4
+    VersionHistoryScroll.ZIndex = 32
+    VersionHistoryScroll.Parent = VersionHistoryView
+
+    local VersionHistoryLayout = Instance.new("UIListLayout")
+    VersionHistoryLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    VersionHistoryLayout.Padding = UDim.new(0, 6)
+    VersionHistoryLayout.Parent = VersionHistoryScroll
+
     local MaintenanceBackBtn = Instance.new("TextButton")
     MaintenanceBackBtn.Size = UDim2.new(1, 0, 0, 28)
     MaintenanceBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
@@ -651,6 +698,11 @@ return function(speaker)
 
     MaintenanceBackBtn.MouseButton1Click:Connect(function()
         MaintenanceListView.Visible = false
+        DevMainMenu.Visible = true
+    end)
+
+    VersionHistoryBackBtn.MouseButton1Click:Connect(function()
+        VersionHistoryView.Visible = false
         DevMainMenu.Visible = true
     end)
 
@@ -1160,6 +1212,167 @@ return function(speaker)
         end)
     end
 
+
+    local function clearVersionHistoryRows()
+        for _, child in ipairs(VersionHistoryScroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextButton") then child:Destroy() end
+        end
+        VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    end
+
+    local function addVersionHistoryMessage(message)
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -4, 0, 34)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.Gotham
+        label.Text = message
+        label.TextColor3 = Color3.fromRGB(160, 175, 195)
+        label.TextSize = 9
+        label.TextWrapped = true
+        label.ZIndex = 33
+        label.Parent = VersionHistoryScroll
+    end
+
+    local function loadVersionHistoryForFile(fileInfo)
+        clearVersionHistoryRows()
+        VersionHistoryInfo.Text = "Memuat " .. fileInfo.name .. "..."
+        task.spawn(function()
+            local encodedPath = tostring(fileInfo.path):gsub(" ", "%%20")
+            local url = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path=" .. encodedPath .. "&per_page=12"
+            local ok, response = pcall(function() return game:HttpGet(url) end)
+            if not ok or type(response) ~= "string" or response == "" then
+                VersionHistoryInfo.Text = fileInfo.name .. " • Gagal menghubungi GitHub"
+                addVersionHistoryMessage("Periksa koneksi lalu coba pilih file lagi.")
+                return
+            end
+
+            local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+            if not decodeOk or type(decoded) ~= "table" or decoded.message then
+                VersionHistoryInfo.Text = fileInfo.name .. " • GitHub API tidak tersedia"
+                addVersionHistoryMessage(type(decoded) == "table" and tostring(decoded.message or "Respons tidak valid") or "Respons GitHub tidak valid.")
+                return
+            end
+
+            VersionHistoryInfo.Text = fileInfo.name .. " • " .. fileInfo.path
+            if #decoded == 0 then
+                addVersionHistoryMessage("Belum ada riwayat commit untuk file ini.")
+                return
+            end
+
+            for index, entry in ipairs(decoded) do
+                local commitData = entry.commit or {}
+                local authorData = commitData.author or {}
+                local sha = tostring(entry.sha or "")
+                local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
+                if #message > 90 then message = message:sub(1, 87) .. "..." end
+
+                local row = Instance.new("Frame")
+                row.Size = UDim2.new(1, -4, 0, 48)
+                row.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
+                row.BackgroundTransparency = 0.15
+                row.BorderSizePixel = 0
+                row.ZIndex = 33
+                row.Parent = VersionHistoryScroll
+                Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+                local title = Instance.new("TextLabel")
+                title.Size = UDim2.new(1, -12, 0, 18)
+                title.Position = UDim2.new(0, 6, 0, 3)
+                title.BackgroundTransparency = 1
+                title.Font = Enum.Font.GothamBold
+                title.Text = tostring(index) .. ". " .. message
+                title.TextColor3 = Color3.fromRGB(235, 240, 248)
+                title.TextSize = 8
+                title.TextXAlignment = Enum.TextXAlignment.Left
+                title.TextTruncate = Enum.TextTruncate.AtEnd
+                title.ZIndex = 34
+                title.Parent = row
+
+                local details = Instance.new("TextLabel")
+                details.Size = UDim2.new(1, -12, 0, 14)
+                details.Position = UDim2.new(0, 6, 0, 24)
+                details.BackgroundTransparency = 1
+                details.Font = Enum.Font.Gotham
+                details.Text = tostring(authorData.date or "Tanggal tidak tersedia") .. " • " .. sha:sub(1, 7)
+                details.TextColor3 = Color3.fromRGB(145, 165, 190)
+                details.TextSize = 8
+                details.TextXAlignment = Enum.TextXAlignment.Left
+                details.ZIndex = 34
+                details.Parent = row
+            end
+
+            task.defer(function()
+                local total = 0
+                for _, child in ipairs(VersionHistoryScroll:GetChildren()) do
+                    if child:IsA("Frame") or child:IsA("TextLabel") then total = total + child.AbsoluteSize.Y + 6 end
+                end
+                VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, total)
+            end)
+        end)
+    end
+
+    local function loadVersionHistoryFiles()
+        clearVersionHistoryRows()
+        if not globalLoaderData then
+            VersionHistoryInfo.Text = "Loader belum siap."
+            addVersionHistoryMessage("Buka kembali Dev Panel setelah Loader selesai dimuat.")
+            return
+        end
+
+        local files, seen = {}, {}
+        for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
+            for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+                local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or {item}
+                for _, feature in ipairs(candidates) do
+                    local rawUrl = tostring(feature.RawUrl or item.RawUrl or "")
+                    local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
+                        or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
+                    if path and not seen[path] then
+                        seen[path] = true
+                        table.insert(files, {name = tostring(feature.Name or item.Name or path), path = path})
+                    end
+                end
+            end
+        end
+        table.sort(files, function(a, b) return string.lower(a.name) < string.lower(b.name) end)
+        VersionHistoryInfo.Text = "Pilih file • menampilkan 12 commit terakhir"
+        if #files == 0 then
+            addVersionHistoryMessage("Tidak ada RawUrl Plugin-Manager yang ditemukan di Loader.")
+            return
+        end
+
+        for _, fileInfo in ipairs(files) do
+            local row = Instance.new("TextButton")
+            row.Size = UDim2.new(1, -4, 0, 34)
+            row.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
+            row.BackgroundTransparency = 0.15
+            row.BorderSizePixel = 0
+            row.Font = Enum.Font.GothamBold
+            row.Text = "  " .. fileInfo.name .. "   ›"
+            row.TextColor3 = Color3.fromRGB(235, 240, 248)
+            row.TextSize = 9
+            row.TextXAlignment = Enum.TextXAlignment.Left
+            row.ZIndex = 33
+            row.Parent = VersionHistoryScroll
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+            row.MouseButton1Click:Connect(function() loadVersionHistoryForFile(fileInfo) end)
+        end
+
+        task.defer(function()
+            local total = 0
+            for _, child in ipairs(VersionHistoryScroll:GetChildren()) do
+                if child:IsA("TextButton") then total = total + child.AbsoluteSize.Y + 6 end
+            end
+            VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, total)
+        end)
+    end
+
+    addDevMenuOption("🕘 Version History", "Lihat 12 commit terakhir setiap file plugin", function()
+        DevMainMenu.Visible = false
+        loadVersionHistoryFiles()
+        VersionHistoryView.Visible = true
+    end)
+
     addDevMenuOption("🛠️ Maintenance Fitur", "Aktifkan/nonaktifkan Maintenance realtime untuk fitur di Loader", function()
         DevMainMenu.Visible = false
         loadMaintenanceListForDev()
@@ -1190,6 +1403,7 @@ return function(speaker)
             DevMainMenu.Visible = true
             BadgeListView.Visible = false
             MaintenanceListView.Visible = false
+            VersionHistoryView.Visible = false
             DevPanelContainer.Visible = true
         end
     end)
