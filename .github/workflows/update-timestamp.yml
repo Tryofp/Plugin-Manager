@@ -129,15 +129,16 @@ jobs:
                 let updated = upsertString(block, 'UpdateTimestamp', stamp);
                 updated = upsertString(updated, 'BadgeText', badgeText);
                 updated = upsertString(updated, 'BadgeColor', badgeColor);
-                if (updated !== block) {
-                  source = source.slice(0, bounds.start) + updated + source.slice(bounds.end + 1);
-                  changed = true;
-                  updatedKeys.add(key);
-                  searchFrom = bounds.start + updated.length;
-                  console.log(`Updated ${key}: ${badgeText}`);
+                // Setiap fitur yang cocok dengan file sumber harus direaktivasi.
+                   updatedKeys.add(key);
+
+              if (updated !== block) {
+                source = source.slice(0, bounds.start) + updated + source.slice(bounds.end + 1);
+                changed = true;
+                searchFrom = bounds.start + updated.length;
                 } else {
-                  searchFrom = bounds.end + 1;
-                }
+               searchFrom = bounds.end + 1;
+              }
               } else {
                 searchFrom = bounds.end + 1;
               }
