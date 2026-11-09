@@ -1325,7 +1325,6 @@ return function(speaker)
                     Url = SHEETS_WEB_APP_URL,
                     Method = "POST",
                     Headers = { ["Content-Type"] = "application/json" },
-                    FollowRedirects = false,
                     Body = HttpService:JSONEncode({
                         Type = "VersionManager",
                         Action = action,
