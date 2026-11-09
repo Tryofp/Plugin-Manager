@@ -152,6 +152,8 @@ local SharedFeatures = {
         UpdateTimestamp = "091120260333, 86400"
     },
     PlayMusic = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_playmusic",
         Name = "Play Music",
         Desc = "Mendengarkan musik",
@@ -159,7 +161,7 @@ local SharedFeatures = {
         UnCmd = "stopmusic",
         NeedInput = true,
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/MusicTimeML",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120261058, 86400"
     },
 
     -- 5. Fun Sub-Features & Standalone Tools
