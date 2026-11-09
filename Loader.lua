@@ -132,13 +132,15 @@ local SharedFeatures = {
 
     -- 4. Sound & View Sub-Features
     Spectator = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_spectator",
         Name = "Spectator",
         Desc = "Menonton dan menguping target dari jauh ( Jika dalam Jangkauan )",
         Cmd = "spectate",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SoundandView",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "101120260036, 86400"
     },
     MuteSound = {
         FeatureId = "fid_mutesound",
@@ -149,7 +151,7 @@ local SharedFeatures = {
         Cmd = "mutesound",
         UnCmd = "unmutesound",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SoundandView",
-        UpdateTimestamp = "091120260333, 86400"
+        UpdateTimestamp = "101120260036, 86400"
     },
     PlayMusic = {
         BadgeColor = "green",
