@@ -161,7 +161,7 @@ local SharedFeatures = {
         UnCmd = "stopmusic",
         NeedInput = true,
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/MusicTimeML",
-        UpdateTimestamp = "091120261058, 86400"
+        UpdateTimestamp = "091120261116, 86400"
     },
 
     -- 5. Fun Sub-Features & Standalone Tools
