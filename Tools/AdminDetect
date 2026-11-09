@@ -13,7 +13,6 @@ _G.AdminDetector_NoAdminNotified = _G.AdminDetector_NoAdminNotified or false
 _G.AdminDetector_LastHash = _G.AdminDetector_LastHash or ""
 _G.AdminDetector_StartupTime = os.time()
 
-
 local function notify(text)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
