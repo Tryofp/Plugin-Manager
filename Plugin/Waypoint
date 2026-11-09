@@ -167,9 +167,6 @@ end
 
 normalizeLegacyPlainSavedCPs()
 
-
-normalizeLegacyPlainSavedCPs()
-
 --==================================================
 -- UTILITIES & STRICT FILTER LOGIC
 --==================================================
