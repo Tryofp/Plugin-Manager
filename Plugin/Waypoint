@@ -88,6 +88,56 @@ local function saveCheckpointsToFile()
 end
 
 local function loadSavedCheckpoints()
+
+-- Konversi checkpoint polos lama (CP+) menjadi CP bernomor agar masuk kategori CP,
+-- bukan waypoint. Nomor ditentukan dari urutan ketinggian, bukan counter scan.
+local function normalizeLegacyPlainSavedCPs()
+    local usedNumbers = {}
+    local plainItems = {}
+
+    for _, item in ipairs(savedCheckpointsList) do
+        local numericKey = tonumber(item.key)
+        if numericKey then
+            usedNumbers[numericKey] = true
+        elseif item.key == "CP+" and item.cf then
+            table.insert(plainItems, item)
+        end
+    end
+
+    table.sort(plainItems, function(a, b)
+        local ap = CFrame.new(unpack(a.cf)).Position
+        local bp = CFrame.new(unpack(b.cf)).Position
+        if ap.Y == bp.Y then
+            if ap.X == bp.X then return ap.Z < bp.Z end
+            return ap.X < bp.X
+        end
+        return ap.Y < bp.Y
+    end)
+
+    local nextNumber = 1
+    for _, item in ipairs(plainItems) do
+        while usedNumbers[nextNumber] do
+            nextNumber = nextNumber + 1
+        end
+        item.key = nextNumber
+        usedNumbers[nextNumber] = true
+        nextNumber = nextNumber + 1
+    end
+
+    -- Bangun ulang visitedKeys memakai key baru agar CP lama tidak muncul lagi di radar.
+    visitedKeys = {}
+    for _, item in ipairs(savedCheckpointsList) do
+        if item.key ~= nil and item.cf then
+            local pos = CFrame.new(unpack(item.cf)).Position
+            local uniqueVisitKey = tostring(item.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+            visitedKeys[uniqueVisitKey] = true
+            visitedKeys[tostring(item.key) .. "_saved"] = true
+        end
+    end
+end
+
+normalizeLegacyPlainSavedCPs()
+
     savedCheckpointsList = {}
     visitedKeys = {}
 
@@ -388,6 +438,44 @@ local function addOrUpdateSavedCP(key, desc, cf)
     notify("Auto-Save CP", "Checkpoint tersimpan: " .. tostring(key), 2)
 end
 
+-- Nomor CP polos selalu dihitung dari urutan posisi (Y rendah ke tinggi).
+-- Tidak memakai counter scan, sehingga hasilnya tidak bergantung urutan DescendantAdded.
+local function getOrderedPlainCheckpointNumbers()
+    local usedNumbers = {}
+    local plainList = {}
+
+    for _, data in pairs(streamingCache) do
+        local numericKey = tonumber(data.key)
+        if numericKey then
+            usedNumbers[numericKey] = true
+        elseif data.key == "CP+" and data.part and data.part.Parent then
+            table.insert(plainList, data)
+        end
+    end
+
+    table.sort(plainList, function(a, b)
+        local ap = a.part.Position
+        local bp = b.part.Position
+        if ap.Y == bp.Y then
+            if ap.X == bp.X then return ap.Z < bp.Z end
+            return ap.X < bp.X
+        end
+        return ap.Y < bp.Y
+    end)
+
+    local result = {}
+    local nextNumber = 1
+    for _, data in ipairs(plainList) do
+        while usedNumbers[nextNumber] do
+            nextNumber = nextNumber + 1
+        end
+        result[data] = nextNumber
+        usedNumbers[nextNumber] = true
+        nextNumber = nextNumber + 1
+    end
+    return result
+end
+
 --==================================================
 -- PURE EVENT-DRIVEN SCANNER (ZERO BACKGROUND LOOP)
 --==================================================
@@ -430,10 +518,12 @@ local function processAndHookPart(obj)
                 end
 
                 local folderPrefix = folderContext ~= "" and folderContext or "Main"
-                local uniqueVisitKey = tostring(cpKey) .. "_" .. folderPrefix .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
-                
+                local orderedNumbers = getOrderedPlainCheckpointNumbers()
+                local saveKey = cpKey == "CP+" and (orderedNumbers[streamingCache[uniqueKey]] or 1) or cpKey
+                local uniqueVisitKey = tostring(saveKey) .. "_" .. folderPrefix .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+
                 if not visitedKeys[uniqueVisitKey] then
-                    addOrUpdateSavedCP(cpKey, partDesc, targetCFrame)
+                    addOrUpdateSavedCP(saveKey, partDesc, targetCFrame)
                     if updateRadarGuiContent then updateRadarGuiContent() end
                 end
             end
@@ -477,12 +567,14 @@ updateRadarGuiContent = function()
         if child:IsA("Frame") then child:Destroy() end
     end
 
+    local orderedPlainNumbers = getOrderedPlainCheckpointNumbers()
     local rawList = {}
     for _, data in pairs(streamingCache) do
         if data.part and data.part.Parent then
             local pos = data.part.Position
-            local uniqueVisitKey = tostring(data.key) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
-            
+            local visitKey = data.key == "CP+" and (orderedPlainNumbers[data] or 1) or data.key
+            local uniqueVisitKey = tostring(visitKey) .. "_" .. math.floor(pos.X) .. "_" .. math.floor(pos.Y) .. "_" .. math.floor(pos.Z)
+
             if not visitedKeys[uniqueVisitKey] then
                 table.insert(rawList, data)
             end
@@ -514,43 +606,10 @@ updateRadarGuiContent = function()
         return tostring(a.key) < tostring(b.key)
     end)
 
-    -- Beri nomor tampilan CP1, CP2, dst. untuk checkpoint polos (CP+).
-    -- Urutkan checkpoint polos berdasarkan ketinggian Y dari rendah ke tinggi,
-    -- tanpa mengubah key asli, auto-save, CP bernomor yang sudah terdeteksi,
-    -- ataupun identitas Summit.
-    local usedCPNumbers = {}
-    local plainCPList = {}
-
-    for _, data in ipairs(list) do
-        local numericKey = tonumber(data.key)
-        if numericKey then
-            usedCPNumbers[numericKey] = true
-        elseif data.key == "CP+" then
-            table.insert(plainCPList, data)
-        end
-    end
-
-    table.sort(plainCPList, function(a, b)
-        local ay = a.part and a.part.Position.Y or 0
-        local by = b.part and b.part.Position.Y or 0
-        if ay == by then
-            local ap = a.part and a.part.Position or Vector3.zero
-            local bp = b.part and b.part.Position or Vector3.zero
-            if ap.X == bp.X then return ap.Z < bp.Z end
-            return ap.X < bp.X
-        end
-        return ay < by
-    end)
-
-    local nextCPNumber = 1
+    -- Nomor kiri memakai nomor CP yang sama dengan key auto-save/CPN Manager.
     local displayKeys = {}
-    for _, data in ipairs(plainCPList) do
-        while usedCPNumbers[nextCPNumber] do
-            nextCPNumber = nextCPNumber + 1
-        end
-        displayKeys[data] = "CP " .. tostring(nextCPNumber)
-        usedCPNumbers[nextCPNumber] = true
-        nextCPNumber = nextCPNumber + 1
+    for data, number in pairs(orderedPlainNumbers) do
+        displayKeys[data] = "CP " .. tostring(number)
     end
 
     local yOffset = 0
@@ -614,7 +673,9 @@ updateRadarGuiContent = function()
         teleBtn.MouseButton1Click:Connect(function()
             if data.part and data.part.Parent then
                 safeTeleport(data.part.CFrame)
-                addOrUpdateSavedCP(data.key, data.desc, data.part.CFrame)
+                local orderedNumbers = getOrderedPlainCheckpointNumbers()
+                local saveKey = data.key == "CP+" and (orderedNumbers[data] or 1) or data.key
+                addOrUpdateSavedCP(saveKey, data.desc, data.part.CFrame)
                 notify("TeleportCP", "Berhasil Teleport & Disave!", 1.5)
             end
         end)
