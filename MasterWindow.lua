@@ -1206,7 +1206,7 @@ return function(speaker)
         task.defer(function()
             local total = 0
             for _, child in ipairs(MaintenanceScroll:GetChildren()) do
-                if child:IsA("Frame") or child:IsA("TextLabel") then total = total + child.AbsoluteSize.Y + 6 end
+                if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextButton") then total = total + child.AbsoluteSize.Y + 6 end
             end
             MaintenanceScroll.CanvasSize = UDim2.new(0, 0, 0, total)
         end)
@@ -1254,6 +1254,22 @@ return function(speaker)
             end
 
             VersionHistoryInfo.Text = fileInfo.name .. " • " .. fileInfo.path
+
+            local fileBack = Instance.new("TextButton")
+            fileBack.Size = UDim2.new(1, -4, 0, 26)
+            fileBack.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+            fileBack.BorderSizePixel = 0
+            fileBack.Font = Enum.Font.GothamBold
+            fileBack.Text = "< KEMBALI KE DAFTAR FILE"
+            fileBack.TextColor3 = Color3.fromRGB(0, 200, 255)
+            fileBack.TextSize = 8
+            fileBack.ZIndex = 33
+            fileBack.Parent = VersionHistoryScroll
+            Instance.new("UICorner", fileBack).CornerRadius = UDim.new(0, 4)
+            fileBack.MouseButton1Click:Connect(function()
+                loadVersionHistoryFiles()
+            end)
+
             if #decoded == 0 then
                 addVersionHistoryMessage("Belum ada riwayat commit untuk file ini.")
                 return
