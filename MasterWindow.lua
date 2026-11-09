@@ -1320,6 +1320,14 @@ return function(speaker)
             end
 
             VersionHistoryInfo.Text = "Memproses " .. action .. "..."
+
+            -- Simpan state sebelum POST. Apps Script ContentService kadang
+            -- mengembalikan HTTP 405 pada redirect executor walaupun aksi sudah
+            -- berhasil dijalankan. Hasil akhir diverifikasi dari metadata GET.
+            pcall(fetchRemoteMetadata)
+            local beforeStableUpdatedAt = tostring(remoteMetadata.StableBackupUpdatedAt or "")
+            local beforeRestoreAt = tostring(remoteMetadata.LastVersionRestoreAt or "")
+
             local requestOk, response = pcall(function()
                 return req({
                     Url = SHEETS_WEB_APP_URL,
@@ -1337,6 +1345,33 @@ return function(speaker)
             if not requestOk or not response then
                 VersionHistoryInfo.Text = "Gagal menghubungi server Version Manager."
                 return
+            end
+
+            -- Verifikasi hasil dari server, bukan status/body POST yang dapat
+            -- terpengaruh redirect ContentService pada executor tertentu.
+            for attempt = 1, 4 do
+                task.wait(attempt == 1 and 0.25 or 0.5)
+                local stateOk = fetchRemoteMetadata()
+                if stateOk then
+                    if action == "SetStable" then
+                        local stableCommit = tostring(remoteMetadata.StableBackupCommit or "")
+                        local updatedAt = tostring(remoteMetadata.StableBackupUpdatedAt or "")
+                        if stableCommit ~= "" and updatedAt ~= "" and updatedAt ~= beforeStableUpdatedAt then
+                            VersionHistoryInfo.Text = "STABLE BACKUP tersimpan • " .. stableCommit:sub(1, 7)
+                            return
+                        end
+                    elseif action == "RestoreStable" or action == "RestoreSelected" then
+                        local restoreAt = tostring(remoteMetadata.LastVersionRestoreAt or "")
+                        local restorePath = tostring(remoteMetadata.LastVersionRestorePath or "")
+                        local newCommit = tostring(remoteMetadata.LastVersionRestoreCommit or "")
+                        if restoreAt ~= "" and restoreAt ~= beforeRestoreAt and restorePath == tostring(fileInfo.path) and newCommit ~= "" then
+                            VersionHistoryInfo.Text = "Restore berhasil • commit baru " .. newCommit:sub(1, 7)
+                            task.wait(0.5)
+                            loadVersionHistoryForFile(fileInfo)
+                            return
+                        end
+                    end
+                end
             end
 
             local function readVersionManagerResponse(httpResponse)
