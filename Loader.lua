@@ -322,7 +322,7 @@ local SharedFeatures = {
         Cmd = "cad",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AdminDetect",
-        UpdateTimestamp = "091120260808, 86400"
+        UpdateTimestamp = "091120260930, 86400"
     },
     Noclip = {
         Name = "Noclip",
