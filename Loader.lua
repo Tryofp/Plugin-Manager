@@ -315,12 +315,14 @@ local SharedFeatures = {
         UpdateTimestamp = ""
     },
     AdminDetect = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         Name = "Admin Detect",
         Desc = "Mendeteksi Owner dan Admin, tunggu beberapa detik setelah Execute",
         Cmd = "cad",
         UnCmd = "",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AdminDetect",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "091120260808, 86400"
     },
     Noclip = {
         Name = "Noclip",
