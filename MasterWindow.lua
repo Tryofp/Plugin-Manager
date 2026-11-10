@@ -253,6 +253,65 @@ return function(speaker)
     if not _G.MasterPluginHub_Buttons then _G.MasterPluginHub_Buttons = {} end
     local activeButtons = _G.MasterPluginHub_Buttons
 
+    -- ==========================================
+    -- ⭐ FAVORITE / PIN (PERSISTEN LOKAL PER USER)
+    -- ==========================================
+    local FAVORITE_FOLDER = "PluginManager/Profiles"
+    local FAVORITE_FILE = FAVORITE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. ".json"
+    local favoritePlugins = _G.MasterPluginHub_Favorites or {}
+    _G.MasterPluginHub_Favorites = favoritePlugins
+
+    local function loadFavoritePlugins()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
+        local ok, exists = pcall(isfile, FAVORITE_FILE)
+        if not ok or not exists then return end
+        local readOk, raw = pcall(readfile, FAVORITE_FILE)
+        if not readOk or type(raw) ~= "string" or raw == "" then return end
+        local decodeOk, decoded = pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+        if decodeOk and type(decoded) == "table" then
+            favoritePlugins = decoded
+            _G.MasterPluginHub_Favorites = favoritePlugins
+        end
+    end
+
+    local function saveFavoritePlugins()
+        if type(writefile) ~= "function" then return end
+        if type(makefolder) == "function" then
+            pcall(makefolder, "PluginManager")
+            pcall(makefolder, FAVORITE_FOLDER)
+        end
+        local ok, encoded = pcall(function()
+            return HttpService:JSONEncode(favoritePlugins)
+        end)
+        if ok and type(encoded) == "string" then
+            pcall(writefile, FAVORITE_FILE, encoded)
+        end
+    end
+
+    loadFavoritePlugins()
+
+    local function getMenuFavoriteKey(item)
+        return "menu|" .. tostring(item.RawUrl or "") .. "|" .. tostring(item.Name or "")
+    end
+
+    local function getSubFavoriteKey(subFeat, parentRawUrl)
+        local rawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or parentRawUrl
+        return "feature|" .. tostring(rawUrl or "") .. "|" .. tostring(subFeat.Cmd or subFeat.Name or "")
+    end
+
+    local function isFavorite(key)
+        return favoritePlugins[key] == true
+    end
+
+    local function toggleFavorite(key)
+        favoritePlugins[key] = not favoritePlugins[key] or nil
+        if favoritePlugins[key] == false then favoritePlugins[key] = nil end
+        saveFavoritePlugins()
+        return favoritePlugins[key] == true
+    end
+
     local loadedModules = {}
 
     local oldCore = CoreGui:FindFirstChild("MasterPluginHub")
@@ -2725,7 +2784,19 @@ return function(speaker)
             currentActiveScroll.Visible = true
         end)
 
-        for _, subFeat in ipairs(subFeatures) do
+        local orderedSubFeatures = {}
+        for index, feature in ipairs(subFeatures) do
+            table.insert(orderedSubFeatures, { item = feature, index = index })
+        end
+        table.sort(orderedSubFeatures, function(a, b)
+            local aFav = isFavorite(getSubFavoriteKey(a.item, rawUrl))
+            local bFav = isFavorite(getSubFavoriteKey(b.item, rawUrl))
+            if aFav ~= bFav then return aFav end
+            return a.index < b.index
+        end)
+
+        for _, subEntry in ipairs(orderedSubFeatures) do
+            local subFeat = subEntry.item
             local subRawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or rawUrl
             local uniqueKey = tostring(subRawUrl) .. "_" .. tostring(subFeat.Cmd)
             if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
@@ -2738,7 +2809,7 @@ return function(speaker)
             Instance.new("UICorner", Item).CornerRadius = UDim.new(0, 4)
 
             local LblName = Instance.new("TextLabel")
-            LblName.Size = UDim2.new(1, -90, 0, 18)
+            LblName.Size = UDim2.new(1, -118, 0, 18)
             LblName.Position = UDim2.new(0, 8, 0, 4)
             LblName.BackgroundTransparency = 1
             LblName.Text = subFeat.Name
@@ -2791,8 +2862,25 @@ return function(speaker)
 
             local textBounds = TextService:GetTextSize(subFeat.Desc, 10, Enum.Font.Gotham, Vector2.new(174, 10000))
             local descHeight = math.max(14, textBounds.Y + 5)
-            LblDesc.Size = UDim2.new(1, -90, 0, descHeight)
+            LblDesc.Size = UDim2.new(1, -118, 0, descHeight)
             Item.Size = UDim2.new(1, 0, 0, descHeight + 28)
+
+            local SubFavoriteBtn = Instance.new("TextButton")
+            SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
+            SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
+            SubFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            SubFavoriteBtn.BackgroundTransparency = 1
+            SubFavoriteBtn.BorderSizePixel = 0
+            SubFavoriteBtn.Font = Enum.Font.GothamBold
+            SubFavoriteBtn.TextSize = 18
+            SubFavoriteBtn.Text = isFavorite(getSubFavoriteKey(subFeat, rawUrl)) and "★" or "☆"
+            SubFavoriteBtn.TextColor3 = isFavorite(getSubFavoriteKey(subFeat, rawUrl))
+                and Color3.fromRGB(255, 205, 55) or Color3.fromRGB(135, 145, 160)
+            SubFavoriteBtn.Parent = Item
+            SubFavoriteBtn.MouseButton1Click:Connect(function()
+                toggleFavorite(getSubFavoriteKey(subFeat, rawUrl))
+                showSubMenu(menuTitle, rawUrl, subFeatures)
+            end)
 
             local ExecSub = Instance.new("TextButton")
             ExecSub.Size = UDim2.new(0, 75, 0, 24)
@@ -2899,7 +2987,19 @@ return function(speaker)
             return
         end
 
-        for _, item in ipairs(menuList) do
+        local orderedMenuItems = {}
+        for index, menuItem in ipairs(menuList) do
+            table.insert(orderedMenuItems, { item = menuItem, index = index })
+        end
+        table.sort(orderedMenuItems, function(a, b)
+            local aFav = isFavorite(getMenuFavoriteKey(a.item))
+            local bFav = isFavorite(getMenuFavoriteKey(b.item))
+            if aFav ~= bFav then return aFav end
+            return a.index < b.index
+        end)
+
+        for _, menuEntry in ipairs(orderedMenuItems) do
+            local item = menuEntry.item
             local ItemFrame = Instance.new("Frame")
             ItemFrame.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
             ItemFrame.BackgroundTransparency = 0.35
@@ -2908,7 +3008,7 @@ return function(speaker)
             Instance.new("UICorner", ItemFrame).CornerRadius = UDim.new(0, 4)
 
             local NameLabel = Instance.new("TextLabel")
-            NameLabel.Size = UDim2.new(1, -90, 0, 18)
+            NameLabel.Size = UDim2.new(1, -118, 0, 18)
             NameLabel.Position = UDim2.new(0, 8, 0, 4)
             NameLabel.BackgroundTransparency = 1
             NameLabel.Text = item.Name
@@ -3008,8 +3108,28 @@ return function(speaker)
 
             local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(174, 10000))
             local descHeight = math.max(14, textBounds.Y + 5)
-            DescLabel.Size = UDim2.new(1, -90, 0, descHeight)
+            DescLabel.Size = UDim2.new(1, -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
+
+            local MenuFavoriteBtn = Instance.new("TextButton")
+            MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
+            MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
+            MenuFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            MenuFavoriteBtn.BackgroundTransparency = 1
+            MenuFavoriteBtn.BorderSizePixel = 0
+            MenuFavoriteBtn.Font = Enum.Font.GothamBold
+            MenuFavoriteBtn.TextSize = 18
+            MenuFavoriteBtn.Text = isFavorite(getMenuFavoriteKey(item)) and "★" or "☆"
+            MenuFavoriteBtn.TextColor3 = isFavorite(getMenuFavoriteKey(item))
+                and Color3.fromRGB(255, 205, 55) or Color3.fromRGB(135, 145, 160)
+            MenuFavoriteBtn.Parent = ItemFrame
+            MenuFavoriteBtn.MouseButton1Click:Connect(function()
+                toggleFavorite(getMenuFavoriteKey(item))
+                for _, child in ipairs(targetParentScroll:GetChildren()) do
+                    if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
+                end
+                renderMenuCategory(menuList, targetParentScroll, tabName)
+            end)
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 local OpenBtn = Instance.new("TextButton")
