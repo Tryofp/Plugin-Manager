@@ -705,9 +705,25 @@ return function(speaker)
     UpdateCheckerBaselineBtn.Parent = UpdateCheckerView
     Instance.new("UICorner", UpdateCheckerBaselineBtn).CornerRadius = UDim.new(0, 4)
 
+    local UpdateCheckerAdminKeyBox = Instance.new("TextBox")
+    UpdateCheckerAdminKeyBox.Size = UDim2.new(1, 0, 0, 24)
+    UpdateCheckerAdminKeyBox.Position = UDim2.new(0, 0, 0, 64)
+    UpdateCheckerAdminKeyBox.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
+    UpdateCheckerAdminKeyBox.BorderSizePixel = 0
+    UpdateCheckerAdminKeyBox.Font = Enum.Font.Gotham
+    UpdateCheckerAdminKeyBox.PlaceholderText = "Kunci Dev Panel (untuk menyimpan baseline online)"
+    UpdateCheckerAdminKeyBox.Text = ""
+    UpdateCheckerAdminKeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UpdateCheckerAdminKeyBox.PlaceholderColor3 = Color3.fromRGB(145, 160, 180)
+    UpdateCheckerAdminKeyBox.TextSize = 8
+    UpdateCheckerAdminKeyBox.ClearTextOnFocus = false
+    UpdateCheckerAdminKeyBox.ZIndex = 33
+    UpdateCheckerAdminKeyBox.Parent = UpdateCheckerView
+    Instance.new("UICorner", UpdateCheckerAdminKeyBox).CornerRadius = UDim.new(0, 4)
+
     local UpdateCheckerInfo = Instance.new("TextLabel")
-    UpdateCheckerInfo.Size = UDim2.new(1, 0, 0, 32)
-    UpdateCheckerInfo.Position = UDim2.new(0, 0, 0, 64)
+    UpdateCheckerInfo.Size = UDim2.new(1, 0, 0, 28)
+    UpdateCheckerInfo.Position = UDim2.new(0, 0, 0, 91)
     UpdateCheckerInfo.BackgroundTransparency = 1
     UpdateCheckerInfo.Font = Enum.Font.Gotham
     UpdateCheckerInfo.Text = "Cek commit GitHub. Pemeriksaan pertama perlu menyimpan baseline."
@@ -719,8 +735,8 @@ return function(speaker)
     UpdateCheckerInfo.Parent = UpdateCheckerView
 
     local UpdateCheckerScroll = Instance.new("ScrollingFrame")
-    UpdateCheckerScroll.Size = UDim2.new(1, 0, 1, -102)
-    UpdateCheckerScroll.Position = UDim2.new(0, 0, 0, 98)
+    UpdateCheckerScroll.Size = UDim2.new(1, 0, 1, -130)
+    UpdateCheckerScroll.Position = UDim2.new(0, 0, 0, 126)
     UpdateCheckerScroll.BackgroundTransparency = 1
     UpdateCheckerScroll.BorderSizePixel = 0
     UpdateCheckerScroll.ScrollBarThickness = 4
@@ -963,19 +979,12 @@ return function(speaker)
     local updateScanResults = {}
     local updateBaseline = {}
     local updateBaselineLoaded = false
-    local UPDATE_BASELINE_FILE = "PluginManager_UpdateBaseline.json"
+    local UPDATE_BASELINE_KEY = "PluginUpdateCheckerBaseline"
 
     local function loadUpdateBaseline()
-        if updateBaselineLoaded then return end
-        updateBaselineLoaded = true
-        if type(readfile) ~= "function" then return end
-        local ok, raw = pcall(function()
-            if type(isfile) == "function" and not isfile(UPDATE_BASELINE_FILE) then
-                return nil
-            end
-            return readfile(UPDATE_BASELINE_FILE)
-        end)
-        if ok and type(raw) == "string" and raw ~= "" then
+        updateBaseline = {}
+        local raw = tostring(remoteMetadata[UPDATE_BASELINE_KEY] or "")
+        if raw ~= "" then
             local decodeOk, decoded = pcall(function()
                 return HttpService:JSONDecode(raw)
             end)
@@ -983,6 +992,7 @@ return function(speaker)
                 updateBaseline = decoded
             end
         end
+        updateBaselineLoaded = true
     end
 
     local function clearUpdateCheckerRows()
@@ -1074,9 +1084,20 @@ return function(speaker)
         UpdateCheckerInfo.Text = "Mengambil commit terbaru dari GitHub..."
         clearUpdateCheckerRows()
         updateScanResults = {}
-        loadUpdateBaseline()
-
         task.spawn(function()
+            -- Ambil baseline terbaru dari Metadata server sebelum membandingkan.
+            local metadataOk = fetchRemoteMetadata()
+            if metadataOk then
+                loadUpdateBaseline()
+            else
+                UpdateCheckerInfo.Text = "Gagal mengambil baseline online. Coba cek ulang."
+                UpdateCheckerScanBtn.Text = "CEK ULANG"
+                UpdateCheckerScanBtn.Active = true
+                UpdateCheckerBaselineBtn.Active = false
+                updateScanRunning = false
+                return
+            end
+
             local files = collectUpdateCheckerFiles()
             local updated, unchanged, newBaseline, errors = 0, 0, 0, 0
             if #files == 0 then
@@ -1154,18 +1175,49 @@ return function(speaker)
             return
         end
 
-        local saved = false
-        if type(writefile) == "function" then
-            saved = pcall(writefile, UPDATE_BASELINE_FILE, encoded)
+        local adminKey = tostring(UpdateCheckerAdminKeyBox.Text or "")
+        if adminKey == "" then
+            UpdateCheckerInfo.Text = "Masukkan kunci Dev Panel untuk menyimpan baseline online."
+            return
         end
-        updateBaseline = nextBaseline
-        updateBaselineLoaded = true
-        if saved then
-            UpdateCheckerInfo.Text = "Baseline berhasil disimpan ke " .. UPDATE_BASELINE_FILE .. ". Pemeriksaan berikutnya akan mendeteksi commit baru."
-        else
-            UpdateCheckerInfo.Text = "Baseline hanya tersimpan selama sesi ini; executor tidak menyediakan writefile."
-        end
+
         UpdateCheckerBaselineBtn.Active = false
+        UpdateCheckerBaselineBtn.Text = "MENYIMPAN..."
+        local requestFn = request or http_request or (syn and syn.request)
+        if type(requestFn) ~= "function" then
+            UpdateCheckerInfo.Text = "Executor tidak menyediakan request untuk menyimpan ke server."
+            UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
+            UpdateCheckerBaselineBtn.Active = true
+            return
+        end
+
+        local requestOk, response = pcall(function()
+            return requestFn({
+                Url = SHEETS_WEB_APP_URL,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode({
+                    Type = "UpdateBaseline",
+                    Action = "Save",
+                    Baseline = encoded,
+                    AdminKey = adminKey
+                })
+            })
+        end)
+
+        local body = requestOk and response and (response.Body or response.body) or ""
+        local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
+        if decodeOk and type(result) == "table" and result.status == "success" then
+            updateBaseline = nextBaseline
+            updateBaselineLoaded = true
+            UpdateCheckerInfo.Text = "Baseline berhasil disimpan ONLINE di Google Sheets. Bisa dipakai lintas perangkat."
+            UpdateCheckerAdminKeyBox.Text = ""
+        else
+            local message = decodeOk and type(result) == "table" and tostring(result.message or "Server menolak penyimpanan.") or "Respons server tidak valid."
+            UpdateCheckerInfo.Text = "Gagal menyimpan baseline online: " .. message
+        end
+        UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
+        UpdateCheckerBaselineBtn.Active = decodeOk and type(result) == "table" and result.status == "success" and false or true
     end)
 
     local function addHealthCheckResult(title, detail, isError)
