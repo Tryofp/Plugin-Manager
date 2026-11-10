@@ -607,6 +607,13 @@ return function(speaker)
         return string.find(badgeText, "update", 1, true) ~= nil
     end
 
+    local function getUserFacingBadgeText(feature)
+        local badgeText = string.lower(tostring(feature and feature.BadgeText or "new"))
+        if string.find(badgeText, "update", 1, true) then return "UPDATE!" end
+        if string.find(badgeText, "new", 1, true) then return "NEW!" end
+        return nil
+    end
+
     local function updateHistoryCanvas(scroll)
         if not scroll then return end
         local layout = scroll:FindFirstChildOfClass("UIListLayout")
@@ -615,7 +622,7 @@ return function(speaker)
         end
     end
 
-    local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel)
+    local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel, showUpdateDot)
         local path = getPluginSourcePath(rawUrl)
         if not path then return end
 
@@ -635,6 +642,22 @@ return function(speaker)
         arrow.TextSize = 14
         arrow.Parent = card
         Instance.new("UICorner", arrow).CornerRadius = UDim.new(0, 4)
+
+        if showUpdateDot then
+            local updateDot = Instance.new("TextLabel")
+            updateDot.Name = "VersionUpdateDot"
+            updateDot.Size = UDim2.new(0, 10, 0, 10)
+            updateDot.AnchorPoint = Vector2.new(0.5, 0.5)
+            updateDot.Position = UDim2.new(1, -2, 0, 2)
+            updateDot.BackgroundTransparency = 1
+            updateDot.Font = Enum.Font.GothamBold
+            updateDot.Text = "•"
+            updateDot.TextColor3 = Color3.fromRGB(70, 255, 135)
+            updateDot.TextSize = 17
+            updateDot.ZIndex = arrow.ZIndex + 2
+            updateDot.Parent = card
+            applyBlinkAnimation(updateDot)
+        end
 
         local panel
         local expanded = false
@@ -3973,16 +3996,11 @@ return function(speaker)
 
             local badgeKey = getFeatureBadgeKey(subFeat, uniqueKey)
             local timestamp = subFeat.UpdateTimestamp or ""
-            local activeBadgeText = subFeat.BadgeText or "New!"
+            local activeBadgeText = getUserFacingBadgeText(subFeat)
             local activeBadgeColor = getColorFromName(subFeat.BadgeColor)
-            local isMaintenance = (not subFeat.Cmd or subFeat.Cmd == "") or isFeatureInMaintenance(subFeat)
+            local hasSubUpdateBadge = activeBadgeText == "UPDATE!"
 
-            if isMaintenance then
-                activeBadgeText = "MAINTENANCE!"
-                activeBadgeColor = Color3.fromRGB(255, 60, 60)
-            end
-
-            if (isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(subFeat)) or isMaintenance then
+            if activeBadgeText and isFeatureNew(badgeKey, timestamp) then
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
                 
@@ -4029,7 +4047,7 @@ return function(speaker)
                     end
                 end
                 if firstSubPath and subSourcePath ~= parentSourcePath then
-                    subHasHistory = attachPublicVersionHistory(Item, SubScroll, subRawUrl, tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName) == true
+                    subHasHistory = attachPublicVersionHistory(Item, SubScroll, subRawUrl, tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName, hasSubUpdateBadge) == true
                 end
             end
 
@@ -4210,16 +4228,10 @@ return function(speaker)
             local itemHasHistory = false
             local badgeKey = getFeatureBadgeKey(item, uniqueKey)
             local timestamp = item.UpdateTimestamp or ""
-            local activeBadgeText = item.BadgeText or "New!"
+            local activeBadgeText = getUserFacingBadgeText(item)
             local activeBadgeColorName = item.BadgeColor
-            local isMaintenance = (not item.SubFeatures and (not item.Cmd or item.Cmd == "")) or isFeatureInMaintenance(item)
-            local hasSubMaintenance = false
             local badgeFeatureKeys = {}
-
-            if isMaintenance then
-                activeBadgeText = "MAINTENANCE!"
-                activeBadgeColorName = "red"
-            end
+            local hasUpdateBadge = activeBadgeText == "UPDATE!"
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 for _, sub in ipairs(item.SubFeatures) do
@@ -4227,27 +4239,22 @@ return function(speaker)
                     local legacySubKey = tostring(subRaw) .. "_" .. tostring(sub.Cmd)
                     local subKey = getFeatureBadgeKey(sub, legacySubKey)
                     local subTimestamp = sub.UpdateTimestamp or ""
-                    if isFeatureInMaintenance(sub) then
-                        hasSubMaintenance = true
-                    end
-                    if isFeatureNew(subKey, subTimestamp) and not isLegacyUpdateBadge(sub) then
+                    local subBadgeText = getUserFacingBadgeText(sub)
+                    if subBadgeText and isFeatureNew(subKey, subTimestamp) then
                         table.insert(badgeFeatureKeys, { key = subKey, timestamp = subTimestamp })
-                        if #badgeFeatureKeys == 1 then
-                            activeBadgeText = sub.BadgeText or activeBadgeText
+                        if subBadgeText == "UPDATE!" then hasUpdateBadge = true end
+                        if #badgeFeatureKeys == 1 or subBadgeText == "UPDATE!" then
+                            activeBadgeText = subBadgeText
                             activeBadgeColorName = sub.BadgeColor or activeBadgeColorName
                         end
                     end
                 end
-            elseif isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(item) then
+            elseif activeBadgeText and isFeatureNew(badgeKey, timestamp) then
                 table.insert(badgeFeatureKeys, { key = badgeKey, timestamp = timestamp })
             end
 
-            if isMaintenance or hasSubMaintenance then
-                activeBadgeText = "MAINTENANCE!"
-                activeBadgeColorName = "red"
-            end
-
-            if #badgeFeatureKeys > 0 or isMaintenance or hasSubMaintenance then
+            if #badgeFeatureKeys > 0 then
+                activeBadgeText = hasUpdateBadge and "UPDATE!" or "NEW!"
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local badgeColor = getColorFromName(activeBadgeColorName)
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
@@ -4270,16 +4277,8 @@ return function(speaker)
                 applyBlinkAnimation(NewBadge)
 
                 if tabName then
-                    local badgeShortText
-                    local lowerBadgeText = string.lower(tostring(activeBadgeText))
-                    if isMaintenance or hasSubMaintenance or string.find(lowerBadgeText, "maintenance", 1, true) then
-                        badgeShortText = "MAINT"
-                    elseif string.find(lowerBadgeText, "update", 1, true) then
-                        badgeShortText = "UP"
-                    else
-                        badgeShortText = "NEW"
-                    end
-                    setTabBadge(tabName, badgeShortText, badgeColor, 2, badgeFeatureKeys)
+                    local badgePriority = hasUpdateBadge and 3 or 2
+                    setTabBadge(tabName, activeBadgeText, badgeColor, badgePriority, badgeFeatureKeys)
                 end
             end
 
@@ -4302,7 +4301,7 @@ return function(speaker)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
             if itemSourcePath then
-                itemHasHistory = attachPublicVersionHistory(ItemFrame, targetParentScroll, historyRawUrl, tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel) == true
+                itemHasHistory = attachPublicVersionHistory(ItemFrame, targetParentScroll, historyRawUrl, tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel, hasUpdateBadge) == true
             end
 
             local MenuFavoriteBtn = Instance.new("TextButton")
