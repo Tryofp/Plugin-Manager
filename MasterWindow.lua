@@ -748,6 +748,19 @@ return function(speaker)
 
         local panel
         local expanded = false
+        card.Destroying:Connect(function()
+            if expanded then
+                expanded = false
+                openPublicHistoryPanels = math.max(0, openPublicHistoryPanels - 1)
+                if openPublicHistoryPanels == 0 and pendingPublicBadgeRefresh then
+                    pendingPublicBadgeRefresh = false
+                    task.defer(function()
+                        if refreshBadgeUI then refreshBadgeUI() end
+                    end)
+                end
+            end
+        end)
+
         local function refreshPanel()
             if panel then panel:Destroy() panel = nil end
             panel = Instance.new("Frame")
