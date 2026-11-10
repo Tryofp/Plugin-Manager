@@ -984,7 +984,7 @@ return function(speaker)
                         report(name, "RawUrl kosong.", true)
                     else
                         urls[url] = urls[url] or {}
-                        table.insert(urls[url], { name = name, cmd = cmd })
+                        table.insert(urls[url], { name = name, cmd = cmd, mode = feature.ExecutionMode or parent.ExecutionMode })
                     end
                 end
 
@@ -1007,10 +1007,15 @@ return function(speaker)
                         else
                             report("Source OK", url .. " | " .. tostring(#mapped) .. " mapping fitur.", false)
                             for _, mapping in ipairs(mapped) do
-                                local escaped = mapping.cmd:gsub("([^%w])", "%%%1")
-                                local commandPattern = '%["' .. escaped .. '"%]%s*='
-                                if not string.find(source, commandPattern) then
-                                    report("Command tidak ditemukan", mapping.name .. " → " .. mapping.cmd, true)
+                                if mapping.mode == "standalone" then
+                                    report("Script mandiri", mapping.name .. " → " .. mapping.cmd .. " | validasi tabel Commands dilewati; source berjalan langsung saat dimuat.", false)
+                                else
+                                    local escaped = mapping.cmd:gsub("([^%w])", "%%%1")
+                                    local dotPattern = "Commands%s*%.%s*" .. escaped .. "%s*="
+                                    local bracketPattern = "Commands%s*%[%s*[\"']" .. escaped .. "[\"']%s*%]%s*="
+                                    if not string.find(source, dotPattern) and not string.find(source, bracketPattern) then
+                                        report("Command tidak ditemukan", mapping.name .. " → " .. mapping.cmd, true)
+                                    end
                                 end
                             end
                         end
