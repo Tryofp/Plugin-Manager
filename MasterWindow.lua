@@ -469,6 +469,21 @@ return function(speaker)
         updateBadge.Visible = false
         updateBadge.Parent = card
 
+        -- Only users pinned to an older SHA need an UPDATE! check.
+        local savedVersionSha = tostring(selectedPluginVersions[path] or "")
+        if savedVersionSha ~= "" then
+            task.spawn(function()
+                local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
+                    .. path .. "&sha=stable&per_page=1"
+                local ok, response = pcall(function() return game:HttpGet(checkUrl) end)
+                if not ok or type(response) ~= "string" then return end
+                local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                if decodeOk and type(decoded) == "table" and decoded[1] and card.Parent then
+                    updateBadge.Visible = tostring(decoded[1].sha or "") ~= savedVersionSha
+                end
+            end)
+        end
+
         local panel
         local expanded = false
         local function refreshPanel()
@@ -828,6 +843,9 @@ return function(speaker)
         local path = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)$")
             or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)$")
         if not path then return end
+        -- A manually selected historical version is intentional; use its UPDATE! badge
+        -- instead of silently offering to replace it with moving stable source.
+        if selectedPluginVersions[path] then return end
 
         local latestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/stable/" .. path
         local ok, latestSource = pcall(function() return game:HttpGet(latestUrl) end)
