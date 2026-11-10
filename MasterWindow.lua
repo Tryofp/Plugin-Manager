@@ -931,17 +931,30 @@ return function(speaker)
     Instance.new("UICorner", HealthCheckExportBtn).CornerRadius = UDim.new(0, 4)
 
     local RuntimeHistoryBtn = Instance.new("TextButton")
-    RuntimeHistoryBtn.Size = UDim2.new(1, 0, 0, 25)
+    RuntimeHistoryBtn.Size = UDim2.new(0.49, 0, 0, 25)
     RuntimeHistoryBtn.Position = UDim2.new(0, 0, 0, 64)
     RuntimeHistoryBtn.BackgroundColor3 = Color3.fromRGB(105, 75, 155)
     RuntimeHistoryBtn.BorderSizePixel = 0
     RuntimeHistoryBtn.Font = Enum.Font.GothamBold
-    RuntimeHistoryBtn.Text = "LIHAT RIWAYAT RUNTIME ERROR"
+    RuntimeHistoryBtn.Text = "RIWAYAT ERROR"
     RuntimeHistoryBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     RuntimeHistoryBtn.TextSize = 9
     RuntimeHistoryBtn.ZIndex = 32
     RuntimeHistoryBtn.Parent = HealthCheckView
     Instance.new("UICorner", RuntimeHistoryBtn).CornerRadius = UDim.new(0, 4)
+
+    local RuntimeTestBtn = Instance.new("TextButton")
+    RuntimeTestBtn.Size = UDim2.new(0.49, 0, 0, 25)
+    RuntimeTestBtn.Position = UDim2.new(0.51, 0, 0, 64)
+    RuntimeTestBtn.BackgroundColor3 = Color3.fromRGB(150, 95, 35)
+    RuntimeTestBtn.BorderSizePixel = 0
+    RuntimeTestBtn.Font = Enum.Font.GothamBold
+    RuntimeTestBtn.Text = "TES LAPORAN"
+    RuntimeTestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RuntimeTestBtn.TextSize = 9
+    RuntimeTestBtn.ZIndex = 32
+    RuntimeTestBtn.Parent = HealthCheckView
+    Instance.new("UICorner", RuntimeTestBtn).CornerRadius = UDim.new(0, 4)
 
     local HealthCheckInfo = Instance.new("TextLabel")
     HealthCheckInfo.Size = UDim2.new(1, 0, 0, 28)
@@ -1618,6 +1631,32 @@ return function(speaker)
     end
 
     HealthCheckRunBtn.MouseButton1Click:Connect(runPluginHealthCheck)
+
+    local runtimeTestSent = false
+    RuntimeTestBtn.MouseButton1Click:Connect(function()
+        if runtimeTestSent then
+            HealthCheckInfo.Text = "Tes laporan baru saja dikirim. Muat riwayat untuk memeriksa hasilnya."
+            return
+        end
+        runtimeTestSent = true
+        RuntimeTestBtn.Text = "MENGIRIM TES..."
+        RuntimeTestBtn.Active = false
+        HealthCheckInfo.Text = "Mengirim satu laporan simulasi. Tidak ada command plugin asli yang dijalankan atau diubah."
+
+        reportPluginRuntimeError(
+            "Plugin Manager - TEST",
+            "RuntimeReportTest",
+            "internal://runtime-monitor-test",
+            "SIMULASI: pengujian jalur laporan runtime error. Ini bukan error plugin asli."
+        )
+
+        task.delay(3, function()
+            if RuntimeTestBtn and RuntimeTestBtn.Parent then
+                RuntimeTestBtn.Text = "TES TERKIRIM - CEK RIWAYAT"
+                RuntimeTestBtn.Active = true
+            end
+        end)
+    end)
 
     local runtimeHistoryLoading = false
     RuntimeHistoryBtn.MouseButton1Click:Connect(function()
