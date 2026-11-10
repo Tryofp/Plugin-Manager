@@ -1095,14 +1095,6 @@ return function(speaker)
     local HealthCheckInfo
 
     -- Fingerprint is only a lightweight content comparison, not a security hash.
-
-    local loadedModuleFingerprints = {}
-    local stableFixPrompted = {}
-    local stableFixPromptActive = false
-    -- Forward declaration: the stable prompt is defined before the Health Check UI.
-    local HealthCheckInfo
-
-    -- Fingerprint is only a lightweight content comparison, not a security hash.
     local function getPluginSourceFingerprint(source)
         local fingerprint = 0
         for index = 1, #source do
@@ -1910,16 +1902,19 @@ return function(speaker)
 
             local badgeKey = getFeatureBadgeKey(subFeat, uniqueKey)
             local timestamp = subFeat.UpdateTimestamp or ""
-            local activeBadgeText = subFeat.BadgeText or "New!"
+            local activeBadgeText = getUserFacingBadgeText(subFeat)
             local activeBadgeColor = getColorFromName(subFeat.BadgeColor)
             local isMaintenance = (not subFeat.Cmd or subFeat.Cmd == "") or isFeatureInMaintenance(subFeat)
 
             if isMaintenance then
                 activeBadgeText = "MAINTENANCE!"
                 activeBadgeColor = Color3.fromRGB(255, 60, 60)
+            elseif hasSubUpdateBadge then
+                activeBadgeText = "UPDATE!"
+                activeBadgeColor = Color3.fromRGB(80, 235, 145)
             end
 
-            if (isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(subFeat)) or isMaintenance then
+            if (activeBadgeText and isFeatureNew(badgeKey, timestamp)) or hasSubUpdateBadge or isMaintenance then
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
                 
