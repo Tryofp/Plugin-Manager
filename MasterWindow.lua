@@ -611,12 +611,16 @@ return function(speaker)
             end
             local changed = false
             for _, sourcePath in ipairs(paths) do
-                local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                    .. HttpService:UrlEncode(sourcePath) .. "&sha=main&per_page=1&page=1"
-                local ok, response = requestGitHubWithRetry(apiUrl, 2)
+                -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
+                -- Hindari REST API publik langsung dari client Roblox (rate limit 60/jam).
+                local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                    .. HttpService:UrlEncode(sourcePath)
+                local ok, response = requestGitHubWithRetry(historyUrl, 3)
                 if ok then
-                    local decodeOk, commits = pcall(function() return HttpService:JSONDecode(response) end)
-                    local latest = decodeOk and type(commits) == "table" and commits[1] or nil
+                    local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                    local commits = decodeOk and type(payload) == "table" and payload.status == "success"
+                        and payload.commits or nil
+                    local latest = type(commits) == "table" and commits[1] or nil
                     local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
                     if #latestSha == 40 then
                         stableLatestShaCache[sourcePath] = latestSha
@@ -691,7 +695,7 @@ return function(speaker)
         arrow.BackgroundTransparency = 0.1
         arrow.BorderSizePixel = 0
         arrow.Font = Enum.Font.GothamBold
-        arrow.Text = "v"
+        arrow.Text = "⌄"
         arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
         arrow.TextSize = 14
         arrow.Parent = card
@@ -789,34 +793,38 @@ return function(speaker)
                     if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
                 end
 
-                while not foundBaseline and not history.complete and history.nextPage <= 10 do
-                    local page = history.nextPage
-                    local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=main&per_page=100&page=" .. tostring(page)
-                    local ok, response = requestGitHubWithRetry(apiUrl, 3)
+                if not foundBaseline and not history.complete then
+                    -- Riwayat diambil lewat Apps Script, bukan GitHub REST dari client.
+                    -- Endpoint mengembalikan 30 commit terbaru dan memakai token server-side.
+                    local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                        .. HttpService:UrlEncode(path)
+                    local ok, response = requestGitHubWithRetry(historyUrl, 3)
                     if not ok or type(response) ~= "string" or response == "" then
-                        loadWarning = "GitHub belum merespons setelah 3 percobaan. Riwayat yang sudah diterima tetap ditampilkan; tekan panah lagi untuk mencoba ulang."
-                        break
-                    end
-                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-                    if not decodeOk or type(decoded) ~= "table" or decoded.message then
-                        loadWarning = "GitHub membatasi atau gagal merespons. Riwayat yang sudah diterima tetap ditampilkan; buka ulang untuk mencoba lagi."
-                        break
-                    end
-                    local knownShas = {}
-                    for _, cachedEntry in ipairs(history.commits) do
-                        knownShas[tostring(cachedEntry.sha or "")] = true
-                    end
-                    for _, entry in ipairs(decoded) do
-                        local entrySha = tostring(entry.sha or "")
-                        if entrySha ~= "" and not knownShas[entrySha] then
-                            table.insert(history.commits, entry)
-                            knownShas[entrySha] = true
+                        loadWarning = "Server Version History belum merespons setelah 3 percobaan. Coba buka panah lagi beberapa saat lagi."
+                    else
+                        local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                        local decoded = decodeOk and type(payload) == "table" and payload.status == "success"
+                            and payload.commits or nil
+                        if type(decoded) ~= "table" then
+                            loadWarning = "Server Version History gagal mengambil data GitHub: "
+                                .. tostring(type(payload) == "table" and payload.message or "respons tidak valid")
+                        else
+                            local knownShas = {}
+                            for _, cachedEntry in ipairs(history.commits) do
+                                knownShas[tostring(cachedEntry.sha or "")] = true
+                            end
+                            for _, entry in ipairs(decoded) do
+                                local entrySha = tostring(entry.sha or "")
+                                if entrySha ~= "" and not knownShas[entrySha] then
+                                    table.insert(history.commits, entry)
+                                    knownShas[entrySha] = true
+                                end
+                                if entrySha == baselineSha then foundBaseline = true break end
+                            end
+                            history.nextPage = 2
+                            history.complete = #decoded < 30 or foundBaseline
                         end
-                        if entrySha == baselineSha then foundBaseline = true break end
                     end
-                    history.nextPage = page + 1
-                    if foundBaseline or #decoded < 100 then history.complete = true break end
                 end
 
                 local commits = history.commits
