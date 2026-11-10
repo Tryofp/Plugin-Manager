@@ -516,6 +516,17 @@ return function(speaker)
         for path, sha in pairs(serverVersions) do
             selectedPluginVersions[path] = sha
         end
+        -- If profile loading finishes after the stable scan, acknowledge a release
+        -- that the user had already selected so UPDATE! does not reappear.
+        for path, sha in pairs(selectedPluginVersions) do
+            if stableLatestShaCache[path] == sha then
+                if acknowledgedReleaseShas[path] ~= sha then
+                    acknowledgedReleaseShas[path] = sha
+                    saveAcknowledgedReleases()
+                end
+                releaseUpdateByPath[path] = false
+            end
+        end
         saveSelectedPluginVersions()
 
         for path, sha in pairs(selectedPluginVersions) do
