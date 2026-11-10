@@ -1081,7 +1081,7 @@ return function(speaker)
         UpdateCheckerScanBtn.Active = false
         UpdateCheckerBaselineBtn.Active = false
         UpdateCheckerScanBtn.Text = "MEMERIKSA..."
-        UpdateCheckerInfo.Text = "Mengambil commit terbaru dari GitHub..."
+        UpdateCheckerInfo.Text = "Memeriksa isi source plugin dari GitHub..."
         clearUpdateCheckerRows()
         updateScanResults = {}
         task.spawn(function()
@@ -1099,7 +1099,6 @@ return function(speaker)
             end
 
             local files = collectUpdateCheckerFiles()
-            local updated, unchanged, newBaseline, errors = 0, 0, 0, 0
             if #files == 0 then
                 addUpdateCheckerRow("Loader tidak tersedia", "Tidak ada source yang bisa diperiksa.", "ERROR")
                 errors = 1
@@ -1107,7 +1106,7 @@ return function(speaker)
 
             -- Periksa isi file langsung dari raw.githubusercontent.com.
             -- Tidak memakai GitHub API, sehingga tidak terkena HTTP 403/rate limit API.
-            local checked, updated, unchanged, newBaseline, errors = 0, 0, 0, 0, 0
+            local updated, unchanged, newBaseline, errors = 0, 0, 0, 0
             for index, fileInfo in ipairs(files) do
                 UpdateCheckerInfo.Text = string.format("Mengunduh source %d/%d • %s", index, #files, fileInfo.name)
                 local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/main/" .. fileInfo.path
