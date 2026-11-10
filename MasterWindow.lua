@@ -740,6 +740,7 @@ return function(speaker)
             end
             task.defer(function() updateHistoryCanvas(scrollContainer) end)
         end)
+        return true
     end
 
     local loadedModuleFingerprints = {}
@@ -3631,6 +3632,7 @@ return function(speaker)
         end)
 
         local parentSourcePath = getPluginSourcePath(rawUrl)
+            or getPluginSourcePath(getSharedSubFeatureSourceUrl(subFeatures, rawUrl))
         local subSourcePaths, subPathSeen = {}, {}
         for _, feature in ipairs(subFeatures) do
             local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or rawUrl
@@ -3725,6 +3727,7 @@ return function(speaker)
             LblDesc.Size = UDim2.new(1, -118, 0, descHeight)
             Item.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
+            local subHasHistory = false
             if subSourcePath and not allSubFeaturesShareParentSource then
                 local firstSubPath = true
                 for priorIndex = 1, subEntry.index - 1 do
@@ -3736,14 +3739,14 @@ return function(speaker)
                     end
                 end
                 if firstSubPath and subSourcePath ~= parentSourcePath then
-                    attachPublicVersionHistory(Item, SubScroll, subRawUrl, tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName)
+                    subHasHistory = attachPublicVersionHistory(Item, SubScroll, subRawUrl, tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName) == true
                 end
             end
 
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            SubFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -132 or -108, 0.5, 0)
             SubFavoriteBtn.BackgroundTransparency = 1
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
@@ -3758,9 +3761,9 @@ return function(speaker)
             end)
 
             local ExecSub = Instance.new("TextButton")
-            ExecSub.Size = UDim2.new(0, 75, 0, 24)
+            ExecSub.Size = UDim2.new(0, subHasHistory and 68 or 75, 0, 24)
             ExecSub.AnchorPoint = Vector2.new(0, 0.5)
-            ExecSub.Position = UDim2.new(1, -80, 0.5, 0)
+            ExecSub.Position = UDim2.new(1, subHasHistory and -104 or -80, 0.5, 0)
             ExecSub.BorderSizePixel = 0
             ExecSub.Text = featureStates[uniqueKey] and "UNEXECUTE" or "EXECUTE"
             ExecSub.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -3909,7 +3912,12 @@ return function(speaker)
             NameLabel.Parent = ItemFrame
 
             local uniqueKey = tostring(item.RawUrl or "") .. "_" .. tostring(item.Cmd or item.Name)
-            local itemSourcePath = getPluginSourcePath(item.RawUrl)
+            local historyRawUrl = item.RawUrl
+            if (not historyRawUrl or historyRawUrl == "") and item.SubFeatures and #item.SubFeatures > 0 then
+                historyRawUrl = getSharedSubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
+            end
+            local itemSourcePath = getPluginSourcePath(historyRawUrl)
+            local itemHasHistory = false
             local badgeKey = getFeatureBadgeKey(item, uniqueKey)
             local timestamp = item.UpdateTimestamp or ""
             local activeBadgeText = item.BadgeText or "New!"
@@ -4003,13 +4011,13 @@ return function(speaker)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
             if itemSourcePath then
-                attachPublicVersionHistory(ItemFrame, targetParentScroll, item.RawUrl, tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel)
+                itemHasHistory = attachPublicVersionHistory(ItemFrame, targetParentScroll, historyRawUrl, tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel) == true
             end
 
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            MenuFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -132 or -108, 0.5, 0)
             MenuFavoriteBtn.BackgroundTransparency = 1
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
@@ -4028,9 +4036,9 @@ return function(speaker)
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 local OpenBtn = Instance.new("TextButton")
-                OpenBtn.Size = UDim2.new(0, 75, 0, 24)
+                OpenBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
                 OpenBtn.AnchorPoint = Vector2.new(0, 0.5)
-                OpenBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                OpenBtn.Position = UDim2.new(1, itemHasHistory and -104 or -80, 0.5, 0)
                 OpenBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
                 OpenBtn.BackgroundTransparency = 0.2
                 OpenBtn.BorderSizePixel = 0
@@ -4042,15 +4050,15 @@ return function(speaker)
                 Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(0, 4)
 
                 OpenBtn.MouseButton1Click:Connect(function()
-                    showSubMenu(item.Name, item.RawUrl, item.SubFeatures, tabName)
+                    showSubMenu(item.Name, historyRawUrl or item.RawUrl, item.SubFeatures, tabName)
                 end)
             else
                 if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
                 local ExecBtn = Instance.new("TextButton")
-                ExecBtn.Size = UDim2.new(0, 75, 0, 24)
+                ExecBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
                 ExecBtn.AnchorPoint = Vector2.new(0, 0.5)
-                ExecBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                ExecBtn.Position = UDim2.new(1, itemHasHistory and -104 or -80, 0.5, 0)
                 ExecBtn.BorderSizePixel = 0
                 ExecBtn.BackgroundTransparency = 0.2
                 ExecBtn.Font = Enum.Font.GothamBold
