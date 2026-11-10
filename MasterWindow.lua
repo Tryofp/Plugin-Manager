@@ -390,6 +390,30 @@ return function(speaker)
     -- Example: VERSION_HISTORY_STABLE["Plugin/Waypoint"] = "<40-character-commit-sha>"
     local VERSION_HISTORY_STABLE = {}
 
+    -- Per-user acknowledgement of released stable commits.
+    -- A release stays marked UPDATE! until this user has selected that release once.
+    local VERSION_RELEASE_ACK_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_release_ack.json"
+    local acknowledgedReleaseShas = {}
+    local function loadAcknowledgedReleases()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
+        local ok, exists = pcall(isfile, VERSION_RELEASE_ACK_FILE)
+        if not ok or not exists then return end
+        local readOk, raw = pcall(readfile, VERSION_RELEASE_ACK_FILE)
+        if not readOk or type(raw) ~= "string" or raw == "" then return end
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if decodeOk and type(decoded) == "table" then acknowledgedReleaseShas = decoded end
+    end
+    local function saveAcknowledgedReleases()
+        if type(writefile) ~= "function" then return end
+        if type(makefolder) == "function" then
+            pcall(makefolder, "PluginManager")
+            pcall(makefolder, VERSION_PROFILE_FOLDER)
+        end
+        local ok, encoded = pcall(function() return HttpService:JSONEncode(acknowledgedReleaseShas) end)
+        if ok and type(encoded) == "string" then pcall(writefile, VERSION_RELEASE_ACK_FILE, encoded) end
+    end
+    loadAcknowledgedReleases()
+
     local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
     local VERSION_PROFILE_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_versions.json"
     local selectedPluginVersions = {}
@@ -690,7 +714,7 @@ return function(speaker)
                 while not foundBaseline and not history.complete and history.nextPage <= 10 do
                     local page = history.nextPage
                     local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=" .. getPluginSourceBranch(rawUrl) .. "&per_page=100&page=" .. tostring(page)
+                        .. path .. "&sha=main&per_page=100&page=" .. tostring(page)
                     local ok, response = requestGitHubWithRetry(apiUrl, 3)
                     if not ok or type(response) ~= "string" or response == "" then
                         loadWarning = "GitHub belum merespons setelah 3 percobaan. Riwayat yang sudah diterima tetap ditampilkan; tekan panah lagi untuk mencoba ulang."
@@ -721,8 +745,7 @@ return function(speaker)
                 local usedStaticManifest = false
                 if #commits == 0 then
                     -- Fallback statis dari GitHub Raw: tidak membutuhkan GitHub REST API.
-                    local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/"
-                        .. getPluginSourceBranch(rawUrl) .. "/VersionManifest.json"
+                    local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/VersionManifest.json"
                     local manifestOk, manifestResponse = pcall(function() return game:HttpGet(manifestUrl) end)
                     if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
                         local manifestDecodeOk, manifest = pcall(function() return HttpService:JSONDecode(manifestResponse) end)
@@ -783,10 +806,10 @@ return function(speaker)
                 local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
 
                 info.Text = usedStaticManifest
-                    and (displayName .. " • versi manifest " .. getPluginSourceBranch(rawUrl))
+                    and (displayName .. " • versi manifest main")
                     or (baselineIndex
-                        and (displayName .. " • " .. tostring(totalVersions) .. " versi • " .. getPluginSourceBranch(rawUrl))
-                        or (displayName .. " • commit terbaru • " .. getPluginSourceBranch(rawUrl)))
+                        and (displayName .. " • " .. tostring(totalVersions) .. " versi • main")
+                        or (displayName .. " • commit terbaru • main"))
                 if loadWarning then
                     warningLabel.Text = usedStaticManifest
                         and "API GitHub tidak merespons. Menampilkan versi terbaru dari manifest statis."
@@ -815,20 +838,25 @@ return function(speaker)
                     row.Parent = historyScroll
                     Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
 
+                    -- If this user already selected the latest release before this tracker
+                    -- existed, treat it as acknowledged even if no acknowledgement file exists.
+                    if index == 1 and selectedPluginVersions[path] == latestSha
+                        and acknowledgedReleaseShas[path] ~= latestSha then
+                        acknowledgedReleaseShas[path] = latestSha
+                        saveAcknowledgedReleases()
+                    end
+                    local isUpdateAvailable = index == 1
+                        and sha ~= baselineSha
+                        and acknowledgedReleaseShas[path] ~= sha
+                    local isStableVersion = tostring(VERSION_HISTORY_STABLE[path] or "") ~= ""
+                        and sha == tostring(VERSION_HISTORY_STABLE[path])
+
                     local versionLabel = Instance.new("TextLabel")
-                    versionLabel.Size = UDim2.new(1, -68, 0, 16)
+                    versionLabel.Size = UDim2.new(1, -112, 0, 16)
                     versionLabel.Position = UDim2.new(0, 6, 0, 2)
                     versionLabel.BackgroundTransparency = 1
                     versionLabel.Font = Enum.Font.GothamBold
-                    local isLatestVersion = index == 1
-                    local isUpdateAvailable = isLatestVersion
-                        and selectedPluginVersions[path] ~= nil
-                        and selectedSha ~= latestSha
-                    local isStableVersion = tostring(VERSION_HISTORY_STABLE[path] or "") ~= ""
-                        and sha == tostring(VERSION_HISTORY_STABLE[path])
-                    local versionBadges = ""
-                    if isUpdateAvailable then versionBadges = versionBadges .. "  UPDATE!" end
-                    if isStableVersion then versionBadges = versionBadges .. "  Stable!" end
+                    local versionBadges = isStableVersion and "  Stable!" or ""
                     versionLabel.Text = versionName .. versionBadges .. " • " .. message
                     versionLabel.TextColor3 = Color3.fromRGB(225, 235, 245)
                     versionLabel.TextSize = 8
@@ -836,6 +864,26 @@ return function(speaker)
                     versionLabel.TextTruncate = Enum.TextTruncate.AtEnd
                     versionLabel.ZIndex = row.ZIndex + 1
                     versionLabel.Parent = row
+
+                    if isUpdateAvailable then
+                        local updateBadge = Instance.new("TextLabel")
+                        updateBadge.Name = "NewReleaseBadge"
+                        updateBadge.Size = UDim2.new(0, 46, 0, 13)
+                        updateBadge.Position = UDim2.new(1, -52, 0, 3)
+                        updateBadge.BackgroundTransparency = 1
+                        updateBadge.Font = Enum.Font.GothamBold
+                        updateBadge.Text = "UPDATE!"
+                        updateBadge.TextColor3 = Color3.fromRGB(80, 235, 145)
+                        updateBadge.TextSize = 8
+                        updateBadge.ZIndex = row.ZIndex + 2
+                        updateBadge.Parent = row
+                        local blink = TweenService:Create(
+                            updateBadge,
+                            TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+                            { TextTransparency = 0.8 }
+                        )
+                        blink:Play()
+                    end
 
                     local detail = Instance.new("TextLabel")
                     detail.Size = UDim2.new(1, -68, 0, 13)
@@ -878,6 +926,11 @@ return function(speaker)
                     choose.MouseButton1Click:Connect(function()
                         selectedPluginVersions[path] = sha
                         saveSelectedPluginVersions()
+                        -- Acknowledge a release only when this user actually selects the latest main release.
+                        if sha == latestSha then
+                            acknowledgedReleaseShas[path] = sha
+                            saveAcknowledgedReleases()
+                        end
                         local selectedBranch = getPluginSourceBranch(rawUrl)
                         info.Text = versionName .. " dipilih. Menyimpan profil ke server..."
                         task.spawn(function()
