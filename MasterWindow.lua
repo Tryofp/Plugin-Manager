@@ -707,6 +707,7 @@ return function(speaker)
                     versionLabel.TextSize = 8
                     versionLabel.TextXAlignment = Enum.TextXAlignment.Left
                     versionLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                    versionLabel.ZIndex = row.ZIndex + 1
                     versionLabel.Parent = row
 
                     local detail = Instance.new("TextLabel")
@@ -718,6 +719,7 @@ return function(speaker)
                     detail.TextColor3 = Color3.fromRGB(135, 160, 185)
                     detail.TextSize = 7
                     detail.TextXAlignment = Enum.TextXAlignment.Left
+                    detail.ZIndex = row.ZIndex + 1
                     detail.Parent = row
 
                     if sha == currentSha or sha == selectedSha then
@@ -730,6 +732,7 @@ return function(speaker)
                         current.TextColor3 = sha == currentSha and loadedSha ~= nil
                             and Color3.fromRGB(100, 235, 155) or Color3.fromRGB(125, 195, 245)
                         current.TextSize = 7
+                        current.ZIndex = row.ZIndex + 1
                         current.Parent = row
                     end
 
