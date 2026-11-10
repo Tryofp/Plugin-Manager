@@ -1216,8 +1216,9 @@ return function(speaker)
             local message = decodeOk and type(result) == "table" and tostring(result.message or "Server menolak penyimpanan.") or "Respons server tidak valid."
             UpdateCheckerInfo.Text = "Gagal menyimpan baseline online: " .. message
         end
+        local saveSuccess = decodeOk and type(result) == "table" and result.status == "success"
         UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
-        UpdateCheckerBaselineBtn.Active = decodeOk and type(result) == "table" and result.status == "success" and false or true
+        UpdateCheckerBaselineBtn.Active = not saveSuccess
     end)
 
     local function addHealthCheckResult(title, detail, isError)
