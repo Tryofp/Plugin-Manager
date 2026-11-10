@@ -3248,63 +3248,37 @@ return function(speaker)
         clearVersionHistoryRows()
         VersionHistoryInfo.Text = "Memuat " .. fileInfo.name .. "..."
         task.spawn(function()
-            local encodedPath = tostring(fileInfo.path):gsub(" ", "%%20")
             local sourceBranch = tostring(fileInfo.branch or "main")
-            local url = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                .. encodedPath .. "&sha=" .. sourceBranch .. "&per_page=12"
-
-            -- Samakan jalur request dengan Version History pada kartu plugin:
-            -- retry saat gangguan sementara, lalu gunakan manifest Raw jika API gagal.
-            local ok, response = requestGitHubWithRetry(url, 3)
+            local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch="
+                .. HttpService:UrlEncode(sourceBranch) .. "&path=" .. HttpService:UrlEncode(tostring(fileInfo.path))
+            local historyOk, historyResponse = requestGitHubWithRetry(historyUrl, 3)
             local decoded = nil
-            local apiError = nil
-            if ok then
-                local decodeOk, result = pcall(function() return HttpService:JSONDecode(response) end)
-                if decodeOk and type(result) == "table" and not result.message then
-                    decoded = result
+            local historyError = nil
+            if historyOk then
+                local decodeOk, result = pcall(function() return HttpService:JSONDecode(historyResponse) end)
+                if decodeOk and type(result) == "table" and result.status == "success"
+                    and type(result.commits) == "table" then
+                    decoded = result.commits
+                elseif decodeOk and type(result) == "table" then
+                    historyError = tostring(result.message or "Server tidak mengembalikan riwayat commit.")
                 else
-                    apiError = type(result) == "table" and tostring(result.message or "Respons API tidak valid")
-                        or "Respons GitHub bukan JSON yang valid."
+                    historyError = "Respons Version History bukan JSON yang valid."
                 end
             else
-                apiError = tostring(response or "GitHub tidak merespons.")
+                historyError = tostring(historyResponse or "Server Version History tidak merespons.")
             end
 
-            local usedManifestFallback = false
-            if not decoded or #decoded == 0 then
-                local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/"
-                    .. sourceBranch .. "/VersionManifest.json"
-                local manifestOk, manifestResponse = pcall(function()
-                    return game:HttpGet(manifestUrl)
-                end)
-                if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
-                    local manifestDecodeOk, manifest = pcall(function()
-                        return HttpService:JSONDecode(manifestResponse)
-                    end)
-                    local item = manifestDecodeOk and type(manifest) == "table" and manifest[fileInfo.path]
-                    if type(item) == "table" and type(item.sha) == "string" and #item.sha >= 7 then
-                        decoded = {{
-                            sha = item.sha,
-                            commit = {
-                                message = item.message or "Versi terbaru (manifest fallback)",
-                                author = { date = item.date or "Tanggal tidak tersedia" }
-                            }
-                        }}
-                        usedManifestFallback = true
-                    end
-                end
-            end
-
+            -- Jangan mengganti riwayat lengkap dengan satu entry manifest.
+            -- Jika server/API gagal, tampilkan error eksplisit agar tidak terlihat
+            -- seolah-olah commit lama terhapus.
             if not decoded then
-                VersionHistoryInfo.Text = fileInfo.name .. " • GitHub API tidak tersedia"
-                addVersionHistoryMessage("API: " .. tostring(apiError or "Riwayat kosong.")
-                    .. " Manifest fallback juga tidak tersedia untuk branch " .. sourceBranch .. ".")
+                VersionHistoryInfo.Text = fileInfo.name .. " • Riwayat tidak dapat dimuat"
+                addVersionHistoryMessage("Version History: " .. tostring(historyError or "Respons kosong.")
+                    .. " Commit GitHub tidak dihapus; coba muat ulang beberapa saat lagi.")
                 return
             end
 
-            VersionHistoryInfo.Text = fileInfo.name .. " • " .. fileInfo.path
-                .. " • " .. sourceBranch
-                .. (usedManifestFallback and " • manifest fallback (versi terbaru saja)" or "")
+            VersionHistoryInfo.Text = fileInfo.name .. " • " .. fileInfo.path .. " • " .. sourceBranch
 
             local fileBack = Instance.new("TextButton")
             fileBack.Size = UDim2.new(1, -4, 0, 26)
