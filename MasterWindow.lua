@@ -388,10 +388,6 @@ return function(speaker)
         ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
     }
 
-        ["Tools/Noclip"] = "cdb525f8413b898315c9a9d7ebe56aed19957d03",
-        ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
-    }
-
     -- Manually assigned stable release per plugin path. Set the exact commit SHA when approved.
     -- Example: VERSION_HISTORY_STABLE["Plugin/Waypoint"] = "<40-character-commit-sha>"
     local VERSION_HISTORY_STABLE = {}
