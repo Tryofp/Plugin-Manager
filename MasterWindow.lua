@@ -427,6 +427,23 @@ return function(speaker)
 
     local stableLatestShaCache = {}
 
+    local function isPluginSourceActive(path)
+        for featureKey, isActive in pairs(featureStates) do
+            if isActive then
+                local rawUrl = tostring(featureKey):match("^(https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^_]+)")
+                if rawUrl and getPluginSourcePath(rawUrl) == path then return true end
+            end
+        end
+        return false
+    end
+
+    local function clearPluginModuleCache(path)
+        if not path or isPluginSourceActive(path) then return end
+        for cacheKey in pairs(loadedModules) do
+            if getPluginSourcePath(cacheKey) == path then loadedModules[cacheKey] = nil end
+        end
+    end
+
     local function isLegacyUpdateBadge(feature)
         local badgeText = string.lower(tostring(feature and feature.BadgeText or ""))
         return string.find(badgeText, "update", 1, true) ~= nil
@@ -654,9 +671,9 @@ return function(speaker)
                     choose.MouseButton1Click:Connect(function()
                         selectedPluginVersions[path] = sha
                         saveSelectedPluginVersions()
-                        for cacheKey in pairs(loadedModules) do
-                            if getPluginSourcePath(cacheKey) == path then loadedModules[cacheKey] = nil end
-                        end
+                        -- Keep an active module cached so its UNEXECUTE command can still clean up.
+                        -- Inactive modules are invalidated immediately and use the selected SHA next time.
+                        clearPluginModuleCache(path)
                         info.Text = versionName .. " dipilih. Jalankan ulang fitur untuk memuat source ini."
                         refreshPanel()
                     end)
@@ -3763,6 +3780,9 @@ return function(speaker)
                             featureStates[uniqueKey] = false
                             updateAllButtonStates(uniqueKey, false)
                         end
+                        if isUnexec and not featureStates[uniqueKey] then
+                            clearPluginModuleCache(getPluginSourcePath(subRawUrl))
+                        end
                     end
 
                     if featureStates[uniqueKey] then
@@ -4041,6 +4061,9 @@ return function(speaker)
                             else
                                 featureStates[uniqueKey] = false
                                 updateAllButtonStates(uniqueKey, false)
+                            end
+                            if isUnexec and not featureStates[uniqueKey] then
+                                clearPluginModuleCache(getPluginSourcePath(item.RawUrl))
                             end
                         end
 
