@@ -286,7 +286,7 @@ local SharedFeatures = {
         Cmd = "anchor",
         UnCmd = "unanchor",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        UpdateTimestamp = "111120260227, 86400"
     },
     AntiShake = {
         BadgeColor = "green",
@@ -297,7 +297,7 @@ local SharedFeatures = {
         Cmd = "antishake",
         UnCmd = "unshake",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        UpdateTimestamp = "111120260227, 86400"
     },
     AntiWind = {
         BadgeColor = "green",
@@ -308,7 +308,7 @@ local SharedFeatures = {
         Cmd = "antiwind",
         UnCmd = "unwind",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        UpdateTimestamp = "111120260227, 86400"
     },
     AntiTrigger = {
         BadgeColor = "green",
@@ -319,7 +319,7 @@ local SharedFeatures = {
         Cmd = "antitrigger",
         UnCmd = "untrigger",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        UpdateTimestamp = "111120260227, 86400"
     },
 
     -- 10. Standalone Tools Lainnya
