@@ -509,11 +509,17 @@ return function(speaker)
                     end
                     prompt:Destroy()
                     stableFixPromptActive = false
+                    if HealthCheckInfo and HealthCheckInfo.Parent then
+                        HealthCheckInfo.Text = "BERHASIL: source stable terbaru sudah diunduh, di-compile, divalidasi, dan cache module diperbarui. Fitur yang sedang berjalan tidak otomatis di-restart; tekan EXECUTE untuk menjalankan versi terbaru."
+                    end
                 end)
                 if not ok then
                     reloadButton.Text = "GAGAL - COBA LAGI"
                     reloadButton.Active = true
                     warn("[Plugin Manager] Gagal memuat source stable terbaru: " .. tostring(err))
+                    if HealthCheckInfo and HealthCheckInfo.Parent then
+                        HealthCheckInfo.Text = "GAGAL memuat source stable: " .. tostring(err)
+                    end
                 end
             end)
         end)
