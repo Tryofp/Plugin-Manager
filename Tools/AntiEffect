@@ -4,7 +4,6 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 -- STORAGE GLOBAL UNTUK MEMORY STATE
-_G.AntiAnchor_FrozenParts = _G.AntiAnchor_FrozenParts or {}
 _G.AntiWind_DisabledForces = _G.AntiWind_DisabledForces or {}
 _G.AntiTrigger_DisabledTriggers = _G.AntiTrigger_DisabledTriggers or {}
 _G.AntiShake_Active = _G.AntiShake_Active or false
@@ -20,55 +19,7 @@ local function notify(title, text)
 end
 
 -- ==========================================
--- ⚓ 1. FITUR ANCHOR & UNANCHOR
--- ==========================================
-local function freezeNearbyParts(radiusVal)
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then
-        notify("Anchor", "Karakter tidak ditemukan!")
-        return
-    end
-
-    local rootPos = char.HumanoidRootPart.Position
-    local count = 0
-
-    for _, part in ipairs(Workspace:GetDescendants()) do
-        if part:IsA("BasePart") and not part.Anchored and not part:IsDescendantOf(char) then
-            if (part.Position - rootPos).Magnitude <= radiusVal then
-                if not _G.AntiAnchor_FrozenParts[part] then
-                    _G.AntiAnchor_FrozenParts[part] = {
-                        CanCollide = part.CanCollide,
-                        Color = part.Color
-                    }
-                end
-                part.Anchored = true
-                part.CanCollide = true
-                part.Color = Color3.fromRGB(255, 255, 0) -- Berubah jadi kuning sebagai tanda di-anchor
-                count = count + 1
-            end
-        end
-    end
-
-    notify("⚓ ANCHOR: AKTIF 🟢", "Berhasil mengunci " .. count .. " part di sekitar!")
-end
-
-local function unfreezeParts()
-    local count = 0
-    for part, data in pairs(_G.AntiAnchor_FrozenParts) do
-        if part and part.Parent then
-            part.Anchored = false
-            part.CanCollide = data.CanCollide
-            part.Color = data.Color
-            count = count + 1
-        end
-    end
-
-    table.clear(_G.AntiAnchor_FrozenParts)
-    notify("⚓ ANCHOR: MATI 🔴", "Semua part (" .. count .. ") dikembalikan normal!")
-end
-
--- ==========================================
--- 🛡️ 2. FITUR ANTI-WIND & UNWIND
+-- 🛡️ 1. FITUR ANTI-WIND & RESTORE
 -- ==========================================
 local function disableWindForces(radiusVal)
     local char = LocalPlayer.Character
@@ -104,7 +55,7 @@ local function disableWindForces(radiusVal)
         Workspace:FindFirstChildOfClass("Wind").Enabled = false
     end
 
-    notify("🛡️ ANTI-WIND: AKTIF 🟢", "Berhasil meredam " .. count .. " efek angin!")
+    notify("🛡️ ANTI-WIND: AKTIF", "Berhasil meredam " .. count .. " efek angin!")
 end
 
 local function restoreWindForces()
@@ -125,11 +76,11 @@ local function restoreWindForces()
     end
 
     table.clear(_G.AntiWind_DisabledForces)
-    notify("🛡️ ANTI-WIND: MATI 🔴", "Efek angin dikembalikan normal!")
+    notify("🛡️ ANTI-WIND: MATI", "Efek angin dikembalikan normal (" .. count .. ")")
 end
 
 -- ==========================================
--- 🛑 3. FITUR ANTI-TRIGGER & UNTRIGGER
+-- 🛑 2. FITUR ANTI-TRIGGER & RESTORE
 -- ==========================================
 local function disableTriggers(radiusVal)
     local char = LocalPlayer.Character
@@ -160,7 +111,7 @@ local function disableTriggers(radiusVal)
 
                 if obj:IsA("BasePart") then
                     obj.CanTouch = false
-                    obj.Transparency = 0.8
+                    obj.Transparency = 0.8 -- Jadi agak transparan biar kelihatan kalau lagi dimatikan!
                 end
 
                 count = count + 1
@@ -168,7 +119,7 @@ local function disableTriggers(radiusVal)
         end
     end
 
-    notify("🛑 ANTI-TRIGGER: AKTIF 🟢", "Menonaktifkan " .. count .. " trigger!")
+    notify("🛑 ANTI-TRIGGER: AKTIF", "Berhasil menonaktifkan " .. count .. " trigger!")
 end
 
 local function restoreTriggers()
@@ -184,11 +135,11 @@ local function restoreTriggers()
     end
 
     table.clear(_G.AntiTrigger_DisabledTriggers)
-    notify("🛑 ANTI-TRIGGER: MATI 🔴", "Trigger dikembalikan normal!")
+    notify("🛑 ANTI-TRIGGER: MATI", "Semua trigger dikembalikan normal!")
 end
 
 -- ==========================================
--- 📷 4. ANTI-CAMERA SHAKE LOOP
+-- 📷 3. ANTI-CAMERA SHAKE LOOP
 -- ==========================================
 RunService.RenderStepped:Connect(function()
     if _G.AntiShake_Active then
@@ -207,34 +158,17 @@ end)
 return {
     ["PluginName"] = "Anti-Disturb Shield Complete",
     ["Commands"] = {
-        ["anchor"] = {
-            ["ListName"] = "anchor [radius]",
-            ["Description"] = "Freeze part di sekitar agar tidak goyang",
-            ["Aliases"] = {"freeze"},
-            ["Function"] = function(args, speaker)
-                local radius = tonumber(args[1]) or 100
-                freezeNearbyParts(radius)
-            end
-        },
-        ["unanchor"] = {
-            ["ListName"] = "unanchor",
-            ["Description"] = "Kembalikan part yang di-freeze",
-            ["Aliases"] = {"unfreeze"},
-            ["Function"] = function(args, speaker)
-                unfreezeParts()
-            end
-        },
         ["antiwind"] = {
-            ["ListName"] = "antiwind [radius]",
-            ["Description"] = "Matikan efek dorongan angin",
-            ["Aliases"] = {"nowind"},
+            ["ListName"] = "antiwind / nowind [radius]",
+            ["Description"] = "Matikan efek angin/dorongan",
+            ["Aliases"] = {"nowind", "tahanangin"},
             ["Function"] = function(args, speaker)
                 local radius = tonumber(args[1]) or 150
                 disableWindForces(radius)
             end
         },
         ["unwind"] = {
-            ["ListName"] = "unwind",
+            ["ListName"] = "unwind / normalangin",
             ["Description"] = "Nyalakan kembali efek angin",
             ["Aliases"] = {"normalangin"},
             ["Function"] = function(args, speaker)
@@ -242,36 +176,36 @@ return {
             end
         },
         ["antishake"] = {
-            ["ListName"] = "antishake",
-            ["Description"] = "Redam getaran kamera",
+            ["ListName"] = "antishake / noshake",
+            ["Description"] = "Aktifkan anti camera shake",
             ["Aliases"] = {"noshake"},
             ["Function"] = function(args, speaker)
                 _G.AntiShake_Active = true
-                notify("📷 ANTI-SHAKE: AKTIF 🟢", "Kamera distabilkan.")
+                notify("📷 ANTI-SHAKE: AKTIF 🟢", "Getaran kamera diredam.")
             end
         },
         ["unshake"] = {
-            ["ListName"] = "unshake",
-            ["Description"] = "Matikan anti-shake kamera",
-            ["Aliases"] = {"normalshake"},
+            ["ListName"] = "unshake / normalshake",
+            ["Description"] = "Matikan anti camera shake",
+            ["Aliases"] = {"normalshake", "ameshake"},
             ["Function"] = function(args, speaker)
                 _G.AntiShake_Active = false
-                notify("📷 ANTI-SHAKE: MATI 🔴", "Kamera normal.")
+                notify("📷 ANTI-SHAKE: MATI 🔴", "Kamera kembali normal.")
             end
         },
         ["antitrigger"] = {
-            ["ListName"] = "antitrigger [radius]",
-            ["Description"] = "Nonaktifkan BridgeTrigger/pemicu",
-            ["Aliases"] = {"notrigger"},
+            ["ListName"] = "antitrigger / notrigger [radius]",
+            ["Description"] = "Nonaktifkan BridgeTrigger",
+            ["Aliases"] = {"notrigger", "matitrigger"},
             ["Function"] = function(args, speaker)
                 local radius = tonumber(args[1]) or 150
                 disableTriggers(radius)
             end
         },
         ["untrigger"] = {
-            ["ListName"] = "untrigger",
+            ["ListName"] = "untrigger / normaltrigger",
             ["Description"] = "Kembalikan BridgeTrigger",
-            ["Aliases"] = {"normaltrigger"},
+            ["Aliases"] = {"normaltrigger", "nyalatrigger"},
             ["Function"] = function(args, speaker)
                 restoreTriggers()
             end
