@@ -3419,6 +3419,27 @@ return function(speaker)
                 details.ZIndex = 34
                 details.Parent = row
 
+                -- Tandai asal versi hanya pada commit aktif hasil Restore.
+                -- CURRENT VERSION tetap menunjuk commit terbaru di branch,
+                -- sedangkan RESTORED FROM menunjukkan commit sumber kodenya.
+                if index == 1 then
+                    local restoredFrom = message:match("^[Rr]estore .- to ([a-fA-F0-9]+)")
+                    if restoredFrom then
+                        local sourceBadge = Instance.new("TextLabel")
+                        sourceBadge.Size = UDim2.new(1, -12, 0, 10)
+                        sourceBadge.Position = UDim2.new(0, 6, 0, 36)
+                        sourceBadge.BackgroundTransparency = 1
+                        sourceBadge.Font = Enum.Font.GothamBold
+                        sourceBadge.Text = "RESTORED FROM " .. restoredFrom:sub(1, 7)
+                        sourceBadge.TextColor3 = Color3.fromRGB(120, 205, 255)
+                        sourceBadge.TextSize = 7
+                        sourceBadge.TextXAlignment = Enum.TextXAlignment.Left
+                        sourceBadge.TextTruncate = Enum.TextTruncate.AtEnd
+                        sourceBadge.ZIndex = 34
+                        sourceBadge.Parent = row
+                    end
+                end
+
                 row.MouseButton1Click:Connect(function()
                     selectedVersionCommit = {
                         sha = sha,
