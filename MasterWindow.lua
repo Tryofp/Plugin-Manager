@@ -356,6 +356,7 @@ return function(speaker)
 
 
     -- ==========================================================
+    local loadedModules = {}
     -- PUBLIC VERSION HISTORY (STABLE ONLY)
     -- Every source starts at V0.1 from this rollout baseline.
     -- Later commits affecting that exact file on stable increment it.
@@ -645,7 +646,6 @@ return function(speaker)
         end)
     end
 
-    local loadedModules = {}
     local loadedModuleFingerprints = {}
     local stableFixPrompted = {}
     local stableFixPromptActive = false
@@ -674,6 +674,7 @@ return function(speaker)
         end
         local module = compiled()
         loadedModuleFingerprints[tostring(resolvedUrl):match("^[^?]+") or tostring(resolvedUrl)] = getPluginSourceFingerprint(source)
+        loadedModuleFingerprints[tostring(rawUrl):match("^[^?]+") or tostring(rawUrl)] = getPluginSourceFingerprint(source)
         return module
     end
 
