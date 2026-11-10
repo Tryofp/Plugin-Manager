@@ -416,6 +416,92 @@ return function(speaker)
             or "main"
     end
 
+    local function requestUserVersionProfile(action, branch, path, commitSha)
+        local req = request or http_request or (syn and syn.request)
+        if not req then return false, "Executor tidak menyediakan HTTP request." end
+        local payload = {
+            Type = "UserVersionProfile",
+            Action = action,
+            UserId = tostring(LocalPlayer.UserId),
+            Branch = tostring(branch or "main")
+        }
+        if path then payload.Path = tostring(path) end
+        if commitSha then payload.CommitSha = tostring(commitSha) end
+
+        local ok, response = pcall(function()
+            return req({
+                Url = SHEETS_WEB_APP_URL,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+        if not ok or not response then return false, tostring(response or "Server tidak merespons.") end
+        local body = response.Body or response.body or ""
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+        if not decodeOk or type(decoded) ~= "table" then
+            return false, "Respons server bukan JSON yang valid."
+        end
+        if decoded.status ~= "success" then return false, tostring(decoded.message or "Server menolak penyimpanan.") end
+        return true, decoded
+    end
+
+    local function loadServerVersionProfiles()
+        if not globalLoaderData then return end
+        local branches = { "main", "Beta" }
+        local serverVersions = {}
+        local serverHasData = false
+
+        for _, branch in ipairs(branches) do
+            local url = SHEETS_WEB_APP_URL .. "?action=GetUserVersionProfile&userId="
+                .. HttpService:UrlEncode(tostring(LocalPlayer.UserId))
+                .. "&branch=" .. HttpService:UrlEncode(branch)
+                .. "&_=" .. tostring(DateTime.now().UnixTimestampMillis)
+            local ok, response = pcall(function() return game:HttpGet(url) end)
+            if ok and type(response) == "string" and response ~= "" then
+                local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                if decodeOk and type(decoded) == "table" and decoded.status == "success"
+                    and type(decoded.versions) == "table" then
+                    for path, sha in pairs(decoded.versions) do
+                        if type(path) == "string" and type(sha) == "string" and #sha == 40 then
+                            serverVersions[path] = sha
+                            serverHasData = true
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Server profile wins; local-only selections are migrated to the server.
+        for path, sha in pairs(serverVersions) do
+            selectedPluginVersions[path] = sha
+        end
+        saveSelectedPluginVersions()
+
+        for path, sha in pairs(selectedPluginVersions) do
+            if not serverVersions[path] then
+                local branchForPath = "main"
+                for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
+                    for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+                        local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or { item }
+                        for _, feature in ipairs(candidates) do
+                            local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or item.RawUrl
+                            if getPluginSourcePath(featureUrl) == path then
+                                branchForPath = getPluginSourceBranch(featureUrl)
+                                break
+                            end
+                        end
+                    end
+                end
+                requestUserVersionProfile("Save", branchForPath, path, sha)
+            end
+        end
+
+        if refreshBadgeUI then
+            task.defer(refreshBadgeUI)
+        end
+    end
+
     local function getPluginSourcePath(rawUrl)
         local url = tostring(rawUrl or "")
         local branchPath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/[^/]+/(.+)")
@@ -849,6 +935,16 @@ return function(speaker)
                     choose.MouseButton1Click:Connect(function()
                         selectedPluginVersions[path] = sha
                         saveSelectedPluginVersions()
+                        local selectedBranch = getPluginSourceBranch(rawUrl)
+                        info.Text = versionName .. " dipilih. Menyimpan profil ke server..."
+                        task.spawn(function()
+                            local saved, result = requestUserVersionProfile("Save", selectedBranch, path, sha)
+                            if saved then
+                                info.Text = versionName .. " dipilih dan tersimpan di server untuk UserId ini."
+                            else
+                                info.Text = versionName .. " tersimpan lokal, tetapi sinkronisasi server gagal: " .. tostring(result)
+                            end
+                        end)
                         -- Keep an active module cached so its UNEXECUTE command can still clean up.
                         -- Inactive modules are invalidated immediately and use the selected SHA next time.
                         clearPluginModuleCache(path)
