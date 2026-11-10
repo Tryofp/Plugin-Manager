@@ -447,6 +447,25 @@ return function(speaker)
     -- Cache paginated history by source path so retries resume at the failed page.
     local stableHistoryCache = {}
 
+    -- Retry short-lived GitHub/API interruptions without duplicating cached commits.
+    local function requestGitHubWithRetry(url, attempts)
+        attempts = math.max(1, tonumber(attempts) or 3)
+        local lastError = nil
+        for attempt = 1, attempts do
+            local ok, response = pcall(function()
+                return game:HttpGet(url)
+            end)
+            if ok and type(response) == "string" and response ~= "" then
+                return true, response
+            end
+            lastError = ok and "Respons GitHub kosong." or tostring(response)
+            if attempt < attempts then
+                task.wait(attempt * 1.25)
+            end
+        end
+        return false, lastError
+    end
+
     local function isPluginSourceActive(path)
         for featureKey, isActive in pairs(featureStates) do
             if isActive then
@@ -485,8 +504,8 @@ return function(speaker)
         local arrow = Instance.new("TextButton")
         arrow.Name = "PublicVersionHistoryToggle"
         arrow.Size = UDim2.new(0, 20, 0, 20)
-        arrow.AnchorPoint = Vector2.new(0, 0)
-        arrow.Position = UDim2.new(1, -26, 0, 10)
+        arrow.AnchorPoint = Vector2.new(1, 0.5)
+        arrow.Position = UDim2.new(1, -8, 0.5, 0)
         arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
         arrow.BackgroundTransparency = 0.1
         arrow.BorderSizePixel = 0
@@ -529,8 +548,8 @@ return function(speaker)
                 task.spawn(function()
                     local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
                         .. path .. "&sha=stable&per_page=1"
-                    local ok, response = pcall(function() return game:HttpGet(checkUrl) end)
-                    if not ok or type(response) ~= "string" then return end
+                    local ok, response = requestGitHubWithRetry(checkUrl, 3)
+                    if not ok then return end
                     local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
                     if decodeOk and type(decoded) == "table" and decoded[1] then
                         stableLatestShaCache[path] = tostring(decoded[1].sha or "")
@@ -597,9 +616,9 @@ return function(speaker)
                     local page = history.nextPage
                     local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
                         .. path .. "&sha=stable&per_page=100&page=" .. tostring(page)
-                    local ok, response = pcall(function() return game:HttpGet(apiUrl) end)
+                    local ok, response = requestGitHubWithRetry(apiUrl, 3)
                     if not ok or type(response) ~= "string" or response == "" then
-                        loadWarning = "Koneksi GitHub terputus. Riwayat yang sudah diterima tetap ditampilkan; buka ulang untuk melanjutkan."
+                        loadWarning = "GitHub belum merespons setelah 3 percobaan. Riwayat yang sudah diterima tetap ditampilkan; tekan panah lagi untuk mencoba ulang."
                         break
                     end
                     local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
@@ -607,9 +626,17 @@ return function(speaker)
                         loadWarning = "GitHub membatasi atau gagal merespons. Riwayat yang sudah diterima tetap ditampilkan; buka ulang untuk mencoba lagi."
                         break
                     end
+                    local knownShas = {}
+                    for _, cachedEntry in ipairs(history.commits) do
+                        knownShas[tostring(cachedEntry.sha or "")] = true
+                    end
                     for _, entry in ipairs(decoded) do
-                        table.insert(history.commits, entry)
-                        if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
+                        local entrySha = tostring(entry.sha or "")
+                        if entrySha ~= "" and not knownShas[entrySha] then
+                            table.insert(history.commits, entry)
+                            knownShas[entrySha] = true
+                        end
+                        if entrySha == baselineSha then foundBaseline = true break end
                     end
                     history.nextPage = page + 1
                     if foundBaseline or #decoded < 100 then history.complete = true break end
@@ -3746,7 +3773,7 @@ return function(speaker)
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -132 or -108, 0.5, 0)
+            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -122 or -100, 0.5, 0)
             SubFavoriteBtn.BackgroundTransparency = 1
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
@@ -4017,7 +4044,7 @@ return function(speaker)
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -132 or -108, 0.5, 0)
+            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -122 or -100, 0.5, 0)
             MenuFavoriteBtn.BackgroundTransparency = 1
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
