@@ -823,42 +823,57 @@ return function(speaker)
                     stableHistoryCache[path] = history
                 end
                 local loadWarning = nil
-                local foundBaseline = false
+                local foundBaseline = baselineSha == nil
                 for _, entry in ipairs(history.commits) do
-                    if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
+                    if baselineSha and tostring(entry.sha or "") == baselineSha then
+                        foundBaseline = true
+                        break
+                    end
                 end
+                if foundBaseline and baselineSha then history.complete = true end
 
-                if not foundBaseline and not history.complete then
-                    -- Riwayat diambil lewat Apps Script, bukan GitHub REST dari client.
-                    -- Endpoint mengembalikan 30 commit terbaru dan memakai token server-side.
-                    local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
-                        .. HttpService:UrlEncode(path)
-                    local ok, response = requestGitHubWithRetry(historyUrl, 3)
-                    if not ok or type(response) ~= "string" or response == "" then
-                        loadWarning = "Server Version History belum merespons setelah 3 percobaan. Coba buka panah lagi beberapa saat lagi."
-                    else
+                -- Ambil halaman tambahan hanya saat baseline belum ditemukan.
+                -- Maksimal 10 halaman per pembukaan agar request tetap terkendali.
+                local shouldFetch = #history.commits == 0
+                    or (baselineSha ~= nil and not foundBaseline and not history.complete)
+                if shouldFetch and not history.complete then
+                    local page = math.max(1, tonumber(history.nextPage) or 1)
+                    while page <= 10 and not history.complete do
+                        local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                            .. HttpService:UrlEncode(path) .. "&page=" .. tostring(page)
+                        local ok, response = requestGitHubWithRetry(historyUrl, 3)
+                        if not ok or type(response) ~= "string" or response == "" then
+                            loadWarning = "Server Version History belum merespons pada halaman "
+                                .. tostring(page) .. ". Buka ulang panah untuk mencoba lagi."
+                            break
+                        end
+
                         local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
                         local decoded = decodeOk and type(payload) == "table" and payload.status == "success"
                             and payload.commits or nil
                         if type(decoded) ~= "table" then
-                            loadWarning = "Server Version History gagal mengambil data GitHub: "
+                            loadWarning = "Server Version History gagal mengambil halaman "
+                                .. tostring(page) .. ": "
                                 .. tostring(type(payload) == "table" and payload.message or "respons tidak valid")
-                        else
-                            local knownShas = {}
-                            for _, cachedEntry in ipairs(history.commits) do
-                                knownShas[tostring(cachedEntry.sha or "")] = true
-                            end
-                            for _, entry in ipairs(decoded) do
-                                local entrySha = tostring(entry.sha or "")
-                                if entrySha ~= "" and not knownShas[entrySha] then
-                                    table.insert(history.commits, entry)
-                                    knownShas[entrySha] = true
-                                end
-                                if entrySha == baselineSha then foundBaseline = true break end
-                            end
-                            history.nextPage = 2
-                            history.complete = #decoded < 30 or foundBaseline
+                            break
                         end
+
+                        local knownShas = {}
+                        for _, cachedEntry in ipairs(history.commits) do
+                            knownShas[tostring(cachedEntry.sha or "")] = true
+                        end
+                        for _, entry in ipairs(decoded) do
+                            local entrySha = tostring(entry.sha or "")
+                            if entrySha ~= "" and not knownShas[entrySha] then
+                                table.insert(history.commits, entry)
+                                knownShas[entrySha] = true
+                            end
+                            if baselineSha and entrySha == baselineSha then foundBaseline = true end
+                        end
+
+                        history.nextPage = page + 1
+                        history.complete = #decoded < 30 or foundBaseline
+                        page = page + 1
                     end
                 end
 
