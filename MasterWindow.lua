@@ -1059,7 +1059,7 @@ return function(speaker)
             HealthCheckInfo.Text = "Belum ada hasil untuk diekspor. Jalankan pemeriksaan dulu."
             return
         end
-        local reportText = table.concat(healthReportLines, "\\n")
+        local reportText = table.concat(healthReportLines, "\n")
         local copied = false
         if type(setclipboard) == "function" then
             copied = pcall(setclipboard, reportText)
