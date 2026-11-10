@@ -292,13 +292,52 @@ return function(speaker)
 
     loadFavoritePlugins()
 
-    local function getMenuFavoriteKey(item)
-        return "menu|" .. tostring(item.RawUrl or "") .. "|" .. tostring(item.Name or "")
+    -- Kunci Favorite dipisah berdasarkan tab; submenu juga berdasarkan menu induknya.
+    local function getMenuFavoriteKey(item, tabName)
+        return "menu|" .. tostring(tabName or "") .. "|" .. tostring(item.RawUrl or "") .. "|" .. tostring(item.Name or "")
     end
 
-    local function getSubFavoriteKey(subFeat, parentRawUrl)
+    local function getSubFavoriteKey(subFeat, parentRawUrl, tabName, parentMenuTitle)
         local rawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or parentRawUrl
-        return "feature|" .. tostring(rawUrl or "") .. "|" .. tostring(subFeat.Cmd or subFeat.Name or "")
+        return "feature|" .. tostring(tabName or "") .. "|" .. tostring(parentMenuTitle or "") .. "|" ..
+            tostring(rawUrl or "") .. "|" .. tostring(subFeat.Cmd or subFeat.Name or "")
+    end
+
+    -- Migrasi Favorite lama hanya jika item tersebut unik di seluruh tab.
+    -- Jika item lama muncul di beberapa tab, jangan menebak tab mana yang dipilih user.
+    local function migrateLegacyFavorites(loaderData)
+        if type(loaderData) ~= "table" or type(loaderData.Tabs) ~= "table" then return end
+        local matches = {}
+        for _, tabInfo in ipairs(loaderData.Tabs) do
+            local tabName = tabInfo.Name
+            for _, item in ipairs(loaderData[tabInfo.DataKey] or {}) do
+                local oldMenuKey = "menu|" .. tostring(item.RawUrl or "") .. "|" .. tostring(item.Name or "")
+                local newMenuKey = getMenuFavoriteKey(item, tabName)
+                matches[oldMenuKey] = matches[oldMenuKey] or { count = 0, key = newMenuKey }
+                matches[oldMenuKey].count = matches[oldMenuKey].count + 1
+
+                for _, subFeat in ipairs(item.SubFeatures or {}) do
+                    local rawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or item.RawUrl
+                    local oldSubKey = "feature|" .. tostring(rawUrl or "") .. "|" ..
+                        tostring(subFeat.Cmd or subFeat.Name or "")
+                    local newSubKey = getSubFavoriteKey(subFeat, item.RawUrl, tabName, item.Name)
+                    matches[oldSubKey] = matches[oldSubKey] or { count = 0, key = newSubKey }
+                    matches[oldSubKey].count = matches[oldSubKey].count + 1
+                end
+            end
+        end
+
+        local changed = false
+        for oldKey, info in pairs(matches) do
+            if info.count == 1 and favoritePlugins[oldKey] == true then
+                if favoritePlugins[info.key] == nil then
+                    favoritePlugins[info.key] = true
+                end
+                favoritePlugins[oldKey] = nil
+                changed = true
+            end
+        end
+        if changed then saveFavoritePlugins() end
     end
 
     local function isFavorite(key)
@@ -2748,9 +2787,10 @@ return function(speaker)
         end
     end)
 
-    local currentSubMenuTitle, currentSubMenuRawUrl, currentSubMenuFeatures
-    local function showSubMenu(menuTitle, rawUrl, subFeatures)
-        currentSubMenuTitle, currentSubMenuRawUrl, currentSubMenuFeatures = menuTitle, rawUrl, subFeatures
+    local currentSubMenuTitle, currentSubMenuRawUrl, currentSubMenuFeatures, currentSubMenuTabName
+    local function showSubMenu(menuTitle, rawUrl, subFeatures, tabName)
+        currentSubMenuTitle, currentSubMenuRawUrl, currentSubMenuFeatures, currentSubMenuTabName =
+            menuTitle, rawUrl, subFeatures, tabName
         isCurrentlyInSubMenu = true
         for _, child in ipairs(SubMenuContainer:GetChildren()) do child:Destroy() end
         SubMenuContainer.Visible = true
@@ -2792,8 +2832,8 @@ return function(speaker)
             table.insert(orderedSubFeatures, { item = feature, index = index })
         end
         table.sort(orderedSubFeatures, function(a, b)
-            local aFav = isFavorite(getSubFavoriteKey(a.item, rawUrl))
-            local bFav = isFavorite(getSubFavoriteKey(b.item, rawUrl))
+            local aFav = isFavorite(getSubFavoriteKey(a.item, rawUrl, tabName, menuTitle))
+            local bFav = isFavorite(getSubFavoriteKey(b.item, rawUrl, tabName, menuTitle))
             if aFav ~= bFav then return aFav end
             return a.index < b.index
         end)
@@ -2876,13 +2916,13 @@ return function(speaker)
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
             SubFavoriteBtn.TextSize = 18
-            SubFavoriteBtn.Text = isFavorite(getSubFavoriteKey(subFeat, rawUrl)) and "★" or "☆"
-            SubFavoriteBtn.TextColor3 = isFavorite(getSubFavoriteKey(subFeat, rawUrl))
+            SubFavoriteBtn.Text = isFavorite(getSubFavoriteKey(subFeat, rawUrl, tabName, menuTitle)) and "★" or "☆"
+            SubFavoriteBtn.TextColor3 = isFavorite(getSubFavoriteKey(subFeat, rawUrl, tabName, menuTitle))
                 and Color3.fromRGB(255, 205, 55) or Color3.fromRGB(135, 145, 160)
             SubFavoriteBtn.Parent = Item
             SubFavoriteBtn.MouseButton1Click:Connect(function()
-                toggleFavorite(getSubFavoriteKey(subFeat, rawUrl))
-                showSubMenu(menuTitle, rawUrl, subFeatures)
+                toggleFavorite(getSubFavoriteKey(subFeat, rawUrl, tabName, menuTitle))
+                showSubMenu(menuTitle, rawUrl, subFeatures, tabName)
             end)
 
             local ExecSub = Instance.new("TextButton")
@@ -2995,8 +3035,8 @@ return function(speaker)
             table.insert(orderedMenuItems, { item = menuItem, index = index })
         end
         table.sort(orderedMenuItems, function(a, b)
-            local aFav = isFavorite(getMenuFavoriteKey(a.item))
-            local bFav = isFavorite(getMenuFavoriteKey(b.item))
+            local aFav = isFavorite(getMenuFavoriteKey(a.item, tabName))
+            local bFav = isFavorite(getMenuFavoriteKey(b.item, tabName))
             if aFav ~= bFav then return aFav end
             return a.index < b.index
         end)
@@ -3122,12 +3162,12 @@ return function(speaker)
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
             MenuFavoriteBtn.TextSize = 18
-            MenuFavoriteBtn.Text = isFavorite(getMenuFavoriteKey(item)) and "★" or "☆"
-            MenuFavoriteBtn.TextColor3 = isFavorite(getMenuFavoriteKey(item))
+            MenuFavoriteBtn.Text = isFavorite(getMenuFavoriteKey(item, tabName)) and "★" or "☆"
+            MenuFavoriteBtn.TextColor3 = isFavorite(getMenuFavoriteKey(item, tabName))
                 and Color3.fromRGB(255, 205, 55) or Color3.fromRGB(135, 145, 160)
             MenuFavoriteBtn.Parent = ItemFrame
             MenuFavoriteBtn.MouseButton1Click:Connect(function()
-                toggleFavorite(getMenuFavoriteKey(item))
+                toggleFavorite(getMenuFavoriteKey(item, tabName))
                 for _, child in ipairs(targetParentScroll:GetChildren()) do
                     if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
                 end
@@ -3150,7 +3190,7 @@ return function(speaker)
                 Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(0, 4)
 
                 OpenBtn.MouseButton1Click:Connect(function()
-                    showSubMenu(item.Name, item.RawUrl, item.SubFeatures)
+                    showSubMenu(item.Name, item.RawUrl, item.SubFeatures, tabName)
                 end)
             else
                 if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
@@ -3272,7 +3312,7 @@ return function(speaker)
             for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
                 for _, menuItem in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
                     if menuItem.Name == currentSubMenuTitle and menuItem.SubFeatures then
-                        showSubMenu(menuItem.Name, menuItem.RawUrl, menuItem.SubFeatures)
+                        showSubMenu(menuItem.Name, menuItem.RawUrl, menuItem.SubFeatures, tabInfo.Name)
                         return
                     end
                 end
@@ -3287,6 +3327,7 @@ return function(speaker)
         local data = chunk()
 
         globalLoaderData = data
+        migrateLegacyFavorites(data)
 
         local detectedTabs = data.Tabs or {
             { Name = "Main", DataKey = "Main" },
