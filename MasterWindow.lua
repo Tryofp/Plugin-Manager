@@ -411,9 +411,12 @@ return function(speaker)
 
     local function getPluginSourcePath(rawUrl)
         local url = tostring(rawUrl or "")
-        local stablePath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
-            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
-        if stablePath then return stablePath end
+        -- Handle modern GitHub raw URLs with refs/heads/<branch>/..., including Beta.
+        -- The branch name is exactly one segment; do not mistake "heads/Beta" for the file path.
+        local branchPath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/[^/]+/(.+)")
+        if branchPath then return branchPath end
+
+        -- Backward compatibility for legacy raw URLs: /<branch>/<file path>.
         return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
     end
 
