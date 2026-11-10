@@ -554,14 +554,38 @@ return function(speaker)
                 setStableUpdateVisible(cachedLatest ~= savedVersionSha)
             else
                 task.spawn(function()
+                    local sourceBranch = getPluginSourceBranch(rawUrl)
+                    local latestSha = nil
+
+                    -- Primary: GitHub commits API.
                     local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=" .. getPluginSourceBranch(rawUrl) .. "&per_page=1"
+                        .. path .. "&sha=" .. sourceBranch .. "&per_page=1"
                     local ok, response = requestGitHubWithRetry(checkUrl, 3)
-                    if not ok then return end
-                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-                    if decodeOk and type(decoded) == "table" and decoded[1] then
-                        stableLatestShaCache[path] = tostring(decoded[1].sha or "")
-                        if card.Parent then setStableUpdateVisible(stableLatestShaCache[path] ~= savedVersionSha) end
+                    if ok then
+                        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                        if decodeOk and type(decoded) == "table" and decoded[1] then
+                            latestSha = tostring(decoded[1].sha or "")
+                        end
+                    end
+
+                    -- Fallback: static manifest on the same source branch; no REST API required.
+                    if not latestSha or latestSha == "" then
+                        local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/"
+                            .. sourceBranch .. "/VersionManifest.json"
+                        local manifestOk, manifestResponse = pcall(function() return game:HttpGet(manifestUrl) end)
+                        if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
+                            local manifestDecodeOk, manifest = pcall(function()
+                                return HttpService:JSONDecode(manifestResponse)
+                            end)
+                            if manifestDecodeOk and type(manifest) == "table" and type(manifest[path]) == "table" then
+                                latestSha = tostring(manifest[path].sha or "")
+                            end
+                        end
+                    end
+
+                    if latestSha and latestSha ~= "" then
+                        stableLatestShaCache[path] = latestSha
+                        if card.Parent then setStableUpdateVisible(latestSha ~= savedVersionSha) end
                     end
                 end)
             end
