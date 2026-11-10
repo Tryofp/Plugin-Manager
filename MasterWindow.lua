@@ -1104,11 +1104,13 @@ return function(speaker)
                 errors = 1
             end
 
-            -- Periksa isi file langsung dari raw.githubusercontent.com.
-            -- Tidak memakai GitHub API, sehingga tidak terkena HTTP 403/rate limit API.
+            -- Unduh source secara paralel agar tidak menunggu 21 request satu per satu.
+            -- Maksimal 4 worker untuk menjaga beban jaringan dan executor tetap terkendali.
             local updated, unchanged, newBaseline, errors = 0, 0, 0, 0
-            for index, fileInfo in ipairs(files) do
-                UpdateCheckerInfo.Text = string.format("Mengunduh source %d/%d • %s", index, #files, fileInfo.name)
+            local completed, nextIndex = 0, 0
+            local workerCount = math.min(4, #files)
+
+            local function checkOneFile(fileInfo)
                 local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/main/" .. fileInfo.path
                 local rawOk, source = pcall(function() return game:HttpGet(rawUrl) end)
 
@@ -1117,7 +1119,6 @@ return function(speaker)
                     addUpdateCheckerRow(fileInfo.name, "Gagal mengambil isi source: " .. string.sub(tostring(source), 1, 100), "ERROR")
                 else
                     -- Fingerprint deterministik dari isi file (bukan hash keamanan).
-                    -- Modulo dipilih agar perhitungan tetap presisi di angka Luau.
                     local fingerprint = 0
                     for byteIndex = 1, #source do
                         fingerprint = (fingerprint * 131 + string.byte(source, byteIndex)) % 2147483647
@@ -1141,7 +1142,38 @@ return function(speaker)
                         addUpdateCheckerRow(fileInfo.name, "Isi file masih sama • " .. tostring(#source) .. " byte.", "OK")
                     end
                 end
-                if index < #files then task.wait(0.12) end
+            end
+
+            for worker = 1, workerCount do
+                task.spawn(function()
+                    while true do
+                        nextIndex = nextIndex + 1
+                        local index = nextIndex
+                        if index > #files then break end
+
+                        local fileInfo = files[index]
+                        UpdateCheckerInfo.Text = string.format(
+                            "Mengunduh source %d/%d • %s",
+                            completed + 1, #files, fileInfo.name
+                        )
+
+                        local ok, err = pcall(checkOneFile, fileInfo)
+                        if not ok then
+                            errors = errors + 1
+                            addUpdateCheckerRow(fileInfo.name, "Kesalahan pemeriksaan: " .. string.sub(tostring(err), 1, 100), "ERROR")
+                        end
+
+                        completed = completed + 1
+                        UpdateCheckerInfo.Text = string.format(
+                            "Memeriksa source • %d/%d selesai (%d worker)",
+                            completed, #files, workerCount
+                        )
+                    end
+                end)
+            end
+
+            while completed < #files do
+                task.wait(0.05)
             end
 
             UpdateCheckerInfo.Text = string.format(
