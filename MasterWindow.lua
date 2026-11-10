@@ -3072,7 +3072,9 @@ return function(speaker)
             -- mengembalikan HTTP 405 pada redirect executor walaupun aksi sudah
             -- berhasil dijalankan. Hasil akhir diverifikasi dari metadata GET.
             pcall(fetchRemoteMetadata)
-            local beforeStableUpdatedAt = tostring(remoteMetadata.StableBackupUpdatedAt or "")
+            local targetBranch = tostring(fileInfo and fileInfo.branch or "main")
+            local stableUpdatedAtKey = targetBranch == "main" and "StableBackupUpdatedAt" or ("StableBackupUpdatedAt_" .. targetBranch)
+            local beforeStableUpdatedAt = tostring(remoteMetadata[stableUpdatedAtKey] or "")
             local beforeRestoreAt = tostring(remoteMetadata.LastVersionRestoreAt or "")
 
             local requestOk, response = pcall(function()
@@ -3084,6 +3086,7 @@ return function(speaker)
                         Type = "VersionManager",
                         Action = action,
                         Path = fileInfo and fileInfo.path or "",
+                        Branch = fileInfo and fileInfo.branch or "main",
                         CommitSha = commitSha or "",
                         AdminKey = VersionHistoryAdminKeyBox.Text
                     })
@@ -3101,8 +3104,9 @@ return function(speaker)
                 local stateOk = fetchRemoteMetadata()
                 if stateOk then
                     if action == "SetStable" then
-                        local stableCommit = tostring(remoteMetadata.StableBackupCommit or "")
-                        local updatedAt = tostring(remoteMetadata.StableBackupUpdatedAt or "")
+                        local stableCommitKey = targetBranch == "main" and "StableBackupCommit" or ("StableBackupCommit_" .. targetBranch)
+                        local stableCommit = tostring(remoteMetadata[stableCommitKey] or "")
+                        local updatedAt = tostring(remoteMetadata[stableUpdatedAtKey] or "")
                         if stableCommit ~= "" and updatedAt ~= "" and updatedAt ~= beforeStableUpdatedAt then
                             VersionHistoryInfo.Text = "STABLE BACKUP tersimpan • " .. stableCommit:sub(1, 7)
                             return
@@ -3110,8 +3114,10 @@ return function(speaker)
                     elseif action == "RestoreStable" or action == "RestoreSelected" then
                         local restoreAt = tostring(remoteMetadata.LastVersionRestoreAt or "")
                         local restorePath = tostring(remoteMetadata.LastVersionRestorePath or "")
+                        local restoreBranch = tostring(remoteMetadata.LastVersionRestoreBranch or "main")
                         local newCommit = tostring(remoteMetadata.LastVersionRestoreCommit or "")
-                        if restoreAt ~= "" and restoreAt ~= beforeRestoreAt and restorePath == tostring(fileInfo.path) and newCommit ~= "" then
+                        if restoreAt ~= "" and restoreAt ~= beforeRestoreAt and restorePath == tostring(fileInfo.path)
+                            and restoreBranch == targetBranch and newCommit ~= "" then
                             VersionHistoryInfo.Text = "Restore berhasil • commit baru " .. newCommit:sub(1, 7)
                             task.wait(0.5)
                             loadVersionHistoryForFile(fileInfo)
@@ -3210,9 +3216,10 @@ return function(speaker)
     local function askVersionManagerConfirmation(action, commitSha, fileInfo)
         pendingVersionAction = action
         pendingVersionCommitSha = commitSha
-        local target = action == "SetStable" and "Simpan posisi main saat ini sebagai Stable Backup?"
-            or (action == "RestoreStable" and "Kembalikan " .. fileInfo.name .. " ke Stable Backup?"
-            or "Kembalikan " .. fileInfo.name .. " ke commit " .. tostring(commitSha):sub(1, 7) .. "?")
+        local targetBranch = tostring(fileInfo and fileInfo.branch or "main")
+        local target = action == "SetStable" and ("Simpan posisi branch " .. targetBranch .. " saat ini sebagai Stable Backup?")
+            or (action == "RestoreStable" and ("Kembalikan " .. fileInfo.name .. " pada branch " .. targetBranch .. " ke Stable Backup?")
+            or ("Kembalikan " .. fileInfo.name .. " pada branch " .. targetBranch .. " ke commit " .. tostring(commitSha):sub(1, 7) .. "?"))
         VersionHistoryConfirmText.Text = target .. "\n\nVersi aktif sebelum restore tetap tercatat di GitHub. Stable Backup tidak akan ditimpa."
         VersionHistoryConfirm.Visible = true
     end
@@ -3355,6 +3362,7 @@ return function(speaker)
                             Body = HttpService:JSONEncode({
                                 Type = "VersionManager",
                                 Action = "GetState",
+                                Branch = fileInfo.branch or "main",
                                 AdminKey = VersionHistoryAdminKeyBox.Text
                             })
                         })
@@ -3363,10 +3371,11 @@ return function(speaker)
                         local decodeOk, state = pcall(function() return HttpService:JSONDecode(response.Body or response.body or "") end)
                         if decodeOk and type(state) == "table" and state.status == "success" then
                             local stable = tostring(state.stableCommit or "")
+                            local stableBranch = tostring(state.branch or fileInfo.branch or "main")
                             if stable ~= "" then
-                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup " .. stable:sub(1, 7)
+                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup (" .. stableBranch .. ") " .. stable:sub(1, 7)
                             else
-                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup belum disimpan"
+                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup (" .. stableBranch .. ") belum disimpan"
                             end
                         end
                     end
