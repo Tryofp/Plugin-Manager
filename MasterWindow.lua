@@ -471,13 +471,22 @@ return function(speaker)
         updateBadge.TextSize = 8
         updateBadge.Visible = false
         updateBadge.Parent = card
+        local function setStableUpdateVisible(visible)
+            updateBadge.Visible = visible == true
+            if updateBadge.Visible and nameLabel then
+                local measured = TextService:GetTextSize(tostring(displayName), 11, Enum.Font.GothamBold, Vector2.new(220, 20)).X
+                local safeX = math.min(8 + measured + 4, math.max(8, card.AbsoluteSize.X - 212))
+                updateBadge.AnchorPoint = Vector2.new(0, 0)
+                updateBadge.Position = UDim2.new(0, safeX, 0, 5)
+            end
+        end
 
         -- Only users pinned to an older SHA need an UPDATE! check.
         local savedVersionSha = tostring(selectedPluginVersions[path] or "")
         if savedVersionSha ~= "" then
             local cachedLatest = stableLatestShaCache[path]
             if cachedLatest then
-                updateBadge.Visible = cachedLatest ~= savedVersionSha
+                setStableUpdateVisible(cachedLatest ~= savedVersionSha)
             else
                 task.spawn(function()
                     local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
@@ -487,7 +496,7 @@ return function(speaker)
                     local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
                     if decodeOk and type(decoded) == "table" and decoded[1] then
                         stableLatestShaCache[path] = tostring(decoded[1].sha or "")
-                        if card.Parent then updateBadge.Visible = stableLatestShaCache[path] ~= savedVersionSha end
+                        if card.Parent then setStableUpdateVisible(stableLatestShaCache[path] ~= savedVersionSha) end
                     end
                 end)
             end
@@ -575,7 +584,7 @@ return function(speaker)
                 local latestSha = tostring(commits[1] and commits[1].sha or "")
                 stableLatestShaCache[path] = latestSha
                 local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
-                updateBadge.Visible = selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha
+                setStableUpdateVisible(selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha)
 
                 info.Text = displayName .. " • " .. tostring(totalVersions) .. " versi • stable"
                 for index = 1, math.min(12, totalVersions) do
