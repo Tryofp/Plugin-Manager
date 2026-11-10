@@ -562,6 +562,8 @@ return function(speaker)
     end
 
     local stableLatestShaCache = {}
+    local releaseUpdateByPath = {}
+    local releaseStatusCheckStarted = false
     -- Cache paginated history by source path so retries resume at the failed page.
     local stableHistoryCache = {}
 
@@ -573,15 +575,55 @@ return function(speaker)
             local ok, response = pcall(function()
                 return game:HttpGet(url)
             end)
-            if ok and type(response) == "string" and response ~= "" then
-                return true, response
-            end
+            if ok and type(response) == "string" and response ~= "" then return true, response end
             lastError = ok and "Respons GitHub kosong." or tostring(response)
-            if attempt < attempts then
-                task.wait(attempt * 1.25)
-            end
+            if attempt < attempts then task.wait(attempt * 1.25) end
         end
         return false, lastError
+    end
+
+    local function checkStableReleaseUpdates()
+        if releaseStatusCheckStarted or not globalLoaderData then return end
+        releaseStatusCheckStarted = true
+        task.spawn(function()
+            local paths, seen = {}, {}
+            for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
+                for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+                    local candidates = type(item.SubFeatures) == "table" and #item.SubFeatures > 0 and item.SubFeatures or {item}
+                    for _, feature in ipairs(candidates) do
+                        local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or item.RawUrl
+                        local sourcePath = getPluginSourcePath(featureUrl)
+                        if sourcePath and VERSION_HISTORY_BASELINES[sourcePath] and not seen[sourcePath] then
+                            seen[sourcePath] = true
+                            table.insert(paths, sourcePath)
+                        end
+                    end
+                end
+            end
+            local changed = false
+            for _, sourcePath in ipairs(paths) do
+                local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
+                    .. HttpService:UrlEncode(sourcePath) .. "&sha=main&per_page=1&page=1"
+                local ok, response = requestGitHubWithRetry(apiUrl, 2)
+                if ok then
+                    local decodeOk, commits = pcall(function() return HttpService:JSONDecode(response) end)
+                    local latest = decodeOk and type(commits) == "table" and commits[1] or nil
+                    local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
+                    if #latestSha == 40 then
+                        stableLatestShaCache[sourcePath] = latestSha
+                        if selectedPluginVersions[sourcePath] == latestSha and acknowledgedReleaseShas[sourcePath] ~= latestSha then
+                            acknowledgedReleaseShas[sourcePath] = latestSha
+                            saveAcknowledgedReleases()
+                        end
+                        releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
+                            and acknowledgedReleaseShas[sourcePath] ~= latestSha
+                        changed = true
+                    end
+                end
+                task.wait(0.15)
+            end
+            if changed and refreshBadgeUI then task.defer(refreshBadgeUI) end
+        end)
     end
 
     local function isPluginSourceActive(path)
@@ -953,6 +995,8 @@ return function(speaker)
                         if sha == latestSha then
                             acknowledgedReleaseShas[path] = sha
                             saveAcknowledgedReleases()
+                            releaseUpdateByPath[path] = false
+                            if refreshBadgeUI then task.defer(refreshBadgeUI) end
                         end
                         local selectedBranch = getPluginSourceBranch(rawUrl)
                         info.Text = versionName .. " dipilih. Menyimpan profil ke server..."
@@ -3998,10 +4042,13 @@ return function(speaker)
             local timestamp = subFeat.UpdateTimestamp or ""
             local activeBadgeText = getUserFacingBadgeText(subFeat)
             local activeBadgeColor = getColorFromName(subFeat.BadgeColor)
-            local hasSubUpdateBadge = activeBadgeText == "UPDATE!" and isFeatureNew(badgeKey, timestamp)
+            local hasSubUpdateBadge = (subSourcePath and releaseUpdateByPath[subSourcePath] == true)
+                or (activeBadgeText == "UPDATE!" and isFeatureNew(badgeKey, timestamp))
+            local showSubBadgeText = hasSubUpdateBadge and "UPDATE!"
+                or (activeBadgeText and isFeatureNew(badgeKey, timestamp) and activeBadgeText or nil)
 
-            if activeBadgeText and isFeatureNew(badgeKey, timestamp) then
-                local badgeText = "[" .. activeBadgeText .. "]"
+            if showSubBadgeText then
+                local badgeText = "[" .. showSubBadgeText .. "]"
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
                 
                 local NewBadge = Instance.new("TextLabel")
@@ -4231,7 +4278,7 @@ return function(speaker)
             local activeBadgeText = getUserFacingBadgeText(item)
             local activeBadgeColorName = item.BadgeColor
             local badgeFeatureKeys = {}
-            local hasUpdateBadge = false
+            local hasUpdateBadge = itemSourcePath and releaseUpdateByPath[itemSourcePath] == true or false
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 for _, sub in ipairs(item.SubFeatures) do
@@ -4240,6 +4287,8 @@ return function(speaker)
                     local subKey = getFeatureBadgeKey(sub, legacySubKey)
                     local subTimestamp = sub.UpdateTimestamp or ""
                     local subBadgeText = getUserFacingBadgeText(sub)
+                    local subPath = getPluginSourcePath(subRaw)
+                    if subPath and releaseUpdateByPath[subPath] then hasUpdateBadge = true end
                     if subBadgeText and isFeatureNew(subKey, subTimestamp) then
                         table.insert(badgeFeatureKeys, { key = subKey, timestamp = subTimestamp })
                         if subBadgeText == "UPDATE!" then hasUpdateBadge = true end
@@ -4251,11 +4300,12 @@ return function(speaker)
                 end
             elseif activeBadgeText and isFeatureNew(badgeKey, timestamp) then
                 table.insert(badgeFeatureKeys, { key = badgeKey, timestamp = timestamp })
-                hasUpdateBadge = activeBadgeText == "UPDATE!"
+                hasUpdateBadge = hasUpdateBadge or activeBadgeText == "UPDATE!"
             end
 
-            if #badgeFeatureKeys > 0 then
+            if #badgeFeatureKeys > 0 or hasUpdateBadge then
                 activeBadgeText = hasUpdateBadge and "UPDATE!" or "NEW!"
+                if hasUpdateBadge then activeBadgeColorName = "green" end
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local badgeColor = getColorFromName(activeBadgeColorName)
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
@@ -4467,7 +4517,7 @@ return function(speaker)
                 end
                 local tabUniqueKey = "TabAutoBadge_" .. tabName
                 if isFeatureNew(tabUniqueKey, "071120260000, 86400") then
-                    setTabBadge(tabName, "BARU!", Color3.fromRGB(255, 215, 0), 1,
+                    setTabBadge(tabName, "NEW!", Color3.fromRGB(255, 215, 0), 1,
                         {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
                 end
                 renderMenuCategory(globalLoaderData[tabInfo.DataKey] or {}, scroll, tabName)
@@ -4495,6 +4545,7 @@ return function(speaker)
 
         globalLoaderData = data
         migrateLegacyFavorites(data)
+        task.defer(checkStableReleaseUpdates)
 
         local detectedTabs = data.Tabs or {
             { Name = "Main", DataKey = "Main" },
@@ -4527,7 +4578,7 @@ return function(speaker)
 
             local tabUniqueKey = "TabAutoBadge_" .. tabName
             if isFeatureNew(tabUniqueKey, "071120260000, 86400") then
-                setTabBadge(tabName, "BARU!", Color3.fromRGB(255, 215, 0), 1, {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
+                setTabBadge(tabName, "NEW!", Color3.fromRGB(255, 215, 0), 1, {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
             end
 
             local Scroll = Instance.new("ScrollingFrame")
