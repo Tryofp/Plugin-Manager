@@ -585,10 +585,10 @@ return function(speaker)
             info.BackgroundTransparency = 1
             info.Font = Enum.Font.GothamBold
             info.Text = "Memuat riwayat stable..."
-            info.TextColor3 = Color3.fromRGB(220, 235, 250)
+            info.TextColor3 = Color3.fromRGB(255, 255, 255)
+            info.TextTransparency = 0
             info.TextSize = 10
-            info.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-            info.TextStrokeTransparency = 0.65
+            info.TextStrokeTransparency = 1
             info.TextXAlignment = Enum.TextXAlignment.Left
             info.Parent = panel
 
