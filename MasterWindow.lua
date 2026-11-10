@@ -23,6 +23,8 @@ return function(speaker)
     local playerBadgeCache = {}
     local globalLoaderData = nil
     local refreshBadgeUI = nil
+    local openPublicHistoryPanels = 0
+    local pendingPublicBadgeRefresh = false
 
     local function fetchRemoteMetadata()
         local cacheBuster = tostring(DateTime.now().UnixTimestampMillis)
@@ -386,7 +388,39 @@ return function(speaker)
         ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
     }
 
+        ["Tools/Noclip"] = "cdb525f8413b898315c9a9d7ebe56aed19957d03",
+        ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
+    }
+
+    -- Manually assigned stable release per plugin path. Set the exact commit SHA when approved.
+    -- Example: VERSION_HISTORY_STABLE["Plugin/Waypoint"] = "<40-character-commit-sha>"
+    local VERSION_HISTORY_STABLE = {}
+
+    -- Per-user acknowledgement of released stable commits.
+    -- A release stays marked UPDATE! until this user has selected that release once.
     local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
+    local VERSION_RELEASE_ACK_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_release_ack.json"
+    local acknowledgedReleaseShas = {}
+    local function loadAcknowledgedReleases()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
+        local ok, exists = pcall(isfile, VERSION_RELEASE_ACK_FILE)
+        if not ok or not exists then return end
+        local readOk, raw = pcall(readfile, VERSION_RELEASE_ACK_FILE)
+        if not readOk or type(raw) ~= "string" or raw == "" then return end
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if decodeOk and type(decoded) == "table" then acknowledgedReleaseShas = decoded end
+    end
+    local function saveAcknowledgedReleases()
+        if type(writefile) ~= "function" then return end
+        if type(makefolder) == "function" then
+            pcall(makefolder, "PluginManager")
+            pcall(makefolder, VERSION_PROFILE_FOLDER)
+        end
+        local ok, encoded = pcall(function() return HttpService:JSONEncode(acknowledgedReleaseShas) end)
+        if ok and type(encoded) == "string" then pcall(writefile, VERSION_RELEASE_ACK_FILE, encoded) end
+    end
+    loadAcknowledgedReleases()
+
     local VERSION_PROFILE_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_versions.json"
     local selectedPluginVersions = {}
     local function loadSelectedPluginVersions()
@@ -409,29 +443,128 @@ return function(speaker)
     end
     loadSelectedPluginVersions()
 
+    local function getPluginSourceBranch(rawUrl)
+        local url = tostring(rawUrl or "")
+        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/([^/]+)/")
+            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/([^/]+)/")
+            or "main"
+    end
+
     local function getPluginSourcePath(rawUrl)
         local url = tostring(rawUrl or "")
-        local stablePath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
-            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
-        if stablePath then return stablePath end
+        local branchPath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/[^/]+/(.+)")
+        if branchPath then return branchPath end
         return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
     end
 
-    -- If a parent card has no RawUrl but all of its subfeatures share one source,
-    -- expose one history control on the parent instead of duplicating it per child.
-    local function getSharedSubFeatureSourceUrl(subFeatures, fallbackUrl)
+
+    local function requestUserVersionProfile(action, branch, path, commitSha)
+        local req = request or http_request or (syn and syn.request)
+        if not req then return false, "Executor tidak menyediakan HTTP request." end
+        local payload = {
+            Type = "UserVersionProfile",
+            Action = action,
+            UserId = tostring(LocalPlayer.UserId),
+            Branch = tostring(branch or "main")
+        }
+        if path then payload.Path = tostring(path) end
+        if commitSha then payload.CommitSha = tostring(commitSha) end
+
+        local ok, response = pcall(function()
+            return req({
+                Url = SHEETS_WEB_APP_URL,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+        if not ok or not response then return false, tostring(response or "Server tidak merespons.") end
+        local body = response.Body or response.body or ""
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+        if not decodeOk or type(decoded) ~= "table" then
+            return false, "Respons server bukan JSON yang valid."
+        end
+        if decoded.status ~= "success" then return false, tostring(decoded.message or "Server menolak penyimpanan.") end
+        return true, decoded
+    end
+
+    local function loadServerVersionProfiles()
+        if not globalLoaderData then return end
+        local branches = { "main", "Beta" }
+        local serverVersions = {}
+
+        for _, branch in ipairs(branches) do
+            local url = SHEETS_WEB_APP_URL .. "?action=GetUserVersionProfile&userId="
+                .. HttpService:UrlEncode(tostring(LocalPlayer.UserId))
+                .. "&branch=" .. HttpService:UrlEncode(branch)
+                .. "&_=" .. tostring(DateTime.now().UnixTimestampMillis)
+            local ok, response = pcall(function() return game:HttpGet(url) end)
+            if ok and type(response) == "string" and response ~= "" then
+                local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                if decodeOk and type(decoded) == "table" and decoded.status == "success"
+                    and type(decoded.versions) == "table" then
+                    for path, sha in pairs(decoded.versions) do
+                        if type(path) == "string" and type(sha) == "string" and #sha == 40 then
+                            serverVersions[path] = sha
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Server profile wins; local-only selections are migrated to the server.
+        for path, sha in pairs(serverVersions) do
+            selectedPluginVersions[path] = sha
+        end
+        saveSelectedPluginVersions()
+
+        for path, sha in pairs(selectedPluginVersions) do
+            if not serverVersions[path] then
+                local branchForPath = "main"
+                for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
+                    for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+                        local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or { item }
+                        for _, feature in ipairs(candidates) do
+                            local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or item.RawUrl
+                            if getPluginSourcePath(featureUrl) == path then
+                                branchForPath = getPluginSourceBranch(featureUrl)
+                                break
+                            end
+                        end
+                    end
+                end
+                requestUserVersionProfile("Save", branchForPath, path, sha)
+            end
+        end
+
+        if refreshBadgeUI then
+            task.defer(refreshBadgeUI)
+        end
+    end
+    -- A parent with mixed child sources uses its most common source for the parent
+    -- history arrow. Other source files keep their own arrows inside the submenu.
+    local function getPrimarySubFeatureSourceUrl(subFeatures, fallbackUrl)
         if type(subFeatures) ~= "table" then return nil end
-        local sharedPath, sharedUrl
+        local counts, urls, firstSeen = {}, {}, {}
         for _, feature in ipairs(subFeatures) do
             local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or fallbackUrl
             local featurePath = getPluginSourcePath(featureUrl)
             if featurePath then
-                if sharedPath and sharedPath ~= featurePath then return nil end
-                sharedPath = featurePath
-                sharedUrl = sharedUrl or featureUrl
+                if not counts[featurePath] then
+                    counts[featurePath] = 0
+                    urls[featurePath] = featureUrl
+                    table.insert(firstSeen, featurePath)
+                end
+                counts[featurePath] = counts[featurePath] + 1
             end
         end
-        return sharedUrl
+        local bestPath, bestCount
+        for _, path in ipairs(firstSeen) do
+            if not bestCount or counts[path] > bestCount then
+                bestPath, bestCount = path, counts[path]
+            end
+        end
+        return bestPath and urls[bestPath] or nil
     end
 
     local function getResolvedPluginUrl(rawUrl)
@@ -443,6 +576,12 @@ return function(speaker)
         return rawUrl
     end
 
+    local stableLatestShaCache = {}
+    local releaseUpdateByPath = {}
+    local releaseStatusCheckStarted = false
+    -- Cache paginated history by source path so retries resume at the failed page.
+    local stableHistoryCache = {}
+
     -- Retry short-lived GitHub/API interruptions without duplicating cached commits.
     local function requestGitHubWithRetry(url, attempts)
         attempts = math.max(1, tonumber(attempts) or 3)
@@ -451,15 +590,69 @@ return function(speaker)
             local ok, response = pcall(function()
                 return game:HttpGet(url)
             end)
-            if ok and type(response) == "string" and response ~= "" then
-                return true, response
-            end
+            if ok and type(response) == "string" and response ~= "" then return true, response end
             lastError = ok and "Respons GitHub kosong." or tostring(response)
-            if attempt < attempts then
-                task.wait(attempt * 1.25)
-            end
+            if attempt < attempts then task.wait(attempt * 1.25) end
         end
         return false, lastError
+    end
+
+    local function checkStableReleaseUpdates()
+        if releaseStatusCheckStarted or not globalLoaderData then return end
+        releaseStatusCheckStarted = true
+        task.spawn(function()
+            local paths, seen = {}, {}
+            for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
+                for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+                    local candidates = type(item.SubFeatures) == "table" and #item.SubFeatures > 0 and item.SubFeatures or {item}
+                    for _, feature in ipairs(candidates) do
+                        local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or item.RawUrl
+                        local sourcePath = getPluginSourcePath(featureUrl)
+                        if sourcePath and VERSION_HISTORY_BASELINES[sourcePath] and not seen[sourcePath] then
+                            seen[sourcePath] = true
+                            table.insert(paths, sourcePath)
+                        end
+                    end
+                end
+            end
+            -- Periksa AntiEffect lebih dulu agar badge pengujian muncul tanpa
+            -- menunggu seluruh file lain selesai diperiksa.
+            table.sort(paths, function(a, b)
+                if a == "Tools/AntiEffect" then return true end
+                if b == "Tools/AntiEffect" then return false end
+                return a < b
+            end)
+            local changed = false
+            for _, sourcePath in ipairs(paths) do
+                -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
+                -- Hindari REST API publik langsung dari client Roblox (rate limit 60/jam).
+                local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                    .. HttpService:UrlEncode(sourcePath)
+                local ok, response = requestGitHubWithRetry(historyUrl, 3)
+                if ok then
+                    local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                    local commits = decodeOk and type(payload) == "table" and payload.status == "success"
+                        and payload.commits or nil
+                    local latest = type(commits) == "table" and commits[1] or nil
+                    local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
+                    if #latestSha == 40 then
+                        stableLatestShaCache[sourcePath] = latestSha
+                        if selectedPluginVersions[sourcePath] == latestSha and acknowledgedReleaseShas[sourcePath] ~= latestSha then
+                            acknowledgedReleaseShas[sourcePath] = latestSha
+                            saveAcknowledgedReleases()
+                        end
+                        releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
+                            and acknowledgedReleaseShas[sourcePath] ~= latestSha
+                        changed = true
+                        -- Perbarui badge segera setelah satu file selesai dicek,
+                        -- jangan menunggu semua request path selesai.
+                        if refreshBadgeUI then task.defer(refreshBadgeUI) end
+                    end
+                end
+                task.wait(0.05)
+            end
+            if changed and refreshBadgeUI then task.defer(refreshBadgeUI) end
+        end)
     end
 
     local function isPluginSourceActive(path)
@@ -484,6 +677,424 @@ return function(speaker)
         local badgeText = string.lower(tostring(feature and feature.BadgeText or ""))
         return string.find(badgeText, "update", 1, true) ~= nil
     end
+
+    local function getUserFacingBadgeText(feature)
+        local badgeText = string.lower(tostring(feature and feature.BadgeText or "new"))
+        -- UPDATE! is reserved for a newly promoted stable source commit.
+        -- Loader metadata may describe an older Beta-side change and must not
+        -- independently create a stable release badge.
+        if string.find(badgeText, "update", 1, true) then return nil end
+        if string.find(badgeText, "new", 1, true) then return "NEW!" end
+        return nil
+    end
+
+    local function updateHistoryCanvas(scroll)
+        if not scroll then return end
+        local layout = scroll:FindFirstChildOfClass("UIListLayout")
+        if layout then
+            scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
+        end
+    end
+
+    local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel, showUpdateDot)
+        local path = getPluginSourcePath(rawUrl)
+        if not path then return end
+
+        local arrow = Instance.new("TextButton")
+        arrow.Name = "PublicVersionHistoryToggle"
+        -- Samakan tinggi dengan tombol EXECUTE/OPEN (24 px) dan lebarkan area sentuh.
+        arrow.Size = UDim2.new(0, 30, 0, 24)
+        arrow.AnchorPoint = Vector2.new(1, 0.5)
+        -- Keep the toggle anchored to the original feature row when the history panel expands.
+        arrow.Position = UDim2.new(1, -8, 0, baseHeight / 2)
+        arrow.ZIndex = (card.ZIndex or 1) + 5
+        arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
+        arrow.BackgroundTransparency = 0.1
+        arrow.BorderSizePixel = 0
+        arrow.Font = Enum.Font.GothamBold
+        arrow.Text = "▼"
+        arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
+        arrow.TextSize = 14
+        arrow.Parent = card
+        Instance.new("UICorner", arrow).CornerRadius = UDim.new(0, 4)
+
+        if showUpdateDot then
+            local updateDot = Instance.new("TextLabel")
+            updateDot.Name = "VersionUpdateDot"
+            updateDot.Size = UDim2.new(0, 10, 0, 10)
+            updateDot.AnchorPoint = Vector2.new(0.5, 0.5)
+            -- Center the dot directly above the arrow, not at the card's far corner.
+            updateDot.Position = UDim2.new(0.5, 0, 0, -4)
+            updateDot.BackgroundTransparency = 1
+            updateDot.Font = Enum.Font.GothamBold
+            updateDot.Text = "•"
+            updateDot.TextColor3 = Color3.fromRGB(70, 255, 135)
+            updateDot.TextSize = 17
+            updateDot.ZIndex = arrow.ZIndex + 2
+            updateDot.Parent = arrow
+            applyBlinkAnimation(updateDot)
+        end
+
+        local panel
+        local expanded = false
+        local function refreshPanel()
+            if panel then panel:Destroy() panel = nil end
+            panel = Instance.new("Frame")
+            panel.Name = "PublicVersionHistoryPanel"
+            panel.Position = UDim2.new(0, 6, 0, baseHeight)
+            panel.Size = UDim2.new(1, -12, 0, 148)
+            panel.BackgroundColor3 = Color3.fromRGB(16, 23, 33)
+            panel.BackgroundTransparency = 0.08
+            panel.BorderSizePixel = 0
+            panel.ZIndex = math.max(1, (card.ZIndex or 1) + 1)
+            panel.Parent = card
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 5)
+
+            local info = Instance.new("TextLabel")
+            info.Size = UDim2.new(1, -12, 0, 18)
+            info.Position = UDim2.new(0, 6, 0, 3)
+            info.BackgroundTransparency = 1
+            info.Font = Enum.Font.GothamBold
+            info.Text = "Memuat riwayat stable..."
+            info.TextColor3 = Color3.fromRGB(255, 255, 255)
+            info.TextTransparency = 0
+            info.TextSize = 10
+            info.TextStrokeTransparency = 1
+            info.TextXAlignment = Enum.TextXAlignment.Left
+            info.Parent = panel
+
+            -- Keep connection warnings in their own fully visible row.
+            -- Do not append long warning text to the compact version header.
+            local warningLabel = Instance.new("TextLabel")
+            warningLabel.Name = "GitHubStatusWarning"
+            warningLabel.Position = UDim2.new(0, 6, 0, 22)
+            warningLabel.Size = UDim2.new(1, -12, 0, 27)
+            warningLabel.BackgroundTransparency = 1
+            warningLabel.Font = Enum.Font.GothamBold
+            warningLabel.Text = ""
+            warningLabel.TextColor3 = Color3.fromRGB(255, 220, 105)
+            warningLabel.TextTransparency = 0
+            warningLabel.TextSize = 10
+            warningLabel.TextWrapped = true
+            warningLabel.TextXAlignment = Enum.TextXAlignment.Left
+            warningLabel.TextYAlignment = Enum.TextYAlignment.Top
+            warningLabel.Visible = false
+            warningLabel.ZIndex = panel.ZIndex + 2
+            warningLabel.Parent = panel
+
+            local historyScroll = Instance.new("ScrollingFrame")
+            historyScroll.Name = "VersionRows"
+            -- Saat tidak ada pesan peringatan, naikkan daftar agar lebih dekat ke info header.
+            -- Ruang tambahan ini juga membuat lebih banyak versi terlihat tanpa perlu scroll.
+            historyScroll.Position = UDim2.new(0, 5, 0, 25)
+            historyScroll.Size = UDim2.new(1, -10, 1, -30)
+            historyScroll.BackgroundTransparency = 1
+
+            local function setHistoryListWarningLayout(showWarning)
+                historyScroll.Position = UDim2.new(0, 5, 0, showWarning and 51 or 25)
+                historyScroll.Size = UDim2.new(1, -10, 1, showWarning and -56 or -30)
+            end
+            historyScroll.BorderSizePixel = 0
+            historyScroll.ScrollBarThickness = 3
+            historyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            historyScroll.Parent = panel
+
+            local rowsLayout = Instance.new("UIListLayout")
+            rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            rowsLayout.Padding = UDim.new(0, 4)
+            rowsLayout.Parent = historyScroll
+
+            local baselineSha = VERSION_HISTORY_BASELINES[path]
+            task.spawn(function()
+                local history = stableHistoryCache[path]
+                if not history then
+                    history = { commits = {}, nextPage = 1, complete = false }
+                    stableHistoryCache[path] = history
+                end
+                local loadWarning = nil
+                local foundBaseline = false
+                for _, entry in ipairs(history.commits) do
+                    if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
+                end
+
+                if not foundBaseline and not history.complete then
+                    -- Riwayat diambil lewat Apps Script, bukan GitHub REST dari client.
+                    -- Endpoint mengembalikan 30 commit terbaru dan memakai token server-side.
+                    local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                        .. HttpService:UrlEncode(path)
+                    local ok, response = requestGitHubWithRetry(historyUrl, 3)
+                    if not ok or type(response) ~= "string" or response == "" then
+                        loadWarning = "Server Version History belum merespons setelah 3 percobaan. Coba buka panah lagi beberapa saat lagi."
+                    else
+                        local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                        local decoded = decodeOk and type(payload) == "table" and payload.status == "success"
+                            and payload.commits or nil
+                        if type(decoded) ~= "table" then
+                            loadWarning = "Server Version History gagal mengambil data GitHub: "
+                                .. tostring(type(payload) == "table" and payload.message or "respons tidak valid")
+                        else
+                            local knownShas = {}
+                            for _, cachedEntry in ipairs(history.commits) do
+                                knownShas[tostring(cachedEntry.sha or "")] = true
+                            end
+                            for _, entry in ipairs(decoded) do
+                                local entrySha = tostring(entry.sha or "")
+                                if entrySha ~= "" and not knownShas[entrySha] then
+                                    table.insert(history.commits, entry)
+                                    knownShas[entrySha] = true
+                                end
+                                if entrySha == baselineSha then foundBaseline = true break end
+                            end
+                            history.nextPage = 2
+                            history.complete = #decoded < 30 or foundBaseline
+                        end
+                    end
+                end
+
+                local commits = history.commits
+                local usedStaticManifest = false
+                if #commits == 0 then
+                    -- Fallback statis dari GitHub Raw: tidak membutuhkan GitHub REST API.
+                    local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/VersionManifest.json"
+                    local manifestOk, manifestResponse = pcall(function() return game:HttpGet(manifestUrl) end)
+                    if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
+                        local manifestDecodeOk, manifest = pcall(function() return HttpService:JSONDecode(manifestResponse) end)
+                        local item = manifestDecodeOk and type(manifest) == "table" and manifest[path]
+                        if type(item) == "table" and type(item.sha) == "string" and #item.sha >= 7 then
+                            commits = {{
+                                sha = item.sha,
+                                commit = {
+                                    message = item.message or "Versi terbaru (manifest)",
+                                    author = { date = item.date or "Tanggal tidak tersedia" }
+                                }
+                            }}
+                            usedStaticManifest = true
+                            stableLatestShaCache[path] = item.sha
+                        end
+                    end
+                    if #commits > 0 then history.commits = commits end
+                end
+                if not baselineSha and #commits > 0 and not usedStaticManifest then
+                    baselineSha = tostring(commits[#commits].sha or "")
+                    history.complete = true
+                end
+
+                local baselineIndex
+                for index, entry in ipairs(commits) do
+                    if tostring(entry.sha or "") == baselineSha then baselineIndex = index break end
+                end
+                if not baselineIndex and not loadWarning then
+                    loadWarning = history.complete
+                        and "Baseline V0.1 tidak ditemukan di riwayat stable."
+                        or "Baseline belum terjangkau. Commit terbaru tetap ditampilkan; buka ulang untuk melanjutkan."
+                end
+
+                if #commits == 0 then
+                    local activeSha = loadedPluginVersionShas[path]
+                    if activeSha == "__STABLE_LATEST__" then
+                        info.Text = displayName .. " • versi branch aktif"
+                    elseif type(activeSha) == "string" and #activeSha >= 7 then
+                        info.Text = displayName .. " • aktif " .. activeSha:sub(1, 7)
+                    else
+                        info.Text = displayName .. " • versi aktif tidak teridentifikasi"
+                    end
+                    if loadWarning then
+                        warningLabel.Text = loadWarning
+                        warningLabel.Visible = true
+                    else
+                        warningLabel.Text = "Belum ada data riwayat yang dapat ditampilkan."
+                        warningLabel.Visible = true
+                    end
+                    setHistoryListWarningLayout(true)
+                    return
+                end
+
+                local totalVersions = baselineIndex or #commits
+                local latestSha = tostring(commits[1] and commits[1].sha or "")
+                stableLatestShaCache[path] = latestSha
+                local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
+                local loadedSha = loadedPluginVersionShas[path]
+                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
+
+                info.Text = usedStaticManifest
+                    and (displayName .. " • versi manifest main")
+                    or (baselineIndex
+                        and (displayName .. " • " .. tostring(totalVersions) .. " versi • main")
+                        or (displayName .. " • commit terbaru • main"))
+                if loadWarning then
+                    warningLabel.Text = usedStaticManifest
+                        and "API GitHub tidak merespons. Menampilkan versi terbaru dari manifest statis."
+                        or loadWarning
+                    warningLabel.Visible = true
+                elseif usedStaticManifest then
+                    warningLabel.Text = "Riwayat lengkap sementara tidak tersedia; versi terbaru tetap bisa dikenali."
+                    warningLabel.Visible = true
+                end
+                setHistoryListWarningLayout(warningLabel.Visible)
+                for index = 1, math.min(12, #commits) do
+                    local entry = commits[index]
+                    local sha = tostring(entry.sha or "")
+                    local commitData = entry.commit or {}
+                    local author = commitData.author or {}
+                    local versionNumber = totalVersions - index + 1
+                    local versionName = usedStaticManifest and "Versi terbaru" or (baselineIndex and ("V0." .. tostring(versionNumber)) or ("Commit #" .. tostring(index)))
+                    local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
+                    if #message > 58 then message = message:sub(1, 55) .. "..." end
+
+                    local row = Instance.new("Frame")
+                    row.Size = UDim2.new(1, -3, 0, 39)
+                    row.BackgroundColor3 = Color3.fromRGB(31, 43, 58)
+                    row.BackgroundTransparency = 0.08
+                    row.BorderSizePixel = 0
+                    row.ZIndex = panel.ZIndex + 1
+                    row.Parent = historyScroll
+                    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+                    -- If this user already selected the latest release before this tracker
+                    -- existed, treat it as acknowledged even if no acknowledgement file exists.
+                    if index == 1 and selectedPluginVersions[path] == latestSha
+                        and acknowledgedReleaseShas[path] ~= latestSha then
+                        acknowledgedReleaseShas[path] = latestSha
+                        saveAcknowledgedReleases()
+                    end
+                    local isUpdateAvailable = index == 1
+                        and sha ~= baselineSha
+                        and acknowledgedReleaseShas[path] ~= sha
+                    local isStableVersion = tostring(VERSION_HISTORY_STABLE[path] or "") ~= ""
+                        and sha == tostring(VERSION_HISTORY_STABLE[path])
+
+                    local versionLabel = Instance.new("TextLabel")
+                    versionLabel.Size = UDim2.new(1, -112, 0, 16)
+                    versionLabel.Position = UDim2.new(0, 6, 0, 2)
+                    versionLabel.BackgroundTransparency = 1
+                    versionLabel.Font = Enum.Font.GothamBold
+                    local versionBadges = isStableVersion and "  Stable!" or ""
+                    versionLabel.Text = versionName .. versionBadges .. " • " .. message
+                    versionLabel.TextColor3 = Color3.fromRGB(225, 235, 245)
+                    versionLabel.TextSize = 8
+                    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    versionLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                    versionLabel.ZIndex = row.ZIndex + 1
+                    versionLabel.Parent = row
+
+                    if isUpdateAvailable then
+                        local updateBadge = Instance.new("TextLabel")
+                        updateBadge.Name = "NewReleaseBadge"
+                        updateBadge.Size = UDim2.new(0, 46, 0, 13)
+                        updateBadge.Position = UDim2.new(1, -52, 0, 3)
+                        updateBadge.BackgroundTransparency = 1
+                        updateBadge.Font = Enum.Font.GothamBold
+                        updateBadge.Text = "UPDATE!"
+                        updateBadge.TextColor3 = Color3.fromRGB(80, 235, 145)
+                        updateBadge.TextSize = 8
+                        updateBadge.ZIndex = row.ZIndex + 2
+                        updateBadge.Parent = row
+                        local blink = TweenService:Create(
+                            updateBadge,
+                            TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+                            { TextTransparency = 0.8 }
+                        )
+                        blink:Play()
+                    end
+
+                    local detail = Instance.new("TextLabel")
+                    detail.Size = UDim2.new(1, -68, 0, 13)
+                    detail.Position = UDim2.new(0, 6, 0, 20)
+                    detail.BackgroundTransparency = 1
+                    detail.Font = Enum.Font.Gotham
+                    detail.Text = tostring(author.date or "Tanggal tidak tersedia") .. " • " .. sha:sub(1, 7)
+                    detail.TextColor3 = Color3.fromRGB(135, 160, 185)
+                    detail.TextSize = 7
+                    detail.TextXAlignment = Enum.TextXAlignment.Left
+                    detail.ZIndex = row.ZIndex + 1
+                    detail.Parent = row
+
+                    if usedStaticManifest or sha == currentSha or sha == selectedSha then
+                        local current = Instance.new("TextLabel")
+                        current.Size = UDim2.new(0, 54, 0, 12)
+                        current.Position = UDim2.new(1, -60, 0, 2)
+                        current.BackgroundTransparency = 1
+                        current.Font = Enum.Font.GothamBold
+                        current.Text = (sha == currentSha or (usedStaticManifest and loadedSha == "__STABLE_LATEST__")) and loadedSha ~= nil and "DIPAKAI" or "DIPILIH"
+                        current.TextColor3 = sha == currentSha and loadedSha ~= nil
+                            and Color3.fromRGB(100, 235, 155) or Color3.fromRGB(125, 195, 245)
+                        current.TextSize = 7
+                        current.ZIndex = row.ZIndex + 1
+                        current.Parent = row
+                    end
+
+                    local choose = Instance.new("TextButton")
+                    choose.Size = UDim2.new(0, 54, 0, 19)
+                    choose.Position = UDim2.new(1, -60, 0, 18)
+                    choose.BackgroundColor3 = Color3.fromRGB(35, 105, 150)
+                    choose.BorderSizePixel = 0
+                    choose.Font = Enum.Font.GothamBold
+                    choose.Text = "PILIH"
+                    choose.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    choose.TextSize = 8
+                    choose.ZIndex = row.ZIndex + 1
+                    choose.Parent = row
+                    Instance.new("UICorner", choose).CornerRadius = UDim.new(0, 4)
+                    choose.MouseButton1Click:Connect(function()
+                        selectedPluginVersions[path] = sha
+                        saveSelectedPluginVersions()
+                        -- Acknowledge a release only when this user actually selects the latest main release.
+                        if sha == latestSha then
+                            acknowledgedReleaseShas[path] = sha
+                            saveAcknowledgedReleases()
+                            releaseUpdateByPath[path] = false
+                            if refreshBadgeUI then task.defer(refreshBadgeUI) end
+                        end
+                        local selectedBranch = getPluginSourceBranch(rawUrl)
+                        info.Text = versionName .. " dipilih. Menyimpan profil ke server..."
+                        task.spawn(function()
+                            local saved, result = requestUserVersionProfile("Save", selectedBranch, path, sha)
+                            if saved then
+                                info.Text = versionName .. " dipilih dan tersimpan di server untuk UserId ini."
+                            else
+                                info.Text = versionName .. " tersimpan lokal, tetapi sinkronisasi server gagal: " .. tostring(result)
+                            end
+                        end)
+                        -- Keep an active module cached so its UNEXECUTE command can still clean up.
+                        -- Inactive modules are invalidated immediately and use the selected SHA next time.
+                        clearPluginModuleCache(path)
+                        info.Text = versionName .. " dipilih. Jalankan ulang fitur untuk memuat source ini."
+                        refreshPanel()
+                    end)
+                end
+                updateHistoryCanvas(historyScroll)
+            end)
+        end
+
+        arrow.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            if expanded then
+                openPublicHistoryPanels = openPublicHistoryPanels + 1
+                arrow.Text = "▲"
+                refreshPanel()
+                card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
+            else
+                openPublicHistoryPanels = math.max(0, openPublicHistoryPanels - 1)
+                arrow.Text = "▼"
+                if panel then panel:Destroy() panel = nil end
+                card.Size = UDim2.new(1, 0, 0, baseHeight)
+                if openPublicHistoryPanels == 0 and pendingPublicBadgeRefresh then
+                    pendingPublicBadgeRefresh = false
+                    task.defer(refreshBadgeUI)
+                end
+            end
+            task.defer(function() updateHistoryCanvas(scrollContainer) end)
+        end)
+        return true
+    end
+
+    local loadedModuleFingerprints = {}
+    local stableFixPrompted = {}
+    local stableFixPromptActive = false
+    -- Forward declaration: the stable prompt is defined before the Health Check UI.
+    local HealthCheckInfo
+
+    -- Fingerprint is only a lightweight content comparison, not a security hash.
 
     local loadedModuleFingerprints = {}
     local stableFixPrompted = {}
