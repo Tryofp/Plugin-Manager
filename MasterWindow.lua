@@ -3373,7 +3373,9 @@ return function(speaker)
                     local historySha = tostring(historyEntry.sha or "")
                     if string.lower(historySha):sub(1, #prefix) == prefix then
                         currentVersionSha = historySha
-                        beforeVersionSha = tostring(decoded[1].sha or "")
+                        -- BEFORE adalah versi aktif tepat sebelum restore:
+                        -- commit parent/riwayat tepat di bawah commit Restore terbaru.
+                        beforeVersionSha = tostring(decoded[2] and decoded[2].sha or "")
                         break
                     end
                 end
