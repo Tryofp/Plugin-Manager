@@ -1157,8 +1157,8 @@ return function(speaker)
                         for _, feature in ipairs(candidates) do
                             if type(feature) == "table" then
                                 local rawUrl = tostring((feature.RawUrl and feature.RawUrl ~= "" and feature.RawUrl) or item.RawUrl or "")
-                                local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
-                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
+                                local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)")
+                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)")
                                 if path and not seen[path] then
                                     seen[path] = true
                                     table.insert(files, {
@@ -1218,7 +1218,7 @@ return function(speaker)
 
             local downloadRequest = request or http_request or (syn and syn.request)
             local function checkOneFile(fileInfo)
-                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/main/" .. fileInfo.path
+                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/stable/" .. fileInfo.path
                 local rawOk, source
                 if type(downloadRequest) == "function" then
                     rawOk, source = pcall(function()
