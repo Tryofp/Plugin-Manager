@@ -4,7 +4,7 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
-local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/stable/"
+local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/"
 local MASTER_WINDOW_URL = BASE_URL .. "MasterWindow.lua"
 local LOADER_URL = BASE_URL .. "Loader.lua"
 local STORAGE_FILE = "MasterPluginHub_NewTracker.json"
