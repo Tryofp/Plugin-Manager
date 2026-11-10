@@ -654,6 +654,89 @@ return function(speaker)
     HealthCheckView.ZIndex = 31
     HealthCheckView.Parent = DevPanelContainer
 
+    -- Plugin Update Checker UI
+    local UpdateCheckerView = Instance.new("Frame")
+    UpdateCheckerView.Size = UDim2.new(1, -16, 1, -45)
+    UpdateCheckerView.Position = UDim2.new(0, 8, 0, 40)
+    UpdateCheckerView.BackgroundTransparency = 1
+    UpdateCheckerView.Visible = false
+    UpdateCheckerView.ZIndex = 31
+    UpdateCheckerView.Parent = DevPanelContainer
+
+    local UpdateCheckerBackBtn = Instance.new("TextButton")
+    UpdateCheckerBackBtn.Size = UDim2.new(1, 0, 0, 28)
+    UpdateCheckerBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+    UpdateCheckerBackBtn.BorderSizePixel = 0
+    UpdateCheckerBackBtn.Font = Enum.Font.GothamBold
+    UpdateCheckerBackBtn.Text = "< KEMBALI KE MENU DEV"
+    UpdateCheckerBackBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
+    UpdateCheckerBackBtn.TextSize = 10
+    UpdateCheckerBackBtn.ZIndex = 32
+    UpdateCheckerBackBtn.Parent = UpdateCheckerView
+    Instance.new("UICorner", UpdateCheckerBackBtn).CornerRadius = UDim.new(0, 4)
+    UpdateCheckerBackBtn.MouseButton1Click:Connect(function()
+        UpdateCheckerView.Visible = false
+        DevMainMenu.Visible = true
+    end)
+
+    local UpdateCheckerScanBtn = Instance.new("TextButton")
+    UpdateCheckerScanBtn.Size = UDim2.new(0.49, 0, 0, 28)
+    UpdateCheckerScanBtn.Position = UDim2.new(0, 0, 0, 33)
+    UpdateCheckerScanBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 90)
+    UpdateCheckerScanBtn.BorderSizePixel = 0
+    UpdateCheckerScanBtn.Font = Enum.Font.GothamBold
+    UpdateCheckerScanBtn.Text = "CEK UPDATE"
+    UpdateCheckerScanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UpdateCheckerScanBtn.TextSize = 9
+    UpdateCheckerScanBtn.ZIndex = 32
+    UpdateCheckerScanBtn.Parent = UpdateCheckerView
+    Instance.new("UICorner", UpdateCheckerScanBtn).CornerRadius = UDim.new(0, 4)
+
+    local UpdateCheckerBaselineBtn = Instance.new("TextButton")
+    UpdateCheckerBaselineBtn.Size = UDim2.new(0.49, 0, 0, 28)
+    UpdateCheckerBaselineBtn.Position = UDim2.new(0.51, 0, 0, 33)
+    UpdateCheckerBaselineBtn.BackgroundColor3 = Color3.fromRGB(45, 95, 155)
+    UpdateCheckerBaselineBtn.BorderSizePixel = 0
+    UpdateCheckerBaselineBtn.Font = Enum.Font.GothamBold
+    UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
+    UpdateCheckerBaselineBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UpdateCheckerBaselineBtn.TextSize = 9
+    UpdateCheckerBaselineBtn.ZIndex = 32
+    UpdateCheckerBaselineBtn.Parent = UpdateCheckerView
+    Instance.new("UICorner", UpdateCheckerBaselineBtn).CornerRadius = UDim.new(0, 4)
+
+    local UpdateCheckerInfo = Instance.new("TextLabel")
+    UpdateCheckerInfo.Size = UDim2.new(1, 0, 0, 32)
+    UpdateCheckerInfo.Position = UDim2.new(0, 0, 0, 64)
+    UpdateCheckerInfo.BackgroundTransparency = 1
+    UpdateCheckerInfo.Font = Enum.Font.Gotham
+    UpdateCheckerInfo.Text = "Cek commit GitHub. Pemeriksaan pertama perlu menyimpan baseline."
+    UpdateCheckerInfo.TextColor3 = Color3.fromRGB(160, 175, 195)
+    UpdateCheckerInfo.TextSize = 8
+    UpdateCheckerInfo.TextWrapped = true
+    UpdateCheckerInfo.TextXAlignment = Enum.TextXAlignment.Left
+    UpdateCheckerInfo.ZIndex = 32
+    UpdateCheckerInfo.Parent = UpdateCheckerView
+
+    local UpdateCheckerScroll = Instance.new("ScrollingFrame")
+    UpdateCheckerScroll.Size = UDim2.new(1, 0, 1, -102)
+    UpdateCheckerScroll.Position = UDim2.new(0, 0, 0, 98)
+    UpdateCheckerScroll.BackgroundTransparency = 1
+    UpdateCheckerScroll.BorderSizePixel = 0
+    UpdateCheckerScroll.ScrollBarThickness = 4
+    UpdateCheckerScroll.Active = true
+    UpdateCheckerScroll.ScrollingEnabled = true
+    UpdateCheckerScroll.ZIndex = 32
+    UpdateCheckerScroll.Parent = UpdateCheckerView
+
+    local UpdateCheckerLayout = Instance.new("UIListLayout")
+    UpdateCheckerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UpdateCheckerLayout.Padding = UDim.new(0, 5)
+    UpdateCheckerLayout.Parent = UpdateCheckerScroll
+    UpdateCheckerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        UpdateCheckerScroll.CanvasSize = UDim2.new(0, 0, 0, UpdateCheckerLayout.AbsoluteContentSize.Y + 8)
+    end)
+
     local HealthCheckBackBtn = Instance.new("TextButton")
     HealthCheckBackBtn.Size = UDim2.new(1, 0, 0, 28)
     HealthCheckBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
@@ -875,6 +958,211 @@ return function(speaker)
 
     local healthScanRunning = false
     local healthReportLines = {}
+
+    local updateScanRunning = false
+    local updateScanResults = {}
+    local updateBaseline = {}
+    local updateBaselineLoaded = false
+    local UPDATE_BASELINE_FILE = "PluginManager_UpdateBaseline.json"
+
+    local function loadUpdateBaseline()
+        if updateBaselineLoaded then return end
+        updateBaselineLoaded = true
+        if type(readfile) ~= "function" then return end
+        local ok, raw = pcall(function()
+            if type(isfile) == "function" and not isfile(UPDATE_BASELINE_FILE) then
+                return nil
+            end
+            return readfile(UPDATE_BASELINE_FILE)
+        end)
+        if ok and type(raw) == "string" and raw ~= "" then
+            local decodeOk, decoded = pcall(function()
+                return HttpService:JSONDecode(raw)
+            end)
+            if decodeOk and type(decoded) == "table" then
+                updateBaseline = decoded
+            end
+        end
+    end
+
+    local function clearUpdateCheckerRows()
+        for _, child in ipairs(UpdateCheckerScroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") then
+                child:Destroy()
+            end
+        end
+    end
+
+    local function addUpdateCheckerRow(title, detail, status)
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, -4, 0, 42)
+        row.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
+        row.BorderSizePixel = 0
+        row.ZIndex = 33
+        row.Parent = UpdateCheckerScroll
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+        local titleLabel = Instance.new("TextLabel")
+        titleLabel.Size = UDim2.new(1, -14, 0, 17)
+        titleLabel.Position = UDim2.new(0, 7, 0, 4)
+        titleLabel.BackgroundTransparency = 1
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.Text = tostring(status) .. " " .. tostring(title)
+        titleLabel.TextColor3 = status == "UPDATE" and Color3.fromRGB(255, 185, 90)
+            or status == "ERROR" and Color3.fromRGB(255, 105, 105)
+            or status == "BARU" and Color3.fromRGB(100, 190, 255)
+            or Color3.fromRGB(100, 230, 150)
+        titleLabel.TextSize = 9
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        titleLabel.ZIndex = 34
+        titleLabel.Parent = row
+
+        local detailLabel = Instance.new("TextLabel")
+        detailLabel.Size = UDim2.new(1, -14, 0, 16)
+        detailLabel.Position = UDim2.new(0, 7, 0, 21)
+        detailLabel.BackgroundTransparency = 1
+        detailLabel.Font = Enum.Font.Gotham
+        detailLabel.Text = tostring(detail or "")
+        detailLabel.TextColor3 = Color3.fromRGB(165, 178, 195)
+        detailLabel.TextSize = 8
+        detailLabel.TextXAlignment = Enum.TextXAlignment.Left
+        detailLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        detailLabel.ZIndex = 34
+        detailLabel.Parent = row
+    end
+
+    local function collectUpdateCheckerFiles()
+        local files, seen = {}, {}
+        local data = globalLoaderData
+        if type(data) ~= "table" then return files end
+        for _, tabInfo in ipairs(data.Tabs or {}) do
+            local dataKey = type(tabInfo) == "table" and tabInfo.DataKey or nil
+            local list = dataKey and dataKey ~= "" and data[dataKey] or nil
+            if type(list) == "table" then
+                for _, item in ipairs(list) do
+                    if type(item) == "table" then
+                        local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or {item}
+                        for _, feature in ipairs(candidates) do
+                            if type(feature) == "table" then
+                                local rawUrl = tostring((feature.RawUrl and feature.RawUrl ~= "" and feature.RawUrl) or item.RawUrl or "")
+                                local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
+                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
+                                if path and not seen[path] then
+                                    seen[path] = true
+                                    table.insert(files, {
+                                        path = path,
+                                        name = tostring(feature.Name or item.Name or path)
+                                    })
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(files, function(a, b) return string.lower(a.path) < string.lower(b.path) end)
+        return files
+    end
+
+    local function runPluginUpdateCheck()
+        if updateScanRunning then return end
+        updateScanRunning = true
+        UpdateCheckerScanBtn.Active = false
+        UpdateCheckerBaselineBtn.Active = false
+        UpdateCheckerScanBtn.Text = "MEMERIKSA..."
+        UpdateCheckerInfo.Text = "Mengambil commit terbaru dari GitHub..."
+        clearUpdateCheckerRows()
+        updateScanResults = {}
+        loadUpdateBaseline()
+
+        task.spawn(function()
+            local files = collectUpdateCheckerFiles()
+            local updated, unchanged, newBaseline, errors = 0, 0, 0, 0
+            if #files == 0 then
+                addUpdateCheckerRow("Loader tidak tersedia", "Tidak ada source yang bisa diperiksa.", "ERROR")
+                errors = 1
+            end
+
+            for index, fileInfo in ipairs(files) do
+                UpdateCheckerInfo.Text = string.format("Memeriksa %d/%d • %s", index, #files, fileInfo.name)
+                local encodedPath = tostring(fileInfo.path):gsub("([^%w%-_%.~])", function(char)
+                    return string.format("%%%02X", string.byte(char))
+                end)
+                local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path=" .. encodedPath .. "&per_page=1"
+                local ok, response = pcall(function() return game:HttpGet(apiUrl) end)
+                if not ok or type(response) ~= "string" or response == "" then
+                    errors = errors + 1
+                    addUpdateCheckerRow(fileInfo.name, "Gagal mengambil commit GitHub.", "ERROR")
+                else
+                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                    local latest = decodeOk and type(decoded) == "table" and decoded[1] or nil
+                    local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
+                    if latestSha == "" then
+                        errors = errors + 1
+                        addUpdateCheckerRow(fileInfo.name, "Commit tidak ditemukan atau API membatasi permintaan.", "ERROR")
+                    else
+                        updateScanResults[fileInfo.path] = {
+                            sha = latestSha,
+                            name = fileInfo.name
+                        }
+                        local baselineSha = tostring(updateBaseline[fileInfo.path] or "")
+                        if baselineSha == "" then
+                            newBaseline = newBaseline + 1
+                            addUpdateCheckerRow(fileInfo.name, "Belum ada baseline • " .. latestSha:sub(1, 7), "BARU")
+                        elseif baselineSha ~= latestSha then
+                            updated = updated + 1
+                            addUpdateCheckerRow(fileInfo.name, "Baseline " .. baselineSha:sub(1, 7) .. " → terbaru " .. latestSha:sub(1, 7), "UPDATE")
+                        else
+                            unchanged = unchanged + 1
+                            addUpdateCheckerRow(fileInfo.name, "Versi " .. latestSha:sub(1, 7) .. " masih sama.", "OK")
+                        end
+                    end
+                end
+                task.wait(0.15)
+            end
+
+            UpdateCheckerInfo.Text = string.format(
+                "Selesai • %d source • %d update • %d sama • %d baseline baru • %d gagal. Simpan baseline setelah meninjau.",
+                #files, updated, unchanged, newBaseline, errors
+            )
+            UpdateCheckerScanBtn.Text = "CEK ULANG"
+            UpdateCheckerScanBtn.Active = true
+            UpdateCheckerBaselineBtn.Active = next(updateScanResults) ~= nil
+            updateScanRunning = false
+        end)
+    end
+
+    UpdateCheckerScanBtn.MouseButton1Click:Connect(runPluginUpdateCheck)
+
+    UpdateCheckerBaselineBtn.MouseButton1Click:Connect(function()
+        if updateScanRunning or not next(updateScanResults) then
+            UpdateCheckerInfo.Text = "Jalankan pemeriksaan terlebih dahulu."
+            return
+        end
+        local nextBaseline = {}
+        for path, result in pairs(updateScanResults) do
+            nextBaseline[path] = result.sha
+        end
+        local encodedOk, encoded = pcall(function() return HttpService:JSONEncode(nextBaseline) end)
+        if not encodedOk then
+            UpdateCheckerInfo.Text = "Gagal membuat data baseline."
+            return
+        end
+
+        local saved = false
+        if type(writefile) == "function" then
+            saved = pcall(writefile, UPDATE_BASELINE_FILE, encoded)
+        end
+        updateBaseline = nextBaseline
+        updateBaselineLoaded = true
+        if saved then
+            UpdateCheckerInfo.Text = "Baseline berhasil disimpan ke " .. UPDATE_BASELINE_FILE .. ". Pemeriksaan berikutnya akan mendeteksi commit baru."
+        else
+            UpdateCheckerInfo.Text = "Baseline hanya tersimpan selama sesi ini; executor tidak menyediakan writefile."
+        end
+        UpdateCheckerBaselineBtn.Active = false
+    end)
 
     local function addHealthCheckResult(title, detail, isError)
         local row = Instance.new("Frame")
@@ -2023,6 +2311,12 @@ return function(speaker)
         runPluginHealthCheck()
     end)
 
+    addDevMenuOption("🔄 Plugin Update Checker", "Bandingkan commit source GitHub dengan baseline tersimpan", function()
+        DevMainMenu.Visible = false
+        UpdateCheckerView.Visible = true
+        runPluginUpdateCheck()
+    end)
+
     addDevMenuOption("🕘 Version History", "Lihat 12 commit terakhir setiap file plugin", function()
         DevMainMenu.Visible = false
         loadVersionHistoryFiles()
@@ -2061,6 +2355,7 @@ return function(speaker)
             MaintenanceListView.Visible = false
             VersionHistoryView.Visible = false
             HealthCheckView.Visible = false
+            UpdateCheckerView.Visible = false
             DevPanelContainer.Visible = true
         end
     end)
