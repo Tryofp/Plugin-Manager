@@ -3380,7 +3380,7 @@ return function(speaker)
                 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
 
                 local title = Instance.new("TextLabel")
-                title.Size = UDim2.new(1, index == 1 and -104 or -12, 0, 18)
+                title.Size = UDim2.new(1, (index == 1 or index == 2) and -104 or -12, 0, 18)
                 title.Position = UDim2.new(0, 6, 0, 3)
                 title.BackgroundTransparency = 1
                 title.Font = Enum.Font.GothamBold
@@ -3392,19 +3392,21 @@ return function(speaker)
                 title.ZIndex = 34
                 title.Parent = row
 
-                if index == 1 then
-                    local currentBadge = Instance.new("TextLabel")
-                    currentBadge.Size = UDim2.new(0, 92, 0, 16)
-                    currentBadge.Position = UDim2.new(1, -98, 0, 4)
-                    currentBadge.BackgroundColor3 = Color3.fromRGB(35, 105, 75)
-                    currentBadge.BorderSizePixel = 0
-                    currentBadge.Font = Enum.Font.GothamBold
-                    currentBadge.Text = "CURRENT VERSION"
-                    currentBadge.TextColor3 = Color3.fromRGB(190, 255, 215)
-                    currentBadge.TextSize = 6
-                    currentBadge.ZIndex = 35
-                    currentBadge.Parent = row
-                    Instance.new("UICorner", currentBadge).CornerRadius = UDim.new(0, 4)
+                if index == 1 or index == 2 then
+                    local versionBadge = Instance.new("TextLabel")
+                    versionBadge.Size = UDim2.new(0, index == 1 and 92 or 48, 0, 16)
+                    versionBadge.Position = UDim2.new(1, index == 1 and -98 or -54, 0, 4)
+                    versionBadge.BackgroundColor3 = index == 1
+                        and Color3.fromRGB(35, 105, 75) or Color3.fromRGB(65, 75, 95)
+                    versionBadge.BorderSizePixel = 0
+                    versionBadge.Font = Enum.Font.GothamBold
+                    versionBadge.Text = index == 1 and "CURRENT VERSION" or "BEFORE"
+                    versionBadge.TextColor3 = index == 1
+                        and Color3.fromRGB(190, 255, 215) or Color3.fromRGB(215, 225, 240)
+                    versionBadge.TextSize = index == 1 and 6 or 7
+                    versionBadge.ZIndex = 35
+                    versionBadge.Parent = row
+                    Instance.new("UICorner", versionBadge).CornerRadius = UDim.new(0, 4)
                 end
 
                 local details = Instance.new("TextLabel")
@@ -3418,27 +3420,6 @@ return function(speaker)
                 details.TextXAlignment = Enum.TextXAlignment.Left
                 details.ZIndex = 34
                 details.Parent = row
-
-                -- Tandai asal versi hanya pada commit aktif hasil Restore.
-                -- CURRENT VERSION tetap menunjuk commit terbaru di branch,
-                -- sedangkan RESTORED FROM menunjukkan commit sumber kodenya.
-                if index == 1 then
-                    local restoredFrom = message:match("^[Rr]estore .- to ([a-fA-F0-9]+)")
-                    if restoredFrom then
-                        local sourceBadge = Instance.new("TextLabel")
-                        sourceBadge.Size = UDim2.new(1, -12, 0, 10)
-                        sourceBadge.Position = UDim2.new(0, 6, 0, 36)
-                        sourceBadge.BackgroundTransparency = 1
-                        sourceBadge.Font = Enum.Font.GothamBold
-                        sourceBadge.Text = "RESTORED FROM " .. restoredFrom:sub(1, 7)
-                        sourceBadge.TextColor3 = Color3.fromRGB(120, 205, 255)
-                        sourceBadge.TextSize = 7
-                        sourceBadge.TextXAlignment = Enum.TextXAlignment.Left
-                        sourceBadge.TextTruncate = Enum.TextTruncate.AtEnd
-                        sourceBadge.ZIndex = 34
-                        sourceBadge.Parent = row
-                    end
-                end
 
                 row.MouseButton1Click:Connect(function()
                     selectedVersionCommit = {
