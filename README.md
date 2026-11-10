@@ -30,3 +30,25 @@ Skrip Plugin di sini selalu Up to date tanpa perlu mendownload ulang!
 ```lua
 loadstring(game:HttpGet("https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Main.lua"))()
 ```
+
+## Infinite Yield Plugin
+
+Untuk memasang Plugin Manager sebagai plugin Infinite Yield:
+
+```text
+;addplugin https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Pluginmaster.iy
+```
+
+Setelah plugin berhasil dimuat, jalankan:
+
+```text
+;hub
+```
+
+Alias: `;masterhub`.
+
+## Branch
+
+- `main` — versi publik/stable. Semua link penggunaan publik mengarah ke branch ini.
+- `Beta` — branch eksperimen dan pengujian sebelum perubahan dirilis ke `main`.
+- `stable` — alamat kompatibilitas lama untuk pluginmaster yang sudah terpasang sebelumnya; bootstrap-nya meneruskan pemuatan ke `main`.
