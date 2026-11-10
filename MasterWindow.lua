@@ -1105,23 +1105,35 @@ return function(speaker)
                 errors = 1
             end
 
-            for index, fileInfo in ipairs(files) do
-                UpdateCheckerInfo.Text = string.format("Memeriksa %d/%d • %s", index, #files, fileInfo.name)
-                local encodedPath = tostring(fileInfo.path):gsub("([^%w%-_%.~])", function(char)
-                    return string.format("%%%02X", string.byte(char))
-                end)
-                local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path=" .. encodedPath .. "&per_page=1"
-                local ok, response = pcall(function() return game:HttpGet(apiUrl) end)
-                if not ok or type(response) ~= "string" or response == "" then
-                    errors = errors + 1
-                    addUpdateCheckerRow(fileInfo.name, "Gagal mengambil commit GitHub.", "ERROR")
-                else
-                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-                    local latest = decodeOk and type(decoded) == "table" and decoded[1] or nil
-                    local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
+            -- Satu request Git Trees untuk seluruh source, menghindari 21 request commits API.
+            local treeUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/git/trees/main?recursive=1"
+            UpdateCheckerInfo.Text = "Mengambil daftar source GitHub (1 permintaan)..."
+            local treeOk, treeResponse = pcall(function() return game:HttpGet(treeUrl) end)
+            local treeDecoded
+            if treeOk and type(treeResponse) == "string" and treeResponse ~= "" then
+                local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(treeResponse) end)
+                if decodeOk and type(decoded) == "table" and type(decoded.tree) == "table" then
+                    treeDecoded = decoded
+                end
+            end
+
+            if not treeDecoded then
+                errors = #files
+                addUpdateCheckerRow("GitHub Tree API", "Gagal mengambil daftar source. Kemungkinan koneksi atau rate limit GitHub.", "ERROR")
+            else
+                local shaByPath = {}
+                for _, entry in ipairs(treeDecoded.tree) do
+                    if entry.type == "blob" and type(entry.path) == "string" then
+                        shaByPath[entry.path] = tostring(entry.sha or "")
+                    end
+                end
+
+                for index, fileInfo in ipairs(files) do
+                    UpdateCheckerInfo.Text = string.format("Memeriksa %d/%d • %s", index, #files, fileInfo.name)
+                    local latestSha = tostring(shaByPath[fileInfo.path] or "")
                     if latestSha == "" then
                         errors = errors + 1
-                        addUpdateCheckerRow(fileInfo.name, "Commit tidak ditemukan atau API membatasi permintaan.", "ERROR")
+                        addUpdateCheckerRow(fileInfo.name, "Source tidak ditemukan di GitHub Tree.", "ERROR")
                     else
                         updateScanResults[fileInfo.path] = {
                             sha = latestSha,
@@ -1140,7 +1152,6 @@ return function(speaker)
                         end
                     end
                 end
-                task.wait(0.15)
             end
 
             UpdateCheckerInfo.Text = string.format(
