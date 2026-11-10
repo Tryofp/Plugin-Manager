@@ -392,6 +392,7 @@ return function(speaker)
 
     -- Per-user acknowledgement of released stable commits.
     -- A release stays marked UPDATE! until this user has selected that release once.
+    local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
     local VERSION_RELEASE_ACK_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_release_ack.json"
     local acknowledgedReleaseShas = {}
     local function loadAcknowledgedReleases()
@@ -414,7 +415,6 @@ return function(speaker)
     end
     loadAcknowledgedReleases()
 
-    local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
     local VERSION_PROFILE_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_versions.json"
     local selectedPluginVersions = {}
     local function loadSelectedPluginVersions()
