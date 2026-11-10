@@ -3,7 +3,7 @@
 -- The actual plugin definition and hub command are maintained in Stable.lua.
 
 local STABLE_PLUGIN_URL =
-    "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/stable/Stable.lua"
+    "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Stable.lua"
 
 local success, result = pcall(function()
     local source = game:HttpGet(STABLE_PLUGIN_URL)
