@@ -2414,7 +2414,7 @@ return function(speaker)
                 end
                 local tabUniqueKey = "TabAutoBadge_" .. tabName
                 if isFeatureNew(tabUniqueKey, "071120260000, 86400") then
-                    setTabBadge(tabName, "BARU!", Color3.fromRGB(255, 215, 0), 1,
+                    setTabBadge(tabName, "NEW!", Color3.fromRGB(255, 215, 0), 1,
                         {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
                 end
                 renderMenuCategory(globalLoaderData[tabInfo.DataKey] or {}, scroll, tabName)
@@ -2475,7 +2475,7 @@ return function(speaker)
 
             local tabUniqueKey = "TabAutoBadge_" .. tabName
             if isFeatureNew(tabUniqueKey, "071120260000, 86400") then
-                setTabBadge(tabName, "BARU!", Color3.fromRGB(255, 215, 0), 1, {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
+                setTabBadge(tabName, "NEW!", Color3.fromRGB(255, 215, 0), 1, {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
             end
 
             local Scroll = Instance.new("ScrollingFrame")
