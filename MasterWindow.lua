@@ -23,6 +23,10 @@ return function(speaker)
     local playerBadgeCache = {}
     local globalLoaderData = nil
     local refreshBadgeUI = nil
+    -- Jangan rebuild seluruh daftar menu saat panel Version History sedang terbuka.
+    -- Rebuild di tengah interaksi membuat panel tertutup sendiri.
+    local openPublicHistoryPanels = 0
+    local pendingPublicBadgeRefresh = false
 
     local function fetchRemoteMetadata()
         local cacheBuster = tostring(DateTime.now().UnixTimestampMillis)
@@ -696,7 +700,8 @@ return function(speaker)
 
         local arrow = Instance.new("TextButton")
         arrow.Name = "PublicVersionHistoryToggle"
-        arrow.Size = UDim2.new(0, 20, 0, 20)
+        -- Samakan tinggi dengan tombol EXECUTE/OPEN (24 px) dan lebarkan area sentuh.
+        arrow.Size = UDim2.new(0, 30, 0, 24)
         arrow.AnchorPoint = Vector2.new(1, 0.5)
         -- Keep the toggle anchored to the original feature row when the history panel expands.
         arrow.Position = UDim2.new(1, -8, 0, baseHeight / 2)
@@ -1053,13 +1058,19 @@ return function(speaker)
         arrow.MouseButton1Click:Connect(function()
             expanded = not expanded
             if expanded then
+                openPublicHistoryPanels = openPublicHistoryPanels + 1
                 arrow.Text = "▲"
                 refreshPanel()
                 card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
             else
+                openPublicHistoryPanels = math.max(0, openPublicHistoryPanels - 1)
                 arrow.Text = "▼"
                 if panel then panel:Destroy() panel = nil end
                 card.Size = UDim2.new(1, 0, 0, baseHeight)
+                if openPublicHistoryPanels == 0 and pendingPublicBadgeRefresh then
+                    pendingPublicBadgeRefresh = false
+                    task.defer(refreshBadgeUI)
+                end
             end
             task.defer(function() updateHistoryCanvas(scrollContainer) end)
         end)
@@ -4525,6 +4536,10 @@ return function(speaker)
     end
 
     refreshBadgeUI = function()
+        if openPublicHistoryPanels > 0 then
+            pendingPublicBadgeRefresh = true
+            return
+        end
         if not globalLoaderData then return end
         -- Ambil Loader terbaru agar timestamp fitur yang baru di-push langsung tersedia.
         local ok, newData = pcall(function()
