@@ -1191,6 +1191,7 @@ return function(speaker)
             return
         end
 
+        local beforeBaselineUpdatedAt = tostring(remoteMetadata.PluginUpdateCheckerBaselineUpdatedAt or "")
         local requestOk, response = pcall(function()
             return requestFn({
                 Url = SHEETS_WEB_APP_URL,
@@ -1205,18 +1206,34 @@ return function(speaker)
             })
         end)
 
-        local body = requestOk and response and (response.Body or response.body) or ""
-        local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
-        if decodeOk and type(result) == "table" and result.status == "success" then
+        local saveSuccess = false
+        if requestOk and response then
+            -- Apps Script may redirect POST responses in some executors.
+            -- Confirm persistence from the public metadata snapshot instead of trusting the POST body.
+            for attempt = 1, 4 do
+                task.wait(attempt == 1 and 0.25 or 0.5)
+                local stateOk = fetchRemoteMetadata()
+                if stateOk then
+                    local savedAt = tostring(remoteMetadata.PluginUpdateCheckerBaselineUpdatedAt or "")
+                    local savedRaw = tostring(remoteMetadata[UPDATE_BASELINE_KEY] or "")
+                    if savedAt ~= "" and savedAt ~= beforeBaselineUpdatedAt and savedRaw == encoded then
+                        saveSuccess = true
+                        break
+                    end
+                end
+            end
+        end
+
+        if saveSuccess then
             updateBaseline = nextBaseline
             updateBaselineLoaded = true
             UpdateCheckerInfo.Text = "Baseline berhasil disimpan ONLINE di Google Sheets. Bisa dipakai lintas perangkat."
             UpdateCheckerAdminKeyBox.Text = ""
         else
-            local message = decodeOk and type(result) == "table" and tostring(result.message or "Server menolak penyimpanan.") or "Respons server tidak valid."
-            UpdateCheckerInfo.Text = "Gagal menyimpan baseline online: " .. message
+            UpdateCheckerInfo.Text = requestOk
+                and "Server belum mengonfirmasi penyimpanan. Periksa kunci Dev Panel atau koneksi, lalu coba lagi."
+                or "Gagal menghubungi server untuk menyimpan baseline online."
         end
-        local saveSuccess = decodeOk and type(result) == "table" and result.status == "success"
         UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
         UpdateCheckerBaselineBtn.Active = not saveSuccess
     end)
