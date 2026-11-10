@@ -609,6 +609,13 @@ return function(speaker)
                     end
                 end
             end
+            -- Periksa AntiEffect lebih dulu agar badge pengujian muncul tanpa
+            -- menunggu seluruh file lain selesai diperiksa.
+            table.sort(paths, function(a, b)
+                if a == "Tools/AntiEffect" then return true end
+                if b == "Tools/AntiEffect" then return false end
+                return a < b
+            end)
             local changed = false
             for _, sourcePath in ipairs(paths) do
                 -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
@@ -631,9 +638,12 @@ return function(speaker)
                         releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
                             and acknowledgedReleaseShas[sourcePath] ~= latestSha
                         changed = true
+                        -- Perbarui badge segera setelah satu file selesai dicek,
+                        -- jangan menunggu semua request path selesai.
+                        if refreshBadgeUI then task.defer(refreshBadgeUI) end
                     end
                 end
-                task.wait(0.15)
+                task.wait(0.05)
             end
             if changed and refreshBadgeUI then task.defer(refreshBadgeUI) end
         end)
@@ -695,7 +705,7 @@ return function(speaker)
         arrow.BackgroundTransparency = 0.1
         arrow.BorderSizePixel = 0
         arrow.Font = Enum.Font.GothamBold
-        arrow.Text = "⌄"
+        arrow.Text = "▼"
         arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
         arrow.TextSize = 14
         arrow.Parent = card
@@ -1043,11 +1053,11 @@ return function(speaker)
         arrow.MouseButton1Click:Connect(function()
             expanded = not expanded
             if expanded then
-                arrow.Text = "^"
+                arrow.Text = "▲"
                 refreshPanel()
                 card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
             else
-                arrow.Text = "v"
+                arrow.Text = "▼"
                 if panel then panel:Destroy() panel = nil end
                 card.Size = UDim2.new(1, 0, 0, baseHeight)
             end
