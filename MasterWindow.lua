@@ -358,6 +358,8 @@ return function(speaker)
     local loadedModuleFingerprints = {}
     local stableFixPrompted = {}
     local stableFixPromptActive = false
+    -- Forward declaration: the stable prompt is defined before the Health Check UI.
+    local HealthCheckInfo
 
     -- Fingerprint is only a lightweight content comparison, not a security hash.
     local function getPluginSourceFingerprint(source)
@@ -1166,7 +1168,7 @@ return function(speaker)
     StableUpdateTestBtn.Parent = HealthCheckView
     Instance.new("UICorner", StableUpdateTestBtn).CornerRadius = UDim.new(0, 4)
 
-    local HealthCheckInfo = Instance.new("TextLabel")
+    HealthCheckInfo = Instance.new("TextLabel")
     HealthCheckInfo.Size = UDim2.new(1, 0, 0, 28)
     HealthCheckInfo.Position = UDim2.new(0, 0, 0, 124)
     HealthCheckInfo.BackgroundTransparency = 1
