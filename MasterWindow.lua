@@ -930,9 +930,22 @@ return function(speaker)
     HealthCheckExportBtn.Parent = HealthCheckView
     Instance.new("UICorner", HealthCheckExportBtn).CornerRadius = UDim.new(0, 4)
 
+    local RuntimeHistoryBtn = Instance.new("TextButton")
+    RuntimeHistoryBtn.Size = UDim2.new(1, 0, 0, 25)
+    RuntimeHistoryBtn.Position = UDim2.new(0, 0, 0, 64)
+    RuntimeHistoryBtn.BackgroundColor3 = Color3.fromRGB(105, 75, 155)
+    RuntimeHistoryBtn.BorderSizePixel = 0
+    RuntimeHistoryBtn.Font = Enum.Font.GothamBold
+    RuntimeHistoryBtn.Text = "LIHAT RIWAYAT RUNTIME ERROR"
+    RuntimeHistoryBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RuntimeHistoryBtn.TextSize = 9
+    RuntimeHistoryBtn.ZIndex = 32
+    RuntimeHistoryBtn.Parent = HealthCheckView
+    Instance.new("UICorner", RuntimeHistoryBtn).CornerRadius = UDim.new(0, 4)
+
     local HealthCheckInfo = Instance.new("TextLabel")
-    HealthCheckInfo.Size = UDim2.new(1, 0, 0, 30)
-    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 64)
+    HealthCheckInfo.Size = UDim2.new(1, 0, 0, 28)
+    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 96)
     HealthCheckInfo.BackgroundTransparency = 1
     HealthCheckInfo.Font = Enum.Font.Gotham
     HealthCheckInfo.Text = "Pemeriksaan belum dijalankan. Source hanya diunduh dan dikompilasi, tidak dieksekusi."
@@ -944,8 +957,8 @@ return function(speaker)
     HealthCheckInfo.Parent = HealthCheckView
 
     local HealthCheckScroll = Instance.new("ScrollingFrame")
-    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -100)
-    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 96)
+    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -132)
+    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 128)
     HealthCheckScroll.BackgroundTransparency = 1
     HealthCheckScroll.BorderSizePixel = 0
     HealthCheckScroll.ScrollBarThickness = 4
@@ -1605,6 +1618,47 @@ return function(speaker)
     end
 
     HealthCheckRunBtn.MouseButton1Click:Connect(runPluginHealthCheck)
+
+    local runtimeHistoryLoading = false
+    RuntimeHistoryBtn.MouseButton1Click:Connect(function()
+        if runtimeHistoryLoading then return end
+        runtimeHistoryLoading = true
+        RuntimeHistoryBtn.Text = "MEMUAT RIWAYAT..."
+        HealthCheckInfo.Text = "Mengambil laporan runtime error terbaru..."
+        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
+        end
+
+        task.spawn(function()
+            local ok, response = pcall(function()
+                return game:HttpGet(SHEETS_WEB_APP_URL .. "?action=PluginErrors&limit=50&_=" .. tostring(DateTime.now().UnixTimestampMillis))
+            end)
+            local decoded
+            if ok and type(response) == "string" and response ~= "" then
+                local decodeOk, result = pcall(function() return HttpService:JSONDecode(response) end)
+                if decodeOk and type(result) == "table" then decoded = result end
+            end
+
+            if not decoded or decoded.status ~= "success" or type(decoded.records) ~= "table" then
+                HealthCheckInfo.Text = "Gagal mengambil riwayat. Periksa koneksi atau deployment Apps Script."
+                addHealthCheckResult("Riwayat tidak tersedia", ok and "Respons server tidak valid." or tostring(response), true)
+            elseif #decoded.records == 0 then
+                HealthCheckInfo.Text = "Belum ada runtime error yang tercatat di server."
+                addHealthCheckResult("Belum ada laporan", "Laporan error akan muncul setelah command gagal dijalankan.", false)
+            else
+                HealthCheckInfo.Text = tostring(#decoded.records) .. " laporan terbaru berhasil dimuat."
+                for _, record in ipairs(decoded.records) do
+                    local title = tostring(record.Plugin or "Unknown Plugin") .. " / " .. tostring(record.Command or "Unknown Command")
+                    local detail = tostring(record.Error or "Tanpa detail")
+                    if record.Timestamp then detail = tostring(record.Timestamp) .. " | " .. detail end
+                    if record.PlaceId and record.PlaceId ~= "" then detail = detail .. " | PlaceId " .. tostring(record.PlaceId) end
+                    addHealthCheckResult(title, detail, true)
+                end
+            end
+            RuntimeHistoryBtn.Text = "MUAT ULANG RIWAYAT ERROR"
+            runtimeHistoryLoading = false
+        end)
+    end)
 
     HealthCheckExportBtn.MouseButton1Click:Connect(function()
         if #healthReportLines == 0 then
