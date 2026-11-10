@@ -486,7 +486,10 @@ return function(speaker)
 
     local function loadServerVersionProfiles()
         if not globalLoaderData then return end
-        local branches = { "main", "Beta" }
+        -- Public release UI only resolves stable sources from main.
+        -- Do not merge Beta profiles here: both branches share file paths and
+        -- would overwrite each other in the path-keyed client selection table.
+        local branches = { "main" }
         local serverVersions = {}
 
         for _, branch in ipairs(branches) do
