@@ -306,8 +306,11 @@ return function(speaker)
     end
 
     local function toggleFavorite(key)
-        favoritePlugins[key] = not favoritePlugins[key] or nil
-        if favoritePlugins[key] == false then favoritePlugins[key] = nil end
+        if favoritePlugins[key] == true then
+            favoritePlugins[key] = nil
+        else
+            favoritePlugins[key] = true
+        end
         saveFavoritePlugins()
         return favoritePlugins[key] == true
     end
