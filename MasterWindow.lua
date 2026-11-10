@@ -4159,9 +4159,9 @@ return function(speaker)
             end)
 
             local ExecSub = Instance.new("TextButton")
-            ExecSub.Size = UDim2.new(0, subHasHistory and 68 or 75, 0, 24)
+            ExecSub.Size = UDim2.new(0, subHasHistory and 58 or 75, 0, 24)
             ExecSub.AnchorPoint = Vector2.new(0, 0.5)
-            ExecSub.Position = UDim2.new(1, subHasHistory and -96 or -80, 0.5, 0)
+            ExecSub.Position = UDim2.new(1, subHasHistory and -100 or -80, 0.5, 0)
             ExecSub.BorderSizePixel = 0
             ExecSub.Text = featureStates[uniqueKey] and "UNEXECUTE" or "EXECUTE"
             ExecSub.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -4420,9 +4420,9 @@ return function(speaker)
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 local OpenBtn = Instance.new("TextButton")
-                OpenBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
+                OpenBtn.Size = UDim2.new(0, itemHasHistory and 58 or 75, 0, 24)
                 OpenBtn.AnchorPoint = Vector2.new(0, 0.5)
-                OpenBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
+                OpenBtn.Position = UDim2.new(1, itemHasHistory and -100 or -80, 0.5, 0)
                 OpenBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
                 OpenBtn.BackgroundTransparency = 0.2
                 OpenBtn.BorderSizePixel = 0
@@ -4440,9 +4440,9 @@ return function(speaker)
                 if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
                 local ExecBtn = Instance.new("TextButton")
-                ExecBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
+                ExecBtn.Size = UDim2.new(0, itemHasHistory and 58 or 75, 0, 24)
                 ExecBtn.AnchorPoint = Vector2.new(0, 0.5)
-                ExecBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
+                ExecBtn.Position = UDim2.new(1, itemHasHistory and -100 or -80, 0.5, 0)
                 ExecBtn.BorderSizePixel = 0
                 ExecBtn.BackgroundTransparency = 0.2
                 ExecBtn.Font = Enum.Font.GothamBold
