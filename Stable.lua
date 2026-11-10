@@ -1,4 +1,4 @@
--- Plugin Manager - Stable Infinite Yield Plugin
+-- Plugin Manager - Beta Infinite Yield Plugin
 -- This file is designed to be loaded by Infinite Yield's plugin system.
 
 local Players = game:GetService("Players")
