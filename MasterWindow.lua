@@ -592,10 +592,29 @@ return function(speaker)
             info.TextXAlignment = Enum.TextXAlignment.Left
             info.Parent = panel
 
+            -- Keep connection warnings in their own fully visible row.
+            -- Do not append long warning text to the compact version header.
+            local warningLabel = Instance.new("TextLabel")
+            warningLabel.Name = "GitHubStatusWarning"
+            warningLabel.Position = UDim2.new(0, 6, 0, 22)
+            warningLabel.Size = UDim2.new(1, -12, 0, 27)
+            warningLabel.BackgroundTransparency = 1
+            warningLabel.Font = Enum.Font.GothamBold
+            warningLabel.Text = ""
+            warningLabel.TextColor3 = Color3.fromRGB(255, 220, 105)
+            warningLabel.TextTransparency = 0
+            warningLabel.TextSize = 10
+            warningLabel.TextWrapped = true
+            warningLabel.TextXAlignment = Enum.TextXAlignment.Left
+            warningLabel.TextYAlignment = Enum.TextYAlignment.Top
+            warningLabel.Visible = false
+            warningLabel.ZIndex = panel.ZIndex + 2
+            warningLabel.Parent = panel
+
             local historyScroll = Instance.new("ScrollingFrame")
             historyScroll.Name = "VersionRows"
-            historyScroll.Position = UDim2.new(0, 5, 0, 23)
-            historyScroll.Size = UDim2.new(1, -10, 1, -28)
+            historyScroll.Position = UDim2.new(0, 5, 0, 51)
+            historyScroll.Size = UDim2.new(1, -10, 1, -56)
             historyScroll.BackgroundTransparency = 1
             historyScroll.BorderSizePixel = 0
             historyScroll.ScrollBarThickness = 3
@@ -667,7 +686,14 @@ return function(speaker)
                 end
 
                 if #commits == 0 then
-                    info.Text = loadWarning or "Riwayat stable belum tersedia. Coba buka lagi."
+                    info.Text = "Riwayat versi belum tersedia"
+                    if loadWarning then
+                        warningLabel.Text = loadWarning
+                        warningLabel.Visible = true
+                    else
+                        warningLabel.Text = "Belum ada data riwayat yang dapat ditampilkan."
+                        warningLabel.Visible = true
+                    end
                     return
                 end
 
@@ -682,7 +708,10 @@ return function(speaker)
                 info.Text = baselineIndex
                     and (displayName .. " • " .. tostring(totalVersions) .. " versi • stable")
                     or (displayName .. " • commit terbaru • stable")
-                if loadWarning then info.Text = info.Text .. " | " .. loadWarning end
+                if loadWarning then
+                    warningLabel.Text = loadWarning
+                    warningLabel.Visible = true
+                end
                 for index = 1, math.min(12, #commits) do
                     local entry = commits[index]
                     local sha = tostring(entry.sha or "")
