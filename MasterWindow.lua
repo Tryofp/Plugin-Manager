@@ -417,6 +417,23 @@ return function(speaker)
         return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
     end
 
+    -- If a parent card has no RawUrl but all of its subfeatures share one source,
+    -- expose one history control on the parent instead of duplicating it per child.
+    local function getSharedSubFeatureSourceUrl(subFeatures, fallbackUrl)
+        if type(subFeatures) ~= "table" then return nil end
+        local sharedPath, sharedUrl
+        for _, feature in ipairs(subFeatures) do
+            local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or fallbackUrl
+            local featurePath = getPluginSourcePath(featureUrl)
+            if featurePath then
+                if sharedPath and sharedPath ~= featurePath then return nil end
+                sharedPath = featurePath
+                sharedUrl = sharedUrl or featureUrl
+            end
+        end
+        return sharedUrl
+    end
+
     local function getResolvedPluginUrl(rawUrl)
         local path = getPluginSourcePath(rawUrl)
         local selectedSha = path and tostring(selectedPluginVersions[path] or "") or ""
@@ -427,6 +444,8 @@ return function(speaker)
     end
 
     local stableLatestShaCache = {}
+    -- Cache paginated history by source path so retries resume at the failed page.
+    local stableHistoryCache = {}
 
     local function isPluginSourceActive(path)
         for featureKey, isActive in pairs(featureStates) do
@@ -467,12 +486,12 @@ return function(speaker)
         arrow.Name = "PublicVersionHistoryToggle"
         arrow.Size = UDim2.new(0, 20, 0, 20)
         arrow.AnchorPoint = Vector2.new(0, 0)
-        arrow.Position = UDim2.new(1, -136, 0, 3)
+        arrow.Position = UDim2.new(1, -26, 0, 3)
         arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
         arrow.BackgroundTransparency = 0.1
         arrow.BorderSizePixel = 0
         arrow.Font = Enum.Font.GothamBold
-        arrow.Text = "⌄"
+        arrow.Text = "v"
         arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
         arrow.TextSize = 14
         arrow.Parent = card
@@ -563,47 +582,61 @@ return function(speaker)
 
             local baselineSha = VERSION_HISTORY_BASELINES[path]
             task.spawn(function()
-                local commits, foundBaseline = {}, false
-                for page = 1, 10 do
+                local history = stableHistoryCache[path]
+                if not history then
+                    history = { commits = {}, nextPage = 1, complete = false }
+                    stableHistoryCache[path] = history
+                end
+                local loadWarning = nil
+                local foundBaseline = false
+                for _, entry in ipairs(history.commits) do
+                    if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
+                end
+
+                while not foundBaseline and not history.complete and history.nextPage <= 10 do
+                    local page = history.nextPage
                     local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
                         .. path .. "&sha=stable&per_page=100&page=" .. tostring(page)
                     local ok, response = pcall(function() return game:HttpGet(apiUrl) end)
                     if not ok or type(response) ~= "string" or response == "" then
-                        info.Text = "GitHub tidak dapat dihubungi. Coba buka lagi."
-                        return
+                        loadWarning = "Koneksi GitHub terputus. Riwayat yang sudah diterima tetap ditampilkan; buka ulang untuk melanjutkan."
+                        break
                     end
                     local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
                     if not decodeOk or type(decoded) ~= "table" or decoded.message then
-                        info.Text = "Riwayat stable tidak tersedia."
-                        return
+                        loadWarning = "GitHub membatasi atau gagal merespons. Riwayat yang sudah diterima tetap ditampilkan; buka ulang untuk mencoba lagi."
+                        break
                     end
                     for _, entry in ipairs(decoded) do
-                        table.insert(commits, entry)
-                        if tostring(entry.sha or "") == baselineSha then
-                            foundBaseline = true
-                            break
-                        end
+                        table.insert(history.commits, entry)
+                        if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
                     end
-                    if foundBaseline or #decoded < 100 then break end
+                    history.nextPage = page + 1
+                    if foundBaseline or #decoded < 100 then history.complete = true break end
                 end
 
+                local commits = history.commits
                 if not baselineSha and #commits > 0 then
                     baselineSha = tostring(commits[#commits].sha or "")
+                    history.complete = true
                 end
 
                 local baselineIndex
                 for index, entry in ipairs(commits) do
-                    if tostring(entry.sha or "") == baselineSha then
-                        baselineIndex = index
-                        break
-                    end
+                    if tostring(entry.sha or "") == baselineSha then baselineIndex = index break end
                 end
-                if not baselineIndex then
-                    info.Text = "Baseline V0.1 tidak ditemukan di riwayat stable."
+                if not baselineIndex and not loadWarning then
+                    loadWarning = history.complete
+                        and "Baseline V0.1 tidak ditemukan di riwayat stable."
+                        or "Baseline belum terjangkau. Commit terbaru tetap ditampilkan; buka ulang untuk melanjutkan."
+                end
+
+                if #commits == 0 then
+                    info.Text = loadWarning or "Riwayat stable belum tersedia. Coba buka lagi."
                     return
                 end
 
-                local totalVersions = baselineIndex
+                local totalVersions = baselineIndex or #commits
                 local latestSha = tostring(commits[1] and commits[1].sha or "")
                 stableLatestShaCache[path] = latestSha
                 local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
@@ -611,14 +644,17 @@ return function(speaker)
                 local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
                 setStableUpdateVisible(selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha)
 
-                info.Text = displayName .. " • " .. tostring(totalVersions) .. " versi • stable"
-                for index = 1, math.min(12, totalVersions) do
+                info.Text = baselineIndex
+                    and (displayName .. " • " .. tostring(totalVersions) .. " versi • stable")
+                    or (displayName .. " • commit terbaru • stable")
+                if loadWarning then info.Text = info.Text .. " | " .. loadWarning end
+                for index = 1, math.min(12, #commits) do
                     local entry = commits[index]
                     local sha = tostring(entry.sha or "")
                     local commitData = entry.commit or {}
                     local author = commitData.author or {}
                     local versionNumber = totalVersions - index + 1
-                    local versionName = "V0." .. tostring(versionNumber)
+                    local versionName = baselineIndex and ("V0." .. tostring(versionNumber)) or ("Commit #" .. tostring(index))
                     local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
                     if #message > 58 then message = message:sub(1, 55) .. "..." end
 
@@ -694,11 +730,11 @@ return function(speaker)
         arrow.MouseButton1Click:Connect(function()
             expanded = not expanded
             if expanded then
-                arrow.Text = "⌃"
+                arrow.Text = "^"
                 refreshPanel()
                 card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
             else
-                arrow.Text = "⌄"
+                arrow.Text = "v"
                 if panel then panel:Destroy() panel = nil end
                 card.Size = UDim2.new(1, 0, 0, baseHeight)
             end
