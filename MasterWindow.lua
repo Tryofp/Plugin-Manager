@@ -4007,7 +4007,7 @@ return function(speaker)
 
             local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(174, 10000))
             local descHeight = math.max(14, textBounds.Y + 5)
-            DescLabel.Size = UDim2.new(1, -118, 0, descHeight)
+            DescLabel.Size = UDim2.new(1, itemSourcePath and -205 or -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
             if itemSourcePath then
