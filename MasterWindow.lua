@@ -519,7 +519,7 @@ return function(speaker)
         end)
     end
 
-    local function checkStableFixAvailable(pluginName, commandName, sourceUrl)
+    local function checkStableFixAvailable(pluginName, commandName, sourceUrl, forcePrompt)
         local normalizedUrl = tostring(sourceUrl or ""):match("^[^?]+") or ""
         local loadedFingerprint = loadedModuleFingerprints[normalizedUrl]
         if not loadedFingerprint then return end
@@ -536,7 +536,7 @@ return function(speaker)
         if latestFingerprint == loadedFingerprint then return end
 
         local promptKey = latestUrl .. "|" .. latestFingerprint
-        if stableFixPrompted[promptKey] then return end
+        if stableFixPrompted[promptKey] and not forcePrompt then return end
         stableFixPrompted[promptKey] = true
         showStableFixPrompt(pluginName, commandName, latestUrl, latestSource)
     end
@@ -1147,9 +1147,22 @@ return function(speaker)
     RuntimeTestBtn.Parent = HealthCheckView
     Instance.new("UICorner", RuntimeTestBtn).CornerRadius = UDim.new(0, 4)
 
+    local StableUpdateTestBtn = Instance.new("TextButton")
+    StableUpdateTestBtn.Size = UDim2.new(1, 0, 0, 25)
+    StableUpdateTestBtn.Position = UDim2.new(0, 0, 0, 94)
+    StableUpdateTestBtn.BackgroundColor3 = Color3.fromRGB(35, 115, 105)
+    StableUpdateTestBtn.BorderSizePixel = 0
+    StableUpdateTestBtn.Font = Enum.Font.GothamBold
+    StableUpdateTestBtn.Text = "TES UPDATE STABLE"
+    StableUpdateTestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    StableUpdateTestBtn.TextSize = 9
+    StableUpdateTestBtn.ZIndex = 32
+    StableUpdateTestBtn.Parent = HealthCheckView
+    Instance.new("UICorner", StableUpdateTestBtn).CornerRadius = UDim.new(0, 4)
+
     local HealthCheckInfo = Instance.new("TextLabel")
     HealthCheckInfo.Size = UDim2.new(1, 0, 0, 28)
-    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 96)
+    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 124)
     HealthCheckInfo.BackgroundTransparency = 1
     HealthCheckInfo.Font = Enum.Font.Gotham
     HealthCheckInfo.Text = "Pemeriksaan belum dijalankan. Source hanya diunduh dan dikompilasi, tidak dieksekusi."
@@ -1161,8 +1174,8 @@ return function(speaker)
     HealthCheckInfo.Parent = HealthCheckView
 
     local HealthCheckScroll = Instance.new("ScrollingFrame")
-    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -132)
-    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 128)
+    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -160)
+    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 156)
     HealthCheckScroll.BackgroundTransparency = 1
     HealthCheckScroll.BorderSizePixel = 0
     HealthCheckScroll.ScrollBarThickness = 4
@@ -1846,6 +1859,54 @@ return function(speaker)
                 RuntimeTestBtn.Text = "TES TERKIRIM - CEK RIWAYAT"
                 RuntimeTestBtn.Active = true
             end
+        end)
+    end)
+
+    local stableUpdateTestRunning = false
+    StableUpdateTestBtn.MouseButton1Click:Connect(function()
+        if stableUpdateTestRunning then return end
+        if stableFixPromptActive then
+            HealthCheckInfo.Text = "Tutup prompt perbaikan yang sedang terbuka sebelum mengulang tes."
+            return
+        end
+
+        local stableSourceUrl
+        for url, fingerprint in pairs(loadedModuleFingerprints) do
+            local normalizedUrl = tostring(url):match("^[^?]+") or tostring(url)
+            local isStableSource = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/.+$")
+                or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/.+$")
+            if isStableSource and fingerprint and loadedModules[normalizedUrl] then
+                stableSourceUrl = normalizedUrl
+                break
+            end
+        end
+
+        if not stableSourceUrl then
+            HealthCheckInfo.Text = "Belum ada plugin dari branch stable yang dimuat. Jalankan satu plugin stable dahulu, lalu tes lagi."
+            return
+        end
+
+        stableUpdateTestRunning = true
+        StableUpdateTestBtn.Active = false
+        StableUpdateTestBtn.Text = "MENYIAPKAN TES..."
+        HealthCheckInfo.Text = "Simulasi perbedaan fingerprint pada source stable yang sudah dimuat. Branch stable tidak diubah dan tidak ada laporan error palsu dikirim."
+
+        task.spawn(function()
+            local originalFingerprint = loadedModuleFingerprints[stableSourceUrl]
+            local ok, err = pcall(function()
+                loadedModuleFingerprints[stableSourceUrl] = "__PLUGIN_MANAGER_STABLE_UPDATE_TEST__"
+                checkStableFixAvailable("Plugin Manager - TEST", "StableUpdateTest", stableSourceUrl, true)
+            end)
+            loadedModuleFingerprints[stableSourceUrl] = originalFingerprint
+
+            if not ok then
+                HealthCheckInfo.Text = "Tes gagal dijalankan: " .. tostring(err)
+            else
+                HealthCheckInfo.Text = "Tes dipicu. Jika prompt PERBAIKAN STABLE TERSEDIA muncul, tekan NANTI untuk menutup tanpa reload atau MUAT ULANG SOURCE untuk menguji reload."
+            end
+            StableUpdateTestBtn.Text = "ULANGI TES UPDATE STABLE"
+            StableUpdateTestBtn.Active = true
+            stableUpdateTestRunning = false
         end)
     end)
 
