@@ -782,9 +782,16 @@ return function(speaker)
 
             local historyScroll = Instance.new("ScrollingFrame")
             historyScroll.Name = "VersionRows"
-            historyScroll.Position = UDim2.new(0, 5, 0, 51)
-            historyScroll.Size = UDim2.new(1, -10, 1, -56)
+            -- Saat tidak ada pesan peringatan, naikkan daftar agar lebih dekat ke info header.
+            -- Ruang tambahan ini juga membuat lebih banyak versi terlihat tanpa perlu scroll.
+            historyScroll.Position = UDim2.new(0, 5, 0, 25)
+            historyScroll.Size = UDim2.new(1, -10, 1, -30)
             historyScroll.BackgroundTransparency = 1
+
+            local function setHistoryListWarningLayout(showWarning)
+                historyScroll.Position = UDim2.new(0, 5, 0, showWarning and 51 or 25)
+                historyScroll.Size = UDim2.new(1, -10, 1, showWarning and -56 or -30)
+            end
             historyScroll.BorderSizePixel = 0
             historyScroll.ScrollBarThickness = 3
             historyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -896,6 +903,7 @@ return function(speaker)
                         warningLabel.Text = "Belum ada data riwayat yang dapat ditampilkan."
                         warningLabel.Visible = true
                     end
+                    setHistoryListWarningLayout(true)
                     return
                 end
 
@@ -920,6 +928,7 @@ return function(speaker)
                     warningLabel.Text = "Riwayat lengkap sementara tidak tersedia; versi terbaru tetap bisa dikenali."
                     warningLabel.Visible = true
                 end
+                setHistoryListWarningLayout(warningLabel.Visible)
                 for index = 1, math.min(12, #commits) do
                     local entry = commits[index]
                     local sha = tostring(entry.sha or "")
