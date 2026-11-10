@@ -3773,7 +3773,7 @@ return function(speaker)
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -122 or -100, 0.5, 0)
+            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -122 or -104, 0.5, 0)
             SubFavoriteBtn.BackgroundTransparency = 1
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
@@ -4044,7 +4044,7 @@ return function(speaker)
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -122 or -100, 0.5, 0)
+            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -122 or -104, 0.5, 0)
             MenuFavoriteBtn.BackgroundTransparency = 1
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
