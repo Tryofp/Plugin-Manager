@@ -505,7 +505,9 @@ return function(speaker)
         arrow.Name = "PublicVersionHistoryToggle"
         arrow.Size = UDim2.new(0, 20, 0, 20)
         arrow.AnchorPoint = Vector2.new(1, 0.5)
-        arrow.Position = UDim2.new(1, -8, 0.5, 0)
+        -- Keep the toggle anchored to the original feature row when the history panel expands.
+        arrow.Position = UDim2.new(1, -8, 0, baseHeight / 2)
+        arrow.ZIndex = (card.ZIndex or 1) + 5
         arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
         arrow.BackgroundTransparency = 0.1
         arrow.BorderSizePixel = 0
@@ -570,6 +572,7 @@ return function(speaker)
             panel.BackgroundColor3 = Color3.fromRGB(16, 23, 33)
             panel.BackgroundTransparency = 0.08
             panel.BorderSizePixel = 0
+            panel.ZIndex = math.max(1, (card.ZIndex or 1) + 1)
             panel.Parent = card
             Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 5)
 
@@ -690,6 +693,7 @@ return function(speaker)
                     row.BackgroundColor3 = Color3.fromRGB(31, 43, 58)
                     row.BackgroundTransparency = 0.08
                     row.BorderSizePixel = 0
+                    row.ZIndex = panel.ZIndex + 1
                     row.Parent = historyScroll
                     Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
 
@@ -738,6 +742,7 @@ return function(speaker)
                     choose.Text = "PILIH"
                     choose.TextColor3 = Color3.fromRGB(255, 255, 255)
                     choose.TextSize = 8
+                    choose.ZIndex = row.ZIndex + 1
                     choose.Parent = row
                     Instance.new("UICorner", choose).CornerRadius = UDim.new(0, 4)
                     choose.MouseButton1Click:Connect(function()
@@ -4032,9 +4037,10 @@ return function(speaker)
             DescLabel.TextWrapped = true
             DescLabel.Parent = ItemFrame
 
-            local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(174, 10000))
+            local descWidth = math.max(120, ItemFrame.AbsoluteSize.X - (itemSourcePath and 166 or 126))
+            local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(descWidth, 10000))
             local descHeight = math.max(14, textBounds.Y + 5)
-            DescLabel.Size = UDim2.new(1, itemSourcePath and -205 or -118, 0, descHeight)
+            DescLabel.Size = UDim2.new(1, itemSourcePath and -158 or -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
             if itemSourcePath then
