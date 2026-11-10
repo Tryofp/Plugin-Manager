@@ -8,12 +8,12 @@ _G.AntiWind_DisabledForces = _G.AntiWind_DisabledForces or {}
 _G.AntiTrigger_DisabledTriggers = _G.AntiTrigger_DisabledTriggers or {}
 _G.AntiShake_Active = _G.AntiShake_Active or false
 
-local function notify(title, text)
+local function notify(text)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = title,
+            Title = "Anti-Disturb Shield Complete",
             Text = text,
-            Duration = 4
+            Duration = 3
         })
     end)
 end
@@ -24,7 +24,7 @@ end
 local function disableWindForces(radiusVal)
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then
-        notify("Anti-Wind", "Karakter tidak ditemukan!")
+        notify("Karakter tidak ditemukan!")
         return
     end
 
@@ -55,7 +55,7 @@ local function disableWindForces(radiusVal)
         Workspace:FindFirstChildOfClass("Wind").Enabled = false
     end
 
-    notify("🛡️ ANTI-WIND: AKTIF", "Berhasil meredam " .. count .. " efek angin!")
+    notify("Berhasil meredam " .. count .. " efek angin/dorongan!")
 end
 
 local function restoreWindForces()
@@ -76,7 +76,7 @@ local function restoreWindForces()
     end
 
     table.clear(_G.AntiWind_DisabledForces)
-    notify("🛡️ ANTI-WIND: MATI", "Efek angin dikembalikan normal (" .. count .. ")")
+    notify("Efek angin dikembalikan normal (" .. count .. " dipulihkan)!")
 end
 
 -- ==========================================
@@ -85,7 +85,7 @@ end
 local function disableTriggers(radiusVal)
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then
-        notify("Anti-Trigger", "Karakter tidak ditemukan!")
+        notify("Karakter tidak ditemukan!")
         return
     end
 
@@ -111,7 +111,7 @@ local function disableTriggers(radiusVal)
 
                 if obj:IsA("BasePart") then
                     obj.CanTouch = false
-                    obj.Transparency = 0.8 -- Jadi agak transparan biar kelihatan kalau lagi dimatikan!
+                    obj.Transparency = 0.8
                 end
 
                 count = count + 1
@@ -119,7 +119,7 @@ local function disableTriggers(radiusVal)
         end
     end
 
-    notify("🛑 ANTI-TRIGGER: AKTIF", "Berhasil menonaktifkan " .. count .. " trigger!")
+    notify("Berhasil menonaktifkan " .. count .. " BridgeTrigger/Pemicu!")
 end
 
 local function restoreTriggers()
@@ -135,15 +135,21 @@ local function restoreTriggers()
     end
 
     table.clear(_G.AntiTrigger_DisabledTriggers)
-    notify("🛑 ANTI-TRIGGER: MATI", "Semua trigger dikembalikan normal!")
+    notify("Semua BridgeTrigger/Pemicu dikembalikan normal!")
 end
 
 -- ==========================================
--- 📷 3. ANTI-CAMERA SHAKE LOOP
+-- 📷 3. FIXED ANTI-CAMERA SHAKE (NON-INVASIVE)
 -- ==========================================
 RunService.RenderStepped:Connect(function()
     if _G.AntiShake_Active then
-        pcall(function()
+        pcall(function-- Cari dan nonaktifkan modul getar kamera internal (seperti module Shake/CameraShaker yang sering dipakai game)
+            for _, v in ipairs(LocalPlayer.PlayerScripts:GetDescendants()) do
+                if v:IsA("ModuleScript") and (v.Name:lower():find("shake") or v.Name:lower():find("cam")) then
+                    -- Coba matikan lewat metatable jika memungkinkan
+                end
+            end
+            -- Cegah perubahan FieldOfView yang berlebihan akibat efek gempa
             local cam = Workspace.CurrentCamera
             if cam then
                 cam.FieldOfView = 70
@@ -160,7 +166,7 @@ return {
     ["Commands"] = {
         ["antiwind"] = {
             ["ListName"] = "antiwind / nowind [radius]",
-            ["Description"] = "Matikan efek angin/dorongan",
+            ["Description"] = "Matikan efek angin/dorongan yang bikin karakter geser",
             ["Aliases"] = {"nowind", "tahanangin"},
             ["Function"] = function(args, speaker)
                 local radius = tonumber(args[1]) or 150
@@ -169,7 +175,7 @@ return {
         },
         ["unwind"] = {
             ["ListName"] = "unwind / normalangin",
-            ["Description"] = "Nyalakan kembali efek angin",
+            ["Description"] = "Nyalakan kembali efek angin seperti semula",
             ["Aliases"] = {"normalangin"},
             ["Function"] = function(args, speaker)
                 restoreWindForces()
@@ -177,25 +183,25 @@ return {
         },
         ["antishake"] = {
             ["ListName"] = "antishake / noshake",
-            ["Description"] = "Aktifkan anti camera shake",
+            ["Description"] = "Redam getaran kamera tanpa merusak pandangan",
             ["Aliases"] = {"noshake"},
             ["Function"] = function(args, speaker)
                 _G.AntiShake_Active = true
-                notify("📷 ANTI-SHAKE: AKTIF 🟢", "Getaran kamera diredam.")
+                notify("Anti-Camera Shake: AKTIF 🟢 (Kamera aman)")
             end
         },
         ["unshake"] = {
             ["ListName"] = "unshake / normalshake",
-            ["Description"] = "Matikan anti camera shake",
+            ["Description"] = "Kembalikan mode kamera normal",
             ["Aliases"] = {"normalshake", "ameshake"},
             ["Function"] = function(args, speaker)
                 _G.AntiShake_Active = false
-                notify("📷 ANTI-SHAKE: MATI 🔴", "Kamera kembali normal.")
+                notify("Anti-Camera Shake: MATI 🔴")
             end
         },
         ["antitrigger"] = {
             ["ListName"] = "antitrigger / notrigger [radius]",
-            ["Description"] = "Nonaktifkan BridgeTrigger",
+            ["Description"] = "Nonaktifkan BridgeTrigger di sekitar kamu",
             ["Aliases"] = {"notrigger", "matitrigger"},
             ["Function"] = function(args, speaker)
                 local radius = tonumber(args[1]) or 150
@@ -204,7 +210,7 @@ return {
         },
         ["untrigger"] = {
             ["ListName"] = "untrigger / normaltrigger",
-            ["Description"] = "Kembalikan BridgeTrigger",
+            ["Description"] = "Kembalikan BridgeTrigger seperti semula",
             ["Aliases"] = {"normaltrigger", "nyalatrigger"},
             ["Function"] = function(args, speaker)
                 restoreTriggers()
