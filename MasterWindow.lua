@@ -1110,16 +1110,29 @@ return function(speaker)
             UpdateCheckerInfo.Text = "Mengambil daftar source GitHub (1 permintaan)..."
             local treeOk, treeResponse = pcall(function() return game:HttpGet(treeUrl) end)
             local treeDecoded
-            if treeOk and type(treeResponse) == "string" and treeResponse ~= "" then
+            local treeError = ""
+            if not treeOk then
+                treeError = "HTTP request ditolak: " .. tostring(treeResponse)
+            elseif type(treeResponse) ~= "string" or treeResponse == "" then
+                treeError = "GitHub mengirim respons kosong."
+            else
                 local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(treeResponse) end)
                 if decodeOk and type(decoded) == "table" and type(decoded.tree) == "table" then
                     treeDecoded = decoded
+                    if decoded.truncated == true then
+                        treeError = "GitHub Tree terpotong (truncated)."
+                        treeDecoded = nil
+                    end
+                elseif decodeOk and type(decoded) == "table" then
+                    treeError = "Respons GitHub tidak memiliki daftar tree. Pesan: " .. tostring(decoded.message or decoded.error or "format tidak dikenal")
+                else
+                    treeError = "Respons bukan JSON GitHub: " .. string.sub(tostring(treeResponse), 1, 140)
                 end
             end
 
             if not treeDecoded then
                 errors = #files
-                addUpdateCheckerRow("GitHub Tree API", "Gagal mengambil daftar source. Kemungkinan koneksi atau rate limit GitHub.", "ERROR")
+                addUpdateCheckerRow("GitHub Tree API", treeError ~= "" and treeError or "Gagal membaca daftar source GitHub.", "ERROR")
             else
                 local shaByPath = {}
                 for _, entry in ipairs(treeDecoded.tree) do
