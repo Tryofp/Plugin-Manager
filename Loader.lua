@@ -278,40 +278,48 @@ local SharedFeatures = {
 
     -- 9. Anti Effect Group Sub-Features
     Anchor = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_anchor",
         Name = "Anchor ( Hanya Visual )",
         Desc = "Untuk menghentikan Part yang bergoyang",
         Cmd = "anchor",
         UnCmd = "unanchor",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "101120262234, 86400"
     },
     AntiShake = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_antishake",
         Name = "Anti Shake",
         Desc = "Untuk menghentikan Kamera yang bergoyang",
         Cmd = "antishake",
         UnCmd = "unshake",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "101120262234, 86400"
     },
     AntiWind = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_antiwind",
         Name = "Anti Wind ( Client Side )",
         Desc = "Untuk menghentikan Angin yang menggeser karakter",
         Cmd = "antiwind",
         UnCmd = "unwind",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "101120262234, 86400"
     },
     AntiTrigger = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_antitrigger",
         Name = "Anti Trigger",
         Desc = "Untuk mematikan Trigger dalam map",
         Cmd = "antitrigger",
         UnCmd = "untrigger",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "101120262234, 86400"
     },
 
     -- 10. Standalone Tools Lainnya
