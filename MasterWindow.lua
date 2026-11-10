@@ -3998,7 +3998,7 @@ return function(speaker)
             local timestamp = subFeat.UpdateTimestamp or ""
             local activeBadgeText = getUserFacingBadgeText(subFeat)
             local activeBadgeColor = getColorFromName(subFeat.BadgeColor)
-            local hasSubUpdateBadge = activeBadgeText == "UPDATE!"
+            local hasSubUpdateBadge = activeBadgeText == "UPDATE!" and isFeatureNew(badgeKey, timestamp)
 
             if activeBadgeText and isFeatureNew(badgeKey, timestamp) then
                 local badgeText = "[" .. activeBadgeText .. "]"
@@ -4231,7 +4231,7 @@ return function(speaker)
             local activeBadgeText = getUserFacingBadgeText(item)
             local activeBadgeColorName = item.BadgeColor
             local badgeFeatureKeys = {}
-            local hasUpdateBadge = activeBadgeText == "UPDATE!"
+            local hasUpdateBadge = false
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 for _, sub in ipairs(item.SubFeatures) do
@@ -4251,6 +4251,7 @@ return function(speaker)
                 end
             elseif activeBadgeText and isFeatureNew(badgeKey, timestamp) then
                 table.insert(badgeFeatureKeys, { key = badgeKey, timestamp = timestamp })
+                hasUpdateBadge = activeBadgeText == "UPDATE!"
             end
 
             if #badgeFeatureKeys > 0 then
