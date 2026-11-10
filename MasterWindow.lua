@@ -671,7 +671,7 @@ return function(speaker)
     end)
 
     local HealthCheckRunBtn = Instance.new("TextButton")
-    HealthCheckRunBtn.Size = UDim2.new(1, 0, 0, 28)
+    HealthCheckRunBtn.Size = UDim2.new(0.49, 0, 0, 28)
     HealthCheckRunBtn.Position = UDim2.new(0, 0, 0, 33)
     HealthCheckRunBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 90)
     HealthCheckRunBtn.BorderSizePixel = 0
@@ -682,6 +682,19 @@ return function(speaker)
     HealthCheckRunBtn.ZIndex = 32
     HealthCheckRunBtn.Parent = HealthCheckView
     Instance.new("UICorner", HealthCheckRunBtn).CornerRadius = UDim.new(0, 4)
+
+    local HealthCheckExportBtn = Instance.new("TextButton")
+    HealthCheckExportBtn.Size = UDim2.new(0.49, 0, 0, 28)
+    HealthCheckExportBtn.Position = UDim2.new(0.51, 0, 0, 33)
+    HealthCheckExportBtn.BackgroundColor3 = Color3.fromRGB(45, 95, 155)
+    HealthCheckExportBtn.BorderSizePixel = 0
+    HealthCheckExportBtn.Font = Enum.Font.GothamBold
+    HealthCheckExportBtn.Text = "EXPORT HASIL"
+    HealthCheckExportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    HealthCheckExportBtn.TextSize = 9
+    HealthCheckExportBtn.ZIndex = 32
+    HealthCheckExportBtn.Parent = HealthCheckView
+    Instance.new("UICorner", HealthCheckExportBtn).CornerRadius = UDim.new(0, 4)
 
     local HealthCheckInfo = Instance.new("TextLabel")
     HealthCheckInfo.Size = UDim2.new(1, 0, 0, 30)
@@ -861,6 +874,7 @@ return function(speaker)
     BadgeScrollLayout.Parent = BadgeScroll
 
     local healthScanRunning = false
+    local healthReportLines = {}
 
     local function addHealthCheckResult(title, detail, isError)
         local row = Instance.new("Frame")
@@ -904,6 +918,7 @@ return function(speaker)
         HealthCheckRunBtn.Active = false
         HealthCheckRunBtn.Text = "MEMERIKSA..."
         HealthCheckInfo.Text = "Mengumpulkan konfigurasi Loader..."
+        healthReportLines = {"PLUGIN HEALTH CHECK", "=================="}
         for _, child in ipairs(HealthCheckScroll:GetChildren()) do
             if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
         end
@@ -913,6 +928,7 @@ return function(speaker)
             local function report(title, detail, failed)
                 checks = checks + 1
                 if failed then errors = errors + 1 end
+                table.insert(healthReportLines, (failed and "[ERROR] " or "[OK] ") .. tostring(title) .. " | " .. tostring(detail or ""))
                 addHealthCheckResult(title, detail, failed)
             end
 
@@ -1011,8 +1027,11 @@ return function(speaker)
                                     report("Script mandiri", mapping.name .. " → " .. mapping.cmd .. " | validasi tabel Commands dilewati; source berjalan langsung saat dimuat.", false)
                                 else
                                     local escaped = mapping.cmd:gsub("([^%w])", "%%%1")
-                                    local dotPattern = "Commands%s*%.%s*" .. escaped .. "%s*="
-                                    local bracketPattern = "Commands%s*%[%s*[\"']" .. escaped .. "[\"']%s*%]%s*="
+                                    -- Commands normally live inside a nested Commands table, so
+                                    -- search for the command key itself rather than requiring
+                                    -- the literal text "Commands" immediately before the key.
+                                    local dotPattern = "%.%s*" .. escaped .. "%s*="
+                                    local bracketPattern = "%[%s*[\"']" .. escaped .. "[\"']%s*%]%s*="
                                     if not string.find(source, dotPattern) and not string.find(source, bracketPattern) then
                                         report("Command tidak ditemukan", mapping.name .. " → " .. mapping.cmd, true)
                                     end
@@ -1024,6 +1043,8 @@ return function(speaker)
                 end
             end
 
+            table.insert(healthReportLines, "==================")
+            table.insert(healthReportLines, string.format("RINGKASAN: %d pemeriksaan, %d temuan.", checks, errors))
             HealthCheckInfo.Text = string.format("Selesai: %d pemeriksaan, %d temuan. Source tidak dieksekusi.", checks, errors)
             HealthCheckRunBtn.Text = "JALANKAN ULANG PEMERIKSAAN"
             HealthCheckRunBtn.Active = true
@@ -1032,6 +1053,28 @@ return function(speaker)
     end
 
     HealthCheckRunBtn.MouseButton1Click:Connect(runPluginHealthCheck)
+
+    HealthCheckExportBtn.MouseButton1Click:Connect(function()
+        if #healthReportLines == 0 then
+            HealthCheckInfo.Text = "Belum ada hasil untuk diekspor. Jalankan pemeriksaan dulu."
+            return
+        end
+        local reportText = table.concat(healthReportLines, "\\n")
+        local copied = false
+        if type(setclipboard) == "function" then
+            copied = pcall(setclipboard, reportText)
+        elseif type(toclipboard) == "function" then
+            copied = pcall(toclipboard, reportText)
+        end
+        if copied then
+            HealthCheckInfo.Text = "Hasil berhasil disalin. Tinggal paste ke chat."
+        elseif type(writefile) == "function" then
+            local ok = pcall(writefile, "PluginHealthCheck.txt", reportText)
+            HealthCheckInfo.Text = ok and "Clipboard tidak tersedia. Laporan disimpan ke PluginHealthCheck.txt." or "Gagal menyalin dan menyimpan laporan."
+        else
+            HealthCheckInfo.Text = "Clipboard/file export tidak didukung executor ini."
+        end
+    end)
 
     local function addDevMenuOption(titleText, descText, onClickCallback)
         local OptionBtn = Instance.new("TextButton")
