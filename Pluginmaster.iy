@@ -1,38 +1,39 @@
 -- Plugin Manager - Infinite Yield bootstrap plugin
 -- Load this file with Infinite Yield's ;addplugin command.
--- The actual plugin definition and hub command are maintained in Stable.lua.
+-- The hub itself is launched directly from Main.lua on the experimental Beta branch.
 
-local STABLE_PLUGIN_URL =
-    "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/Stable.lua"
+local MAIN_URL =
+    "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/Main.lua"
 
-local success, result = pcall(function()
-    local source = game:HttpGet(STABLE_PLUGIN_URL)
-    if type(source) ~= "string" or source == "" then
-        error("Stable.lua kosong atau gagal diunduh.")
-    end
+local Plugin = {
+    ["PluginName"] = "Plugin Manager (Beta)",
+    ["PluginDescription"] = "Membuka Plugin Manager Hub eksperimen dari Main.lua branch Beta.",
+    ["Commands"] = {
+        ["hub"] = {
+            ["ListName"] = "hub / masterhub",
+            ["Description"] = "Membuka Plugin Manager Hub versi eksperimen.",
+            ["Aliases"] = {"masterhub"},
+            ["Function"] = function(args, speaker)
+                local success, err = pcall(function()
+                    local source = game:HttpGet(MAIN_URL)
+                    if type(source) ~= "string" or source == "" then
+                        error("Main.lua Beta kosong atau gagal diunduh.")
+                    end
 
-    local chunk, compileError = loadstring(source, "PluginManager/Stable.lua")
-    if type(chunk) ~= "function" then
-        error("Gagal compile Stable.lua: " .. tostring(compileError))
-    end
+                    local chunk, compileError = loadstring(source, "PluginManager/Beta/Main.lua")
+                    if type(chunk) ~= "function" then
+                        error("Gagal compile Main.lua Beta: " .. tostring(compileError))
+                    end
 
-    local plugin = chunk()
-    if type(plugin) ~= "table" then
-        error("Stable.lua tidak mengembalikan plugin table.")
-    end
+                    chunk()
+                end)
 
-    if type(plugin.Commands) ~= "table"
-        or type(plugin.Commands.hub) ~= "table"
-        or type(plugin.Commands.hub.Function) ~= "function" then
-        error("Command hub tidak ditemukan di Stable.lua.")
-    end
+                if not success then
+                    warn("[Plugin Manager Beta] Gagal menjalankan Main.lua: " .. tostring(err))
+                end
+            end
+        }
+    }
+}
 
-    return plugin
-end)
-
-if not success then
-    warn("[Plugin Manager] Gagal memuat Stable.lua: " .. tostring(result))
-    error(result)
-end
-
-return result
+return Plugin
