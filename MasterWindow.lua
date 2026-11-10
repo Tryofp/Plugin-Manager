@@ -1101,7 +1101,12 @@ return function(speaker)
             local files = collectUpdateCheckerFiles()
             if #files == 0 then
                 addUpdateCheckerRow("Loader tidak tersedia", "Tidak ada source yang bisa diperiksa.", "ERROR")
-                errors = 1
+                UpdateCheckerInfo.Text = "Tidak ada source yang bisa diperiksa."
+                UpdateCheckerScanBtn.Text = "CEK ULANG"
+                UpdateCheckerScanBtn.Active = true
+                UpdateCheckerBaselineBtn.Active = false
+                updateScanRunning = false
+                return
             end
 
             -- Unduh source secara paralel agar tidak menunggu 21 request satu per satu.
@@ -1142,7 +1147,6 @@ return function(speaker)
                         fingerprint = (fingerprint * 131 + string.byte(source, byteIndex)) % 2147483647
                     end
                     local latestFingerprint = "content:" .. tostring(#source) .. ":" .. tostring(fingerprint)
-                    checked = checked + 1
                     updateScanResults[fileInfo.path] = {
                         sha = latestFingerprint,
                         name = fileInfo.name
