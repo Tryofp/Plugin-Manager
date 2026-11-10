@@ -3311,7 +3311,8 @@ return function(speaker)
         if isCurrentlyInSubMenu and currentSubMenuTitle then
             for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
                 for _, menuItem in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
-                    if menuItem.Name == currentSubMenuTitle and menuItem.SubFeatures then
+                    if (not currentSubMenuTabName or tabInfo.Name == currentSubMenuTabName)
+                        and menuItem.Name == currentSubMenuTitle and menuItem.SubFeatures then
                         showSubMenu(menuItem.Name, menuItem.RawUrl, menuItem.SubFeatures, tabInfo.Name)
                         return
                     end
