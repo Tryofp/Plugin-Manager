@@ -3013,11 +3013,13 @@ return function(speaker)
                                     end)
                                 else
                                     error("Command function tidak ditemukan: " .. tostring(targetCmd))
+                                else
+                                    error("Modul plugin tidak memiliki tabel Commands: " .. tostring(subFeat.Name))
                                 end
                             end
                         end, function(err) return debug.traceback(tostring(err), 2) end)
                                 if not commandOk then
-                                    reportPluginRuntimeError(subFeat.Name, isUnexec and (subFeat.UnCmd or subFeat.Cmd) or subFeat.Cmd, targetRaw, commandErr)
+                                    reportPluginRuntimeError(subFeat.Name, isUnexec and (subFeat.UnCmd or subFeat.Cmd) or subFeat.Cmd, subRawUrl, commandErr)
                                 end
 
                         local hasUnCmd = (subFeat.UnCmd and subFeat.UnCmd ~= "")
@@ -3286,6 +3288,8 @@ return function(speaker)
                                     end)
                                 else
                                     error("Command function tidak ditemukan: " .. tostring(targetCmd))
+                                else
+                                    error("Modul plugin tidak memiliki tabel Commands: " .. tostring(item.Name))
                                 end
                                 end
                             end, function(err) return debug.traceback(tostring(err), 2) end)
