@@ -379,7 +379,7 @@ return function(speaker)
             error("Gagal compile plugin: " .. tostring(compileError))
         end
         local module = compiled()
-        loadedModuleFingerprints[rawUrl] = getPluginSourceFingerprint(source)
+        loadedModuleFingerprints[tostring(rawUrl):match("^[^?]+") or tostring(rawUrl)] = getPluginSourceFingerprint(source)
         return module
     end
 
