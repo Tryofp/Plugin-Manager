@@ -357,6 +357,7 @@ return function(speaker)
 
     -- ==========================================================
     local loadedModules = {}
+    local loadedPluginVersionShas = {}
     -- PUBLIC VERSION HISTORY (STABLE ONLY)
     -- Every source starts at V0.1 from this rollout baseline.
     -- Later commits affecting that exact file on stable increment it.
@@ -442,6 +443,7 @@ return function(speaker)
         for cacheKey in pairs(loadedModules) do
             if getPluginSourcePath(cacheKey) == path then loadedModules[cacheKey] = nil end
         end
+        loadedPluginVersionShas[path] = nil
     end
 
     local function isLegacyUpdateBadge(feature)
@@ -601,6 +603,8 @@ return function(speaker)
                 local latestSha = tostring(commits[1] and commits[1].sha or "")
                 stableLatestShaCache[path] = latestSha
                 local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
+                local loadedSha = loadedPluginVersionShas[path]
+                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
                 setStableUpdateVisible(selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha)
 
                 info.Text = displayName .. " • " .. tostring(totalVersions) .. " versi • stable"
@@ -645,14 +649,15 @@ return function(speaker)
                     detail.TextXAlignment = Enum.TextXAlignment.Left
                     detail.Parent = row
 
-                    if sha == selectedSha then
+                    if sha == currentSha or sha == selectedSha then
                         local current = Instance.new("TextLabel")
                         current.Size = UDim2.new(0, 54, 0, 12)
                         current.Position = UDim2.new(1, -60, 0, 2)
                         current.BackgroundTransparency = 1
                         current.Font = Enum.Font.GothamBold
-                        current.Text = "DIPAKAI"
-                        current.TextColor3 = Color3.fromRGB(100, 235, 155)
+                        current.Text = sha == currentSha and loadedSha ~= nil and "DIPAKAI" or "DIPILIH"
+                        current.TextColor3 = sha == currentSha and loadedSha ~= nil
+                            and Color3.fromRGB(100, 235, 155) or Color3.fromRGB(125, 195, 245)
                         current.TextSize = 7
                         current.Parent = row
                     end
@@ -724,6 +729,10 @@ return function(speaker)
             error("Gagal compile plugin: " .. tostring(compileError))
         end
         local module = compiled()
+        local sourcePath = getPluginSourcePath(rawUrl)
+        if sourcePath then
+            loadedPluginVersionShas[sourcePath] = selectedPluginVersions[sourcePath] or "__STABLE_LATEST__"
+        end
         loadedModuleFingerprints[tostring(resolvedUrl):match("^[^?]+") or tostring(resolvedUrl)] = getPluginSourceFingerprint(source)
         loadedModuleFingerprints[tostring(rawUrl):match("^[^?]+") or tostring(rawUrl)] = getPluginSourceFingerprint(source)
         return module
