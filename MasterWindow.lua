@@ -461,7 +461,7 @@ return function(speaker)
 
     local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel)
         local path = getPluginSourcePath(rawUrl)
-        if not path or not VERSION_HISTORY_BASELINES[path] then return end
+        if not path then return end
 
         local arrow = Instance.new("TextButton")
         arrow.Name = "PublicVersionHistoryToggle"
@@ -585,6 +585,10 @@ return function(speaker)
                         end
                     end
                     if foundBaseline or #decoded < 100 then break end
+                end
+
+                if not baselineSha and #commits > 0 then
+                    baselineSha = tostring(commits[#commits].sha or "")
                 end
 
                 local baselineIndex
