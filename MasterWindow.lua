@@ -486,7 +486,7 @@ return function(speaker)
         arrow.Name = "PublicVersionHistoryToggle"
         arrow.Size = UDim2.new(0, 20, 0, 20)
         arrow.AnchorPoint = Vector2.new(0, 0)
-        arrow.Position = UDim2.new(1, -26, 0, 3)
+        arrow.Position = UDim2.new(1, -26, 0, 10)
         arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
         arrow.BackgroundTransparency = 0.1
         arrow.BorderSizePixel = 0
@@ -3763,7 +3763,7 @@ return function(speaker)
             local ExecSub = Instance.new("TextButton")
             ExecSub.Size = UDim2.new(0, subHasHistory and 68 or 75, 0, 24)
             ExecSub.AnchorPoint = Vector2.new(0, 0.5)
-            ExecSub.Position = UDim2.new(1, subHasHistory and -104 or -80, 0.5, 0)
+            ExecSub.Position = UDim2.new(1, subHasHistory and -96 or -80, 0.5, 0)
             ExecSub.BorderSizePixel = 0
             ExecSub.Text = featureStates[uniqueKey] and "UNEXECUTE" or "EXECUTE"
             ExecSub.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -4038,7 +4038,7 @@ return function(speaker)
                 local OpenBtn = Instance.new("TextButton")
                 OpenBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
                 OpenBtn.AnchorPoint = Vector2.new(0, 0.5)
-                OpenBtn.Position = UDim2.new(1, itemHasHistory and -104 or -80, 0.5, 0)
+                OpenBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
                 OpenBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
                 OpenBtn.BackgroundTransparency = 0.2
                 OpenBtn.BorderSizePixel = 0
@@ -4058,7 +4058,7 @@ return function(speaker)
                 local ExecBtn = Instance.new("TextButton")
                 ExecBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
                 ExecBtn.AnchorPoint = Vector2.new(0, 0.5)
-                ExecBtn.Position = UDim2.new(1, itemHasHistory and -104 or -80, 0.5, 0)
+                ExecBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
                 ExecBtn.BorderSizePixel = 0
                 ExecBtn.BackgroundTransparency = 0.2
                 ExecBtn.Font = Enum.Font.GothamBold
