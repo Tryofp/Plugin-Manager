@@ -356,6 +356,40 @@ return function(speaker)
 
     local loadedModules = {}
 
+    -- Anonymous, non-blocking runtime reports. Detached plugin tasks may not be attributable.
+    local runtimeErrorLastSent = {}
+    local function reportPluginRuntimeError(pluginName, commandName, sourceUrl, errorMessage)
+        local plugin = tostring(pluginName or "Unknown Plugin"):sub(1, 120)
+        local command = tostring(commandName or "Unknown Command"):sub(1, 100)
+        local source = tostring(sourceUrl or ""):sub(1, 500)
+        local errText = tostring(errorMessage or "Unknown runtime error"):sub(1, 1500)
+        local fingerprint = plugin .. "|" .. command .. "|" .. errText
+        local now = os.clock()
+        if runtimeErrorLastSent[fingerprint] and now - runtimeErrorLastSent[fingerprint] < 60 then return end
+        runtimeErrorLastSent[fingerprint] = now
+
+        task.spawn(function()
+            pcall(function()
+                local req = request or http_request or (syn and syn.request)
+                if type(req) ~= "function" then return end
+                local body = HttpService:JSONEncode({
+                    Type = "PluginRuntimeError",
+                    Plugin = plugin,
+                    Command = command,
+                    Source = source,
+                    Error = errText,
+                    PlaceId = tostring(game.PlaceId)
+                })
+                req({
+                    Url = SHEETS_WEB_APP_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = body
+                })
+            end)
+        end)
+    end
+
     local oldCore = CoreGui:FindFirstChild("MasterPluginHub")
     if oldCore then oldCore:Destroy() end
 
@@ -2948,7 +2982,7 @@ return function(speaker)
 
                 ExecSub.MouseButton1Click:Connect(function()
                     local function runCommand(customArgs, isUnexec)
-                        pcall(function()
+                        local commandOk, commandErr = xpcall(function()
                             local targetRaw = subRawUrl
                             if not loadedModules[targetRaw] then
                                 loadedModules[targetRaw] = loadstring(game:HttpGet(targetRaw))()
@@ -2972,9 +3006,19 @@ return function(speaker)
                                         end
                                     end
                                 end
-                                if foundFunc then task.spawn(function() foundFunc(customArgs or {}, speaker) end) end
+                                if foundFunc then
+                                    task.spawn(function()
+                                        local ok, err = xpcall(function() foundFunc(customArgs or {}, speaker) end, function(e) return debug.traceback(tostring(e), 2) end)
+                                        if not ok then reportPluginRuntimeError(subFeat.Name, isUnexec and (subFeat.UnCmd or subFeat.Cmd) or subFeat.Cmd, targetRaw, err) end
+                                    end)
+                                else
+                                    error("Command function tidak ditemukan: " .. tostring(targetCmd))
+                                end
                             end
-                        end)
+                        end, function(err) return debug.traceback(tostring(err), 2) end)
+                                if not commandOk then
+                                    reportPluginRuntimeError(subFeat.Name, isUnexec and (subFeat.UnCmd or subFeat.Cmd) or subFeat.Cmd, targetRaw, commandErr)
+                                end
 
                         local hasUnCmd = (subFeat.UnCmd and subFeat.UnCmd ~= "")
                             or string.lower(tostring(subFeat.Cmd or "")) == "ws"
@@ -3219,7 +3263,7 @@ return function(speaker)
 
                     ExecBtn.MouseButton1Click:Connect(function()
                         local function runDirectCommand(customArgs, isUnexec)
-                            pcall(function()
+                            local commandOk, commandErr = xpcall(function()
                                 if not loadedModules[item.RawUrl] then
                                     loadedModules[item.RawUrl] = loadstring(game:HttpGet(item.RawUrl))()
                                 end
@@ -3235,9 +3279,19 @@ return function(speaker)
                                             end
                                         end
                                     end
-                                    if foundFunc then task.spawn(function() foundFunc(customArgs or {}, speaker) end) end
+                                    if foundFunc then
+                                    task.spawn(function()
+                                        local ok, err = xpcall(function() foundFunc(customArgs or {}, speaker) end, function(e) return debug.traceback(tostring(e), 2) end)
+                                        if not ok then reportPluginRuntimeError(item.Name, isUnexec and (item.UnCmd or item.Cmd) or item.Cmd, item.RawUrl, err) end
+                                    end)
+                                else
+                                    error("Command function tidak ditemukan: " .. tostring(targetCmd))
                                 end
-                            end)
+                                end
+                            end, function(err) return debug.traceback(tostring(err), 2) end)
+                                if not commandOk then
+                                    reportPluginRuntimeError(item.Name, isUnexec and (item.UnCmd or item.Cmd) or item.Cmd, item.RawUrl, commandErr)
+                                end
 
                             local hasUnCmd = item.UnCmd and item.UnCmd ~= ""
                             if hasUnCmd then
