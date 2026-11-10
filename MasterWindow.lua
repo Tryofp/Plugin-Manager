@@ -409,14 +409,17 @@ return function(speaker)
     end
     loadSelectedPluginVersions()
 
+    local function getPluginSourceBranch(rawUrl)
+        local url = tostring(rawUrl or "")
+        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/([^/]+)/")
+            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/([^/]+)/")
+            or "main"
+    end
+
     local function getPluginSourcePath(rawUrl)
         local url = tostring(rawUrl or "")
-        -- Handle modern GitHub raw URLs with refs/heads/<branch>/..., including Beta.
-        -- The branch name is exactly one segment; do not mistake "heads/Beta" for the file path.
         local branchPath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/[^/]+/(.+)")
         if branchPath then return branchPath end
-
-        -- Backward compatibility for legacy raw URLs: /<branch>/<file path>.
         return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
     end
 
@@ -552,7 +555,7 @@ return function(speaker)
             else
                 task.spawn(function()
                     local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=main&per_page=1"
+                        .. path .. "&sha=" .. getPluginSourceBranch(rawUrl) .. "&per_page=1"
                     local ok, response = requestGitHubWithRetry(checkUrl, 3)
                     if not ok then return end
                     local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
@@ -642,7 +645,7 @@ return function(speaker)
                 while not foundBaseline and not history.complete and history.nextPage <= 10 do
                     local page = history.nextPage
                     local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=main&per_page=100&page=" .. tostring(page)
+                        .. path .. "&sha=" .. getPluginSourceBranch(rawUrl) .. "&per_page=100&page=" .. tostring(page)
                     local ok, response = requestGitHubWithRetry(apiUrl, 3)
                     if not ok or type(response) ~= "string" or response == "" then
                         loadWarning = "GitHub belum merespons setelah 3 percobaan. Riwayat yang sudah diterima tetap ditampilkan; tekan panah lagi untuk mencoba ulang."
@@ -670,7 +673,30 @@ return function(speaker)
                 end
 
                 local commits = history.commits
-                if not baselineSha and #commits > 0 then
+                local usedStaticManifest = false
+                if #commits == 0 then
+                    -- Fallback statis dari GitHub Raw: tidak membutuhkan GitHub REST API.
+                    local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/"
+                        .. getPluginSourceBranch(rawUrl) .. "/VersionManifest.json"
+                    local manifestOk, manifestResponse = pcall(function() return game:HttpGet(manifestUrl) end)
+                    if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
+                        local manifestDecodeOk, manifest = pcall(function() return HttpService:JSONDecode(manifestResponse) end)
+                        local item = manifestDecodeOk and type(manifest) == "table" and manifest[path]
+                        if type(item) == "table" and type(item.sha) == "string" and #item.sha >= 7 then
+                            commits = {{
+                                sha = item.sha,
+                                commit = {
+                                    message = item.message or "Versi terbaru (manifest)",
+                                    author = { date = item.date or "Tanggal tidak tersedia" }
+                                }
+                            }}
+                            usedStaticManifest = true
+                            stableLatestShaCache[path] = item.sha
+                        end
+                    end
+                    if #commits > 0 then history.commits = commits end
+                end
+                if not baselineSha and #commits > 0 and not usedStaticManifest then
                     baselineSha = tostring(commits[#commits].sha or "")
                     history.complete = true
                 end
@@ -686,7 +712,14 @@ return function(speaker)
                 end
 
                 if #commits == 0 then
-                    info.Text = "Riwayat versi belum tersedia"
+                    local activeSha = loadedPluginVersionShas[path]
+                    if activeSha == "__STABLE_LATEST__" then
+                        info.Text = displayName .. " • versi branch aktif"
+                    elseif type(activeSha) == "string" and #activeSha >= 7 then
+                        info.Text = displayName .. " • aktif " .. activeSha:sub(1, 7)
+                    else
+                        info.Text = displayName .. " • versi aktif tidak teridentifikasi"
+                    end
                     if loadWarning then
                         warningLabel.Text = loadWarning
                         warningLabel.Visible = true
@@ -705,11 +738,18 @@ return function(speaker)
                 local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
                 setStableUpdateVisible(selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha)
 
-                info.Text = baselineIndex
-                    and (displayName .. " • " .. tostring(totalVersions) .. " versi • stable")
-                    or (displayName .. " • commit terbaru • stable")
+                info.Text = usedStaticManifest
+                    and (displayName .. " • versi manifest " .. getPluginSourceBranch(rawUrl))
+                    or (baselineIndex
+                        and (displayName .. " • " .. tostring(totalVersions) .. " versi • " .. getPluginSourceBranch(rawUrl))
+                        or (displayName .. " • commit terbaru • " .. getPluginSourceBranch(rawUrl)))
                 if loadWarning then
-                    warningLabel.Text = loadWarning
+                    warningLabel.Text = usedStaticManifest
+                        and "API GitHub tidak merespons. Menampilkan versi terbaru dari manifest statis."
+                        or loadWarning
+                    warningLabel.Visible = true
+                elseif usedStaticManifest then
+                    warningLabel.Text = "Riwayat lengkap sementara tidak tersedia; versi terbaru tetap bisa dikenali."
                     warningLabel.Visible = true
                 end
                 for index = 1, math.min(12, #commits) do
@@ -718,7 +758,7 @@ return function(speaker)
                     local commitData = entry.commit or {}
                     local author = commitData.author or {}
                     local versionNumber = totalVersions - index + 1
-                    local versionName = baselineIndex and ("V0." .. tostring(versionNumber)) or ("Commit #" .. tostring(index))
+                    local versionName = usedStaticManifest and "Versi terbaru" or (baselineIndex and ("V0." .. tostring(versionNumber)) or ("Commit #" .. tostring(index)))
                     local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
                     if #message > 58 then message = message:sub(1, 55) .. "..." end
 
@@ -756,13 +796,13 @@ return function(speaker)
                     detail.ZIndex = row.ZIndex + 1
                     detail.Parent = row
 
-                    if sha == currentSha or sha == selectedSha then
+                    if usedStaticManifest or sha == currentSha or sha == selectedSha then
                         local current = Instance.new("TextLabel")
                         current.Size = UDim2.new(0, 54, 0, 12)
                         current.Position = UDim2.new(1, -60, 0, 2)
                         current.BackgroundTransparency = 1
                         current.Font = Enum.Font.GothamBold
-                        current.Text = sha == currentSha and loadedSha ~= nil and "DIPAKAI" or "DIPILIH"
+                        current.Text = (sha == currentSha or (usedStaticManifest and loadedSha == "__STABLE_LATEST__")) and loadedSha ~= nil and "DIPAKAI" or "DIPILIH"
                         current.TextColor3 = sha == currentSha and loadedSha ~= nil
                             and Color3.fromRGB(100, 235, 155) or Color3.fromRGB(125, 195, 245)
                         current.TextSize = 7
