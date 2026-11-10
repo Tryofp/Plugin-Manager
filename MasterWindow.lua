@@ -535,21 +535,30 @@ return function(speaker)
             task.defer(refreshBadgeUI)
         end
     end
-    -- If a parent card has no RawUrl but all of its subfeatures share one source,
-    -- expose one history control on the parent instead of duplicating it per child.
-    local function getSharedSubFeatureSourceUrl(subFeatures, fallbackUrl)
+    -- A parent with mixed child sources uses its most common source for the parent
+    -- history arrow. Other source files keep their own arrows inside the submenu.
+    local function getPrimarySubFeatureSourceUrl(subFeatures, fallbackUrl)
         if type(subFeatures) ~= "table" then return nil end
-        local sharedPath, sharedUrl
+        local counts, urls, firstSeen = {}, {}, {}
         for _, feature in ipairs(subFeatures) do
             local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or fallbackUrl
             local featurePath = getPluginSourcePath(featureUrl)
             if featurePath then
-                if sharedPath and sharedPath ~= featurePath then return nil end
-                sharedPath = featurePath
-                sharedUrl = sharedUrl or featureUrl
+                if not counts[featurePath] then
+                    counts[featurePath] = 0
+                    urls[featurePath] = featureUrl
+                    table.insert(firstSeen, featurePath)
+                end
+                counts[featurePath] = counts[featurePath] + 1
             end
         end
-        return sharedUrl
+        local bestPath, bestCount
+        for _, path in ipairs(firstSeen) do
+            if not bestCount or counts[path] > bestCount then
+                bestPath, bestCount = path, counts[path]
+            end
+        end
+        return bestPath and urls[bestPath] or nil
     end
 
     local function getResolvedPluginUrl(rawUrl)
@@ -651,7 +660,10 @@ return function(speaker)
 
     local function getUserFacingBadgeText(feature)
         local badgeText = string.lower(tostring(feature and feature.BadgeText or "new"))
-        if string.find(badgeText, "update", 1, true) then return "UPDATE!" end
+        -- UPDATE! is reserved for a newly promoted stable source commit.
+        -- Loader metadata may describe an older Beta-side change and must not
+        -- independently create a stable release badge.
+        if string.find(badgeText, "update", 1, true) then return nil end
         if string.find(badgeText, "new", 1, true) then return "NEW!" end
         return nil
     end
@@ -690,14 +702,15 @@ return function(speaker)
             updateDot.Name = "VersionUpdateDot"
             updateDot.Size = UDim2.new(0, 10, 0, 10)
             updateDot.AnchorPoint = Vector2.new(0.5, 0.5)
-            updateDot.Position = UDim2.new(1, -2, 0, 2)
+            -- Center the dot directly above the arrow, not at the card's far corner.
+            updateDot.Position = UDim2.new(0.5, 0, 0, -4)
             updateDot.BackgroundTransparency = 1
             updateDot.Font = Enum.Font.GothamBold
             updateDot.Text = "•"
             updateDot.TextColor3 = Color3.fromRGB(70, 255, 135)
             updateDot.TextSize = 17
             updateDot.ZIndex = arrow.ZIndex + 2
-            updateDot.Parent = card
+            updateDot.Parent = arrow
             applyBlinkAnimation(updateDot)
         end
 
@@ -3989,7 +4002,7 @@ return function(speaker)
         end)
 
         local parentSourcePath = getPluginSourcePath(rawUrl)
-            or getPluginSourcePath(getSharedSubFeatureSourceUrl(subFeatures, rawUrl))
+            or getPluginSourcePath(getPrimarySubFeatureSourceUrl(subFeatures, rawUrl))
         local subSourcePaths, subPathSeen = {}, {}
         for _, feature in ipairs(subFeatures) do
             local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or rawUrl
@@ -4270,7 +4283,7 @@ return function(speaker)
             local uniqueKey = tostring(item.RawUrl or "") .. "_" .. tostring(item.Cmd or item.Name)
             local historyRawUrl = item.RawUrl
             if (not historyRawUrl or historyRawUrl == "") and item.SubFeatures and #item.SubFeatures > 0 then
-                historyRawUrl = getSharedSubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
+                historyRawUrl = getPrimarySubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
             end
             local itemSourcePath = getPluginSourcePath(historyRawUrl)
             local itemHasHistory = false
