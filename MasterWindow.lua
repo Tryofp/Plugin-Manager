@@ -3013,9 +3013,9 @@ return function(speaker)
                                     end)
                                 else
                                     error("Command function tidak ditemukan: " .. tostring(targetCmd))
-                                else
-                                    error("Modul plugin tidak memiliki tabel Commands: " .. tostring(subFeat.Name))
                                 end
+                            else
+                                error("Modul plugin tidak memiliki tabel Commands: " .. tostring(subFeat.Name))
                             end
                         end, function(err) return debug.traceback(tostring(err), 2) end)
                                 if not commandOk then
@@ -3286,11 +3286,11 @@ return function(speaker)
                                         local ok, err = xpcall(function() foundFunc(customArgs or {}, speaker) end, function(e) return debug.traceback(tostring(e), 2) end)
                                         if not ok then reportPluginRuntimeError(item.Name, isUnexec and (item.UnCmd or item.Cmd) or item.Cmd, item.RawUrl, err) end
                                     end)
-                                else
-                                    error("Command function tidak ditemukan: " .. tostring(targetCmd))
+                                    else
+                                        error("Command function tidak ditemukan: " .. tostring(targetCmd))
+                                    end
                                 else
                                     error("Modul plugin tidak memiliki tabel Commands: " .. tostring(item.Name))
-                                end
                                 end
                             end, function(err) return debug.traceback(tostring(err), 2) end)
                                 if not commandOk then
