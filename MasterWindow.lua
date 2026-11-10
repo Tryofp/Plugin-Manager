@@ -386,6 +386,10 @@ return function(speaker)
         ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
     }
 
+    -- Manually assigned stable release per plugin path. Set the exact commit SHA when approved.
+    -- Example: VERSION_HISTORY_STABLE["Plugin/Waypoint"] = "<40-character-commit-sha>"
+    local VERSION_HISTORY_STABLE = {}
+
     local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
     local VERSION_PROFILE_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_versions.json"
     local selectedPluginVersions = {}
@@ -608,73 +612,6 @@ return function(speaker)
         arrow.Parent = card
         Instance.new("UICorner", arrow).CornerRadius = UDim.new(0, 4)
 
-        local updateBadge = Instance.new("TextLabel")
-        updateBadge.Name = "StableUpdateBadge"
-        updateBadge.Size = UDim2.new(0, 48, 0, 13)
-        updateBadge.AnchorPoint = Vector2.new(1, 0)
-        updateBadge.Position = UDim2.new(1, -160, 0, 5)
-        updateBadge.BackgroundTransparency = 1
-        updateBadge.Font = Enum.Font.GothamBold
-        updateBadge.Text = "UPDATE!"
-        updateBadge.TextColor3 = Color3.fromRGB(80, 235, 145)
-        updateBadge.TextSize = 8
-        updateBadge.Visible = false
-        updateBadge.Parent = card
-        local function setStableUpdateVisible(visible)
-            updateBadge.Visible = visible == true
-            if updateBadge.Visible and nameLabel then
-                local measured = TextService:GetTextSize(tostring(displayName), 11, Enum.Font.GothamBold, Vector2.new(220, 20)).X
-                local safeX = math.min(8 + measured + 4, math.max(8, card.AbsoluteSize.X - 212))
-                updateBadge.AnchorPoint = Vector2.new(0, 0)
-                updateBadge.Position = UDim2.new(0, safeX, 0, 5)
-            end
-        end
-
-        -- Only users pinned to an older SHA need an UPDATE! check.
-        local savedVersionSha = tostring(selectedPluginVersions[path] or "")
-        if savedVersionSha ~= "" then
-            local cachedLatest = stableLatestShaCache[path]
-            if cachedLatest then
-                setStableUpdateVisible(cachedLatest ~= savedVersionSha)
-            else
-                task.spawn(function()
-                    local sourceBranch = getPluginSourceBranch(rawUrl)
-                    local latestSha = nil
-
-                    -- Primary: GitHub commits API.
-                    local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=" .. sourceBranch .. "&per_page=1"
-                    local ok, response = requestGitHubWithRetry(checkUrl, 3)
-                    if ok then
-                        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-                        if decodeOk and type(decoded) == "table" and decoded[1] then
-                            latestSha = tostring(decoded[1].sha or "")
-                        end
-                    end
-
-                    -- Fallback: static manifest on the same source branch; no REST API required.
-                    if not latestSha or latestSha == "" then
-                        local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/"
-                            .. sourceBranch .. "/VersionManifest.json"
-                        local manifestOk, manifestResponse = pcall(function() return game:HttpGet(manifestUrl) end)
-                        if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
-                            local manifestDecodeOk, manifest = pcall(function()
-                                return HttpService:JSONDecode(manifestResponse)
-                            end)
-                            if manifestDecodeOk and type(manifest) == "table" and type(manifest[path]) == "table" then
-                                latestSha = tostring(manifest[path].sha or "")
-                            end
-                        end
-                    end
-
-                    if latestSha and latestSha ~= "" then
-                        stableLatestShaCache[path] = latestSha
-                        if card.Parent then setStableUpdateVisible(latestSha ~= savedVersionSha) end
-                    end
-                end)
-            end
-        end
-
         local panel
         local expanded = false
         local function refreshPanel()
@@ -844,7 +781,6 @@ return function(speaker)
                 local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
                 local loadedSha = loadedPluginVersionShas[path]
                 local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
-                setStableUpdateVisible(selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha)
 
                 info.Text = usedStaticManifest
                     and (displayName .. " • versi manifest " .. getPluginSourceBranch(rawUrl))
@@ -884,7 +820,16 @@ return function(speaker)
                     versionLabel.Position = UDim2.new(0, 6, 0, 2)
                     versionLabel.BackgroundTransparency = 1
                     versionLabel.Font = Enum.Font.GothamBold
-                    versionLabel.Text = versionName .. " • " .. message
+                    local isLatestVersion = index == 1
+                    local isUpdateAvailable = isLatestVersion
+                        and selectedPluginVersions[path] ~= nil
+                        and selectedSha ~= latestSha
+                    local isStableVersion = tostring(VERSION_HISTORY_STABLE[path] or "") ~= ""
+                        and sha == tostring(VERSION_HISTORY_STABLE[path])
+                    local versionBadges = ""
+                    if isUpdateAvailable then versionBadges = versionBadges .. "  UPDATE!" end
+                    if isStableVersion then versionBadges = versionBadges .. "  Stable!" end
+                    versionLabel.Text = versionName .. versionBadges .. " • " .. message
                     versionLabel.TextColor3 = Color3.fromRGB(225, 235, 245)
                     versionLabel.TextSize = 8
                     versionLabel.TextXAlignment = Enum.TextXAlignment.Left
