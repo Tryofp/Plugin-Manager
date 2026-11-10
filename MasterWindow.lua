@@ -1110,9 +1110,27 @@ return function(speaker)
             local completed, nextIndex = 0, 0
             local workerCount = math.min(4, #files)
 
+            local downloadRequest = request or http_request or (syn and syn.request)
             local function checkOneFile(fileInfo)
                 local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/main/" .. fileInfo.path
-                local rawOk, source = pcall(function() return game:HttpGet(rawUrl) end)
+                local rawOk, source
+                if type(downloadRequest) == "function" then
+                    rawOk, source = pcall(function()
+                        local response = downloadRequest({
+                            Url = rawUrl,
+                            Method = "GET",
+                            Timeout = 12
+                        })
+                        if not response then error("Tidak ada respons dari server") end
+                        local statusCode = tonumber(response.StatusCode or response.Status or 0)
+                        if statusCode ~= 200 then
+                            error("HTTP " .. tostring(statusCode) .. ": " .. string.sub(tostring(response.Body or response.StatusMessage or ""), 1, 70))
+                        end
+                        return response.Body
+                    end)
+                else
+                    rawOk, source = pcall(function() return game:HttpGet(rawUrl) end)
+                end
 
                 if not rawOk or type(source) ~= "string" or source == "" then
                     errors = errors + 1
@@ -1153,8 +1171,8 @@ return function(speaker)
 
                         local fileInfo = files[index]
                         UpdateCheckerInfo.Text = string.format(
-                            "Mengunduh source %d/%d • %s",
-                            completed + 1, #files, fileInfo.name
+                            "Mengunduh paralel • %d/%d selesai • %s",
+                            completed, #files, fileInfo.name
                         )
 
                         local ok, err = pcall(checkOneFile, fileInfo)
