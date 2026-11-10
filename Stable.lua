@@ -1,16 +1,12 @@
--- Plugin Manager - Direct Loadstring Entry Point
--- This file is independent from the Infinite Yield .iy plugin.
--- It loads the same MasterWindow.lua and Loader.lua used by the legacy plugin.
+-- Plugin Manager - Stable Infinite Yield Plugin
+-- This file is designed to be loaded by Infinite Yield's plugin system.
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
-local LocalPlayer = Players.LocalPlayer
-
 local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/stable/"
 local MASTER_WINDOW_URL = BASE_URL .. "MasterWindow.lua"
 local LOADER_URL = BASE_URL .. "Loader.lua"
-
 local STORAGE_FILE = "MasterPluginHub_NewTracker.json"
 
 local function fetchAndRun(url, chunkName)
@@ -56,7 +52,6 @@ local function backgroundSyncTimestamps()
                 end
 
                 local uniqueKey = rawUrl .. "_" .. tostring(customTs)
-
                 if not userSeenTimestamps[uniqueKey] then
                     userSeenTimestamps[uniqueKey] = {
                         ScriptTime = tostring(customTs),
@@ -97,31 +92,42 @@ local function backgroundSyncTimestamps()
     end)
 end
 
-local function StartHub()
-    if not LocalPlayer then
-        warn("[Plugin Manager] LocalPlayer belum tersedia.")
-        return
-    end
+local Plugin = {
+    ["PluginName"] = "Plugin Manager Stable",
+    ["PluginDescription"] = "Membuka Plugin Manager Hub dari branch stable.",
+    ["Commands"] = {
+        ["hub"] = {
+            ["ListName"] = "hub / masterhub",
+            ["Description"] = "Membuka jendela utama Plugin Manager Hub versi stable",
+            ["Aliases"] = {"masterhub"},
+            ["Function"] = function(args, speaker)
+                local targetPlayer = speaker or Players.LocalPlayer
+                if not targetPlayer then
+                    warn("[Plugin Manager] LocalPlayer belum tersedia.")
+                    return
+                end
 
-    -- Timestamp sync berjalan di background agar pembukaan UI tidak tertahan.
-    backgroundSyncTimestamps()
+                backgroundSyncTimestamps()
 
-    local success, err = pcall(function()
-        local runWindow = fetchAndRun(
-            MASTER_WINDOW_URL,
-            "PluginManager/MasterWindow.lua"
-        )
+                local success, err = pcall(function()
+                    local runWindow = fetchAndRun(
+                        MASTER_WINDOW_URL,
+                        "PluginManager/MasterWindow.lua"
+                    )
 
-        if type(runWindow) ~= "function" then
-            error("MasterWindow.lua tidak mengembalikan function.")
-        end
+                    if type(runWindow) ~= "function" then
+                        error("MasterWindow.lua tidak mengembalikan function.")
+                    end
 
-        runWindow(LocalPlayer)
-    end)
+                    runWindow(targetPlayer)
+                end)
 
-    if not success then
-        warn("[Plugin Manager] Gagal membuka Hub: " .. tostring(err))
-    end
-end
+                if not success then
+                    warn("[Plugin Manager] Gagal membuka Hub: " .. tostring(err))
+                end
+            end
+        }
+    }
+}
 
-StartHub()
+return Plugin
