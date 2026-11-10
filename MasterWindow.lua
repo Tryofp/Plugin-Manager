@@ -443,10 +443,6 @@ return function(speaker)
         return rawUrl
     end
 
-    local stableLatestShaCache = {}
-    -- Cache paginated history by source path so retries resume at the failed page.
-    local stableHistoryCache = {}
-
     -- Retry short-lived GitHub/API interruptions without duplicating cached commits.
     local function requestGitHubWithRetry(url, attempts)
         attempts = math.max(1, tonumber(attempts) or 3)
@@ -487,297 +483,6 @@ return function(speaker)
     local function isLegacyUpdateBadge(feature)
         local badgeText = string.lower(tostring(feature and feature.BadgeText or ""))
         return string.find(badgeText, "update", 1, true) ~= nil
-    end
-
-    local function updateHistoryCanvas(scroll)
-        if not scroll then return end
-        local layout = scroll:FindFirstChildOfClass("UIListLayout")
-        if layout then
-            scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
-        end
-    end
-
-    local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel)
-        local path = getPluginSourcePath(rawUrl)
-        if not path then return end
-
-        local arrow = Instance.new("TextButton")
-        arrow.Name = "PublicVersionHistoryToggle"
-        arrow.Size = UDim2.new(0, 20, 0, 20)
-        arrow.AnchorPoint = Vector2.new(1, 0.5)
-        -- Keep the toggle anchored to the original feature row when the history panel expands.
-        arrow.Position = UDim2.new(1, -8, 0, baseHeight / 2)
-        arrow.ZIndex = (card.ZIndex or 1) + 5
-        arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
-        arrow.BackgroundTransparency = 0.1
-        arrow.BorderSizePixel = 0
-        arrow.Font = Enum.Font.GothamBold
-        arrow.Text = "v"
-        arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
-        arrow.TextSize = 14
-        arrow.Parent = card
-        Instance.new("UICorner", arrow).CornerRadius = UDim.new(0, 4)
-
-        local updateBadge = Instance.new("TextLabel")
-        updateBadge.Name = "StableUpdateBadge"
-        updateBadge.Size = UDim2.new(0, 48, 0, 13)
-        updateBadge.AnchorPoint = Vector2.new(1, 0)
-        updateBadge.Position = UDim2.new(1, -160, 0, 5)
-        updateBadge.BackgroundTransparency = 1
-        updateBadge.Font = Enum.Font.GothamBold
-        updateBadge.Text = "UPDATE!"
-        updateBadge.TextColor3 = Color3.fromRGB(80, 235, 145)
-        updateBadge.TextSize = 8
-        updateBadge.Visible = false
-        updateBadge.Parent = card
-        local function setStableUpdateVisible(visible)
-            updateBadge.Visible = visible == true
-            if updateBadge.Visible and nameLabel then
-                local measured = TextService:GetTextSize(tostring(displayName), 11, Enum.Font.GothamBold, Vector2.new(220, 20)).X
-                local safeX = math.min(8 + measured + 4, math.max(8, card.AbsoluteSize.X - 212))
-                updateBadge.AnchorPoint = Vector2.new(0, 0)
-                updateBadge.Position = UDim2.new(0, safeX, 0, 5)
-            end
-        end
-
-        -- Only users pinned to an older SHA need an UPDATE! check.
-        local savedVersionSha = tostring(selectedPluginVersions[path] or "")
-        if savedVersionSha ~= "" then
-            local cachedLatest = stableLatestShaCache[path]
-            if cachedLatest then
-                setStableUpdateVisible(cachedLatest ~= savedVersionSha)
-            else
-                task.spawn(function()
-                    local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=main&per_page=1"
-                    local ok, response = requestGitHubWithRetry(checkUrl, 3)
-                    if not ok then return end
-                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-                    if decodeOk and type(decoded) == "table" and decoded[1] then
-                        stableLatestShaCache[path] = tostring(decoded[1].sha or "")
-                        if card.Parent then setStableUpdateVisible(stableLatestShaCache[path] ~= savedVersionSha) end
-                    end
-                end)
-            end
-        end
-
-        local panel
-        local expanded = false
-        local function refreshPanel()
-            if panel then panel:Destroy() panel = nil end
-            panel = Instance.new("Frame")
-            panel.Name = "PublicVersionHistoryPanel"
-            panel.Position = UDim2.new(0, 6, 0, baseHeight)
-            panel.Size = UDim2.new(1, -12, 0, 148)
-            panel.BackgroundColor3 = Color3.fromRGB(16, 23, 33)
-            panel.BackgroundTransparency = 0.08
-            panel.BorderSizePixel = 0
-            panel.ZIndex = math.max(1, (card.ZIndex or 1) + 1)
-            panel.Parent = card
-            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 5)
-
-            local info = Instance.new("TextLabel")
-            info.Size = UDim2.new(1, -12, 0, 18)
-            info.Position = UDim2.new(0, 6, 0, 3)
-            info.BackgroundTransparency = 1
-            info.Font = Enum.Font.GothamBold
-            info.Text = "Memuat riwayat stable..."
-            info.TextColor3 = Color3.fromRGB(220, 235, 250)
-            info.TextSize = 10
-            info.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-            info.TextStrokeTransparency = 0.65
-            info.TextXAlignment = Enum.TextXAlignment.Left
-            info.Parent = panel
-
-            local historyScroll = Instance.new("ScrollingFrame")
-            historyScroll.Name = "VersionRows"
-            historyScroll.Position = UDim2.new(0, 5, 0, 23)
-            historyScroll.Size = UDim2.new(1, -10, 1, -28)
-            historyScroll.BackgroundTransparency = 1
-            historyScroll.BorderSizePixel = 0
-            historyScroll.ScrollBarThickness = 3
-            historyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-            historyScroll.Parent = panel
-
-            local rowsLayout = Instance.new("UIListLayout")
-            rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            rowsLayout.Padding = UDim.new(0, 4)
-            rowsLayout.Parent = historyScroll
-
-            local baselineSha = VERSION_HISTORY_BASELINES[path]
-            task.spawn(function()
-                local history = stableHistoryCache[path]
-                if not history then
-                    history = { commits = {}, nextPage = 1, complete = false }
-                    stableHistoryCache[path] = history
-                end
-                local loadWarning = nil
-                local foundBaseline = false
-                for _, entry in ipairs(history.commits) do
-                    if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
-                end
-
-                while not foundBaseline and not history.complete and history.nextPage <= 10 do
-                    local page = history.nextPage
-                    local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=main&per_page=100&page=" .. tostring(page)
-                    local ok, response = requestGitHubWithRetry(apiUrl, 3)
-                    if not ok or type(response) ~= "string" or response == "" then
-                        loadWarning = "GitHub belum merespons setelah 3 percobaan. Riwayat yang sudah diterima tetap ditampilkan; tekan panah lagi untuk mencoba ulang."
-                        break
-                    end
-                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-                    if not decodeOk or type(decoded) ~= "table" or decoded.message then
-                        loadWarning = "GitHub membatasi atau gagal merespons. Riwayat yang sudah diterima tetap ditampilkan; buka ulang untuk mencoba lagi."
-                        break
-                    end
-                    local knownShas = {}
-                    for _, cachedEntry in ipairs(history.commits) do
-                        knownShas[tostring(cachedEntry.sha or "")] = true
-                    end
-                    for _, entry in ipairs(decoded) do
-                        local entrySha = tostring(entry.sha or "")
-                        if entrySha ~= "" and not knownShas[entrySha] then
-                            table.insert(history.commits, entry)
-                            knownShas[entrySha] = true
-                        end
-                        if entrySha == baselineSha then foundBaseline = true break end
-                    end
-                    history.nextPage = page + 1
-                    if foundBaseline or #decoded < 100 then history.complete = true break end
-                end
-
-                local commits = history.commits
-                if not baselineSha and #commits > 0 then
-                    baselineSha = tostring(commits[#commits].sha or "")
-                    history.complete = true
-                end
-
-                local baselineIndex
-                for index, entry in ipairs(commits) do
-                    if tostring(entry.sha or "") == baselineSha then baselineIndex = index break end
-                end
-                if not baselineIndex and not loadWarning then
-                    loadWarning = history.complete
-                        and "Baseline V0.1 tidak ditemukan di riwayat stable."
-                        or "Baseline belum terjangkau. Commit terbaru tetap ditampilkan; buka ulang untuk melanjutkan."
-                end
-
-                if #commits == 0 then
-                    info.Text = loadWarning or "Riwayat stable belum tersedia. Coba buka lagi."
-                    return
-                end
-
-                local totalVersions = baselineIndex or #commits
-                local latestSha = tostring(commits[1] and commits[1].sha or "")
-                stableLatestShaCache[path] = latestSha
-                local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
-                local loadedSha = loadedPluginVersionShas[path]
-                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
-                setStableUpdateVisible(selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha)
-
-                info.Text = baselineIndex
-                    and (displayName .. " • " .. tostring(totalVersions) .. " versi • stable")
-                    or (displayName .. " • commit terbaru • stable")
-                if loadWarning then info.Text = info.Text .. " | " .. loadWarning end
-                for index = 1, math.min(12, #commits) do
-                    local entry = commits[index]
-                    local sha = tostring(entry.sha or "")
-                    local commitData = entry.commit or {}
-                    local author = commitData.author or {}
-                    local versionNumber = totalVersions - index + 1
-                    local versionName = baselineIndex and ("V0." .. tostring(versionNumber)) or ("Commit #" .. tostring(index))
-                    local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
-                    if #message > 58 then message = message:sub(1, 55) .. "..." end
-
-                    local row = Instance.new("Frame")
-                    row.Size = UDim2.new(1, -3, 0, 39)
-                    row.BackgroundColor3 = Color3.fromRGB(31, 43, 58)
-                    row.BackgroundTransparency = 0.08
-                    row.BorderSizePixel = 0
-                    row.ZIndex = panel.ZIndex + 1
-                    row.Parent = historyScroll
-                    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-
-                    local versionLabel = Instance.new("TextLabel")
-                    versionLabel.Size = UDim2.new(1, -68, 0, 16)
-                    versionLabel.Position = UDim2.new(0, 6, 0, 2)
-                    versionLabel.BackgroundTransparency = 1
-                    versionLabel.Font = Enum.Font.GothamBold
-                    versionLabel.Text = versionName .. " • " .. message
-                    versionLabel.TextColor3 = Color3.fromRGB(225, 235, 245)
-                    versionLabel.TextSize = 8
-                    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-                    versionLabel.TextTruncate = Enum.TextTruncate.AtEnd
-                    versionLabel.ZIndex = row.ZIndex + 1
-                    versionLabel.Parent = row
-
-                    local detail = Instance.new("TextLabel")
-                    detail.Size = UDim2.new(1, -68, 0, 13)
-                    detail.Position = UDim2.new(0, 6, 0, 20)
-                    detail.BackgroundTransparency = 1
-                    detail.Font = Enum.Font.Gotham
-                    detail.Text = tostring(author.date or "Tanggal tidak tersedia") .. " • " .. sha:sub(1, 7)
-                    detail.TextColor3 = Color3.fromRGB(135, 160, 185)
-                    detail.TextSize = 7
-                    detail.TextXAlignment = Enum.TextXAlignment.Left
-                    detail.ZIndex = row.ZIndex + 1
-                    detail.Parent = row
-
-                    if sha == currentSha or sha == selectedSha then
-                        local current = Instance.new("TextLabel")
-                        current.Size = UDim2.new(0, 54, 0, 12)
-                        current.Position = UDim2.new(1, -60, 0, 2)
-                        current.BackgroundTransparency = 1
-                        current.Font = Enum.Font.GothamBold
-                        current.Text = sha == currentSha and loadedSha ~= nil and "DIPAKAI" or "DIPILIH"
-                        current.TextColor3 = sha == currentSha and loadedSha ~= nil
-                            and Color3.fromRGB(100, 235, 155) or Color3.fromRGB(125, 195, 245)
-                        current.TextSize = 7
-                        current.ZIndex = row.ZIndex + 1
-                        current.Parent = row
-                    end
-
-                    local choose = Instance.new("TextButton")
-                    choose.Size = UDim2.new(0, 54, 0, 19)
-                    choose.Position = UDim2.new(1, -60, 0, 18)
-                    choose.BackgroundColor3 = Color3.fromRGB(35, 105, 150)
-                    choose.BorderSizePixel = 0
-                    choose.Font = Enum.Font.GothamBold
-                    choose.Text = "PILIH"
-                    choose.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    choose.TextSize = 8
-                    choose.ZIndex = row.ZIndex + 1
-                    choose.Parent = row
-                    Instance.new("UICorner", choose).CornerRadius = UDim.new(0, 4)
-                    choose.MouseButton1Click:Connect(function()
-                        selectedPluginVersions[path] = sha
-                        saveSelectedPluginVersions()
-                        -- Keep an active module cached so its UNEXECUTE command can still clean up.
-                        -- Inactive modules are invalidated immediately and use the selected SHA next time.
-                        clearPluginModuleCache(path)
-                        info.Text = versionName .. " dipilih. Jalankan ulang fitur untuk memuat source ini."
-                        refreshPanel()
-                    end)
-                end
-                updateHistoryCanvas(historyScroll)
-            end)
-        end
-
-        arrow.MouseButton1Click:Connect(function()
-            expanded = not expanded
-            if expanded then
-                arrow.Text = "^"
-                refreshPanel()
-                card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
-            else
-                arrow.Text = "v"
-                if panel then panel:Destroy() panel = nil end
-                card.Size = UDim2.new(1, 0, 0, baseHeight)
-            end
-            task.defer(function() updateHistoryCanvas(scrollContainer) end)
-        end)
-        return true
     end
 
     local loadedModuleFingerprints = {}
@@ -3764,26 +3469,10 @@ return function(speaker)
             LblDesc.Size = UDim2.new(1, -118, 0, descHeight)
             Item.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
-            local subHasHistory = false
-            if subSourcePath and not allSubFeaturesShareParentSource then
-                local firstSubPath = true
-                for priorIndex = 1, subEntry.index - 1 do
-                    local prior = subFeatures[priorIndex]
-                    local priorUrl = (prior.RawUrl and prior.RawUrl ~= "") and prior.RawUrl or rawUrl
-                    if getPluginSourcePath(priorUrl) == subSourcePath then
-                        firstSubPath = false
-                        break
-                    end
-                end
-                if firstSubPath and subSourcePath ~= parentSourcePath then
-                    subHasHistory = attachPublicVersionHistory(Item, SubScroll, subRawUrl, tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName) == true
-                end
-            end
-
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -122 or -104, 0.5, 0)
+            SubFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
             SubFavoriteBtn.BackgroundTransparency = 1
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
@@ -3798,9 +3487,9 @@ return function(speaker)
             end)
 
             local ExecSub = Instance.new("TextButton")
-            ExecSub.Size = UDim2.new(0, subHasHistory and 68 or 75, 0, 24)
+            ExecSub.Size = UDim2.new(0, 75, 0, 24)
             ExecSub.AnchorPoint = Vector2.new(0, 0.5)
-            ExecSub.Position = UDim2.new(1, subHasHistory and -96 or -80, 0.5, 0)
+            ExecSub.Position = UDim2.new(1, -80, 0.5, 0)
             ExecSub.BorderSizePixel = 0
             ExecSub.Text = featureStates[uniqueKey] and "UNEXECUTE" or "EXECUTE"
             ExecSub.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -3953,8 +3642,6 @@ return function(speaker)
             if (not historyRawUrl or historyRawUrl == "") and item.SubFeatures and #item.SubFeatures > 0 then
                 historyRawUrl = getSharedSubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
             end
-            local itemSourcePath = getPluginSourcePath(historyRawUrl)
-            local itemHasHistory = false
             local badgeKey = getFeatureBadgeKey(item, uniqueKey)
             local timestamp = item.UpdateTimestamp or ""
             local activeBadgeText = item.BadgeText or "New!"
@@ -4042,20 +3729,16 @@ return function(speaker)
             DescLabel.TextWrapped = true
             DescLabel.Parent = ItemFrame
 
-            local descWidth = math.max(120, ItemFrame.AbsoluteSize.X - (itemSourcePath and 166 or 126))
-            local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(descWidth, 10000))
+            local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(174, 10000))
             local descHeight = math.max(14, textBounds.Y + 5)
-            DescLabel.Size = UDim2.new(1, itemSourcePath and -158 or -118, 0, descHeight)
+            DescLabel.Size = UDim2.new(1, -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
-            if itemSourcePath then
-                itemHasHistory = attachPublicVersionHistory(ItemFrame, targetParentScroll, historyRawUrl, tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel) == true
-            end
 
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -122 or -104, 0.5, 0)
+            MenuFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
             MenuFavoriteBtn.BackgroundTransparency = 1
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
@@ -4074,9 +3757,9 @@ return function(speaker)
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 local OpenBtn = Instance.new("TextButton")
-                OpenBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
+                OpenBtn.Size = UDim2.new(0, 75, 0, 24)
                 OpenBtn.AnchorPoint = Vector2.new(0, 0.5)
-                OpenBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
+                OpenBtn.Position = UDim2.new(1, -80, 0.5, 0)
                 OpenBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
                 OpenBtn.BackgroundTransparency = 0.2
                 OpenBtn.BorderSizePixel = 0
@@ -4094,9 +3777,9 @@ return function(speaker)
                 if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
                 local ExecBtn = Instance.new("TextButton")
-                ExecBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
+                ExecBtn.Size = UDim2.new(0, 75, 0, 24)
                 ExecBtn.AnchorPoint = Vector2.new(0, 0.5)
-                ExecBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
+                ExecBtn.Position = UDim2.new(1, -80, 0.5, 0)
                 ExecBtn.BorderSizePixel = 0
                 ExecBtn.BackgroundTransparency = 0.2
                 ExecBtn.Font = Enum.Font.GothamBold
