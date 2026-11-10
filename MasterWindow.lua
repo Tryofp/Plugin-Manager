@@ -410,9 +410,10 @@ return function(speaker)
 
     local function getPluginSourcePath(rawUrl)
         local url = tostring(rawUrl or "")
-        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)")
+        local stablePath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)")
             or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)")
-            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/([%w%-]+%x?)/(.+)")
+        if stablePath then return stablePath end
+        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
     end
 
     local function getResolvedPluginUrl(rawUrl)
@@ -423,6 +424,8 @@ return function(speaker)
         end
         return rawUrl
     end
+
+    local stableLatestShaCache = {}
 
     local function isLegacyUpdateBadge(feature)
         local badgeText = string.lower(tostring(feature and feature.BadgeText or ""))
@@ -472,16 +475,22 @@ return function(speaker)
         -- Only users pinned to an older SHA need an UPDATE! check.
         local savedVersionSha = tostring(selectedPluginVersions[path] or "")
         if savedVersionSha ~= "" then
-            task.spawn(function()
-                local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                    .. path .. "&sha=stable&per_page=1"
-                local ok, response = pcall(function() return game:HttpGet(checkUrl) end)
-                if not ok or type(response) ~= "string" then return end
-                local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-                if decodeOk and type(decoded) == "table" and decoded[1] and card.Parent then
-                    updateBadge.Visible = tostring(decoded[1].sha or "") ~= savedVersionSha
-                end
-            end)
+            local cachedLatest = stableLatestShaCache[path]
+            if cachedLatest then
+                updateBadge.Visible = cachedLatest ~= savedVersionSha
+            else
+                task.spawn(function()
+                    local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
+                        .. path .. "&sha=stable&per_page=1"
+                    local ok, response = pcall(function() return game:HttpGet(checkUrl) end)
+                    if not ok or type(response) ~= "string" then return end
+                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                    if decodeOk and type(decoded) == "table" and decoded[1] then
+                        stableLatestShaCache[path] = tostring(decoded[1].sha or "")
+                        if card.Parent then updateBadge.Visible = stableLatestShaCache[path] ~= savedVersionSha end
+                    end
+                end)
+            end
         end
 
         local panel
@@ -564,6 +573,7 @@ return function(speaker)
 
                 local totalVersions = baselineIndex
                 local latestSha = tostring(commits[1] and commits[1].sha or "")
+                stableLatestShaCache[path] = latestSha
                 local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
                 updateBadge.Visible = selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha
 
