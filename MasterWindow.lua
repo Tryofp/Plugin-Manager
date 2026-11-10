@@ -416,7 +416,7 @@ return function(speaker)
         detail.BackgroundTransparency = 1
         detail.Font = Enum.Font.Gotham
         detail.Text = tostring(pluginName) .. " / " .. tostring(commandName)
-            .. "\nSource stable berubah. Muat ulang Hub untuk memakai versi terbaru."
+            .. "\nSource stable berubah. Muat ulang source untuk mencoba versi terbaru."
         detail.TextColor3 = Color3.fromRGB(205, 215, 228)
         detail.TextSize = 8
         detail.TextWrapped = true
