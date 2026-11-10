@@ -354,6 +354,297 @@ return function(speaker)
         return favoritePlugins[key] == true
     end
 
+
+    -- ==========================================================
+    -- PUBLIC VERSION HISTORY (STABLE ONLY)
+    -- Every source starts at V0.1 from this rollout baseline.
+    -- Later commits affecting that exact file on stable increment it.
+    -- ==========================================================
+    local VERSION_HISTORY_BASELINES = {
+        ["Plugin/Interactable"] = "fce4275585d4547c07d136e93d56ec0b56eac776",
+        ["Plugin/colorESP"] = "e8ede9f6b9be9b9db8cdd652767a8519c1a9d0e5",
+        ["Plugin/Waypoint"] = "502b56c9511d7cef29bc198e1d3415a4a8a19e0d",
+        ["Plugin/PlayerTeleport"] = "d74ac425926ba70324bc40320f5cd2b6c16ebc8a",
+        ["Plugin/SoundandView"] = "75f89f5110440e0c9958d8f4cd10c902597c7641",
+        ["Plugin/MusicTimeML"] = "f16aad35ed0383eb81b88b3e99a7384e103a15ab",
+        ["Plugin/TPitem"] = "f132f123e65c2b0a546dca769042d29360ee3717",
+        ["Tools/clickinspector"] = "3e1845a2e48c2f2f272c2ccf223ccd39c1195277",
+        ["Tools/AntiAFK"] = "dab262ab6542bbcae55fa2158efae02f81e76f1a",
+        ["Plugin/LastRejoin"] = "c279773579cde6d858870f4755d4d58ef6d352c8",
+        ["Plugin/SmartRejoin"] = "431bf62301241d39ec0245df9150846e0be8c19b",
+        ["Plugin/SimpleAimbot"] = "59f0f72f4f409c34c4527fddbcc6316de7513349",
+        ["Plugin/F1Lock"] = "49453083033b894ec6df776ec5fc7b369498c624",
+        ["Tools/AntiEffect"] = "fb8b8f928a8a28d11dacd10fd1ea1c86d52c9cd8",
+        ["Tools/Fullbright"] = "a6c65cc72ac51da8af544b3eaba59b1b193bee86",
+        ["Tools/InstanPrompt"] = "79d1be4f87c503d73342beefbed0c42bff56614f",
+        ["Tools/WalkSpeed"] = "e48fe3690404492011ae4c803e6c7130d508f71d",
+        ["Tools/InfiniteJump"] = "76721c6781e1571528d177f519b382efe47dd78a",
+        ["Tools/AdminDetect"] = "c05cd9b7fab156cdbe04bf9fb4b77e3e20ae1994",
+        ["Tools/Noclip"] = "cdb525f8413b898315c9a9d7ebe56aed19957d03",
+        ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
+    }
+
+    local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
+    local VERSION_PROFILE_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_versions.json"
+    local selectedPluginVersions = {}
+    local function loadSelectedPluginVersions()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
+        local ok, exists = pcall(isfile, VERSION_PROFILE_FILE)
+        if not ok or not exists then return end
+        local readOk, raw = pcall(readfile, VERSION_PROFILE_FILE)
+        if not readOk or type(raw) ~= "string" or raw == "" then return end
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if decodeOk and type(decoded) == "table" then selectedPluginVersions = decoded end
+    end
+    local function saveSelectedPluginVersions()
+        if type(writefile) ~= "function" then return end
+        if type(makefolder) == "function" then
+            pcall(makefolder, "PluginManager")
+            pcall(makefolder, VERSION_PROFILE_FOLDER)
+        end
+        local ok, encoded = pcall(function() return HttpService:JSONEncode(selectedPluginVersions) end)
+        if ok and type(encoded) == "string" then pcall(writefile, VERSION_PROFILE_FILE, encoded) end
+    end
+    loadSelectedPluginVersions()
+
+    local function getPluginSourcePath(rawUrl)
+        local url = tostring(rawUrl or "")
+        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)")
+            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)")
+            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/([%w%-]+%x?)/(.+)")
+    end
+
+    local function getResolvedPluginUrl(rawUrl)
+        local path = getPluginSourcePath(rawUrl)
+        local selectedSha = path and tostring(selectedPluginVersions[path] or "") or ""
+        if selectedSha ~= "" and #selectedSha >= 7 then
+            return "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/" .. selectedSha .. "/" .. path
+        end
+        return rawUrl
+    end
+
+    local function isLegacyUpdateBadge(feature)
+        local badgeText = string.lower(tostring(feature and feature.BadgeText or ""))
+        return string.find(badgeText, "update", 1, true) ~= nil
+    end
+
+    local function updateHistoryCanvas(scroll)
+        if not scroll then return end
+        local layout = scroll:FindFirstChildOfClass("UIListLayout")
+        if layout then
+            scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
+        end
+    end
+
+    local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel)
+        local path = getPluginSourcePath(rawUrl)
+        if not path or not VERSION_HISTORY_BASELINES[path] then return end
+
+        local arrow = Instance.new("TextButton")
+        arrow.Name = "PublicVersionHistoryToggle"
+        arrow.Size = UDim2.new(0, 20, 0, 20)
+        arrow.AnchorPoint = Vector2.new(0, 0)
+        arrow.Position = UDim2.new(1, -136, 0, 3)
+        arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
+        arrow.BackgroundTransparency = 0.1
+        arrow.BorderSizePixel = 0
+        arrow.Font = Enum.Font.GothamBold
+        arrow.Text = "⌄"
+        arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
+        arrow.TextSize = 14
+        arrow.Parent = card
+        Instance.new("UICorner", arrow).CornerRadius = UDim.new(0, 4)
+
+        local updateBadge = Instance.new("TextLabel")
+        updateBadge.Name = "StableUpdateBadge"
+        updateBadge.Size = UDim2.new(0, 48, 0, 13)
+        updateBadge.AnchorPoint = Vector2.new(1, 0)
+        updateBadge.Position = UDim2.new(1, -160, 0, 5)
+        updateBadge.BackgroundTransparency = 1
+        updateBadge.Font = Enum.Font.GothamBold
+        updateBadge.Text = "UPDATE!"
+        updateBadge.TextColor3 = Color3.fromRGB(80, 235, 145)
+        updateBadge.TextSize = 8
+        updateBadge.Visible = false
+        updateBadge.Parent = card
+
+        local panel
+        local expanded = false
+        local function refreshPanel()
+            if panel then panel:Destroy() panel = nil end
+            panel = Instance.new("Frame")
+            panel.Name = "PublicVersionHistoryPanel"
+            panel.Position = UDim2.new(0, 6, 0, baseHeight)
+            panel.Size = UDim2.new(1, -12, 0, 148)
+            panel.BackgroundColor3 = Color3.fromRGB(16, 23, 33)
+            panel.BackgroundTransparency = 0.08
+            panel.BorderSizePixel = 0
+            panel.Parent = card
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 5)
+
+            local info = Instance.new("TextLabel")
+            info.Size = UDim2.new(1, -12, 0, 18)
+            info.Position = UDim2.new(0, 6, 0, 3)
+            info.BackgroundTransparency = 1
+            info.Font = Enum.Font.GothamBold
+            info.Text = "Memuat riwayat stable..."
+            info.TextColor3 = Color3.fromRGB(150, 190, 220)
+            info.TextSize = 8
+            info.TextXAlignment = Enum.TextXAlignment.Left
+            info.Parent = panel
+
+            local historyScroll = Instance.new("ScrollingFrame")
+            historyScroll.Name = "VersionRows"
+            historyScroll.Position = UDim2.new(0, 5, 0, 23)
+            historyScroll.Size = UDim2.new(1, -10, 1, -28)
+            historyScroll.BackgroundTransparency = 1
+            historyScroll.BorderSizePixel = 0
+            historyScroll.ScrollBarThickness = 3
+            historyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            historyScroll.Parent = panel
+
+            local rowsLayout = Instance.new("UIListLayout")
+            rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            rowsLayout.Padding = UDim.new(0, 4)
+            rowsLayout.Parent = historyScroll
+
+            local baselineSha = VERSION_HISTORY_BASELINES[path]
+            task.spawn(function()
+                local commits, foundBaseline = {}, false
+                for page = 1, 10 do
+                    local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
+                        .. path .. "&sha=stable&per_page=100&page=" .. tostring(page)
+                    local ok, response = pcall(function() return game:HttpGet(apiUrl) end)
+                    if not ok or type(response) ~= "string" or response == "" then
+                        info.Text = "GitHub tidak dapat dihubungi. Coba buka lagi."
+                        return
+                    end
+                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                    if not decodeOk or type(decoded) ~= "table" or decoded.message then
+                        info.Text = "Riwayat stable tidak tersedia."
+                        return
+                    end
+                    for _, entry in ipairs(decoded) do
+                        table.insert(commits, entry)
+                        if tostring(entry.sha or "") == baselineSha then
+                            foundBaseline = true
+                            break
+                        end
+                    end
+                    if foundBaseline or #decoded < 100 then break end
+                end
+
+                local baselineIndex
+                for index, entry in ipairs(commits) do
+                    if tostring(entry.sha or "") == baselineSha then
+                        baselineIndex = index
+                        break
+                    end
+                end
+                if not baselineIndex then
+                    info.Text = "Baseline V0.1 tidak ditemukan di riwayat stable."
+                    return
+                end
+
+                local totalVersions = baselineIndex
+                local latestSha = tostring(commits[1] and commits[1].sha or "")
+                local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
+                updateBadge.Visible = selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha
+
+                info.Text = displayName .. " • " .. tostring(totalVersions) .. " versi • stable"
+                for index = 1, math.min(12, totalVersions) do
+                    local entry = commits[index]
+                    local sha = tostring(entry.sha or "")
+                    local commitData = entry.commit or {}
+                    local author = commitData.author or {}
+                    local versionNumber = totalVersions - index + 1
+                    local versionName = "V0." .. tostring(versionNumber)
+                    local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
+                    if #message > 58 then message = message:sub(1, 55) .. "..." end
+
+                    local row = Instance.new("Frame")
+                    row.Size = UDim2.new(1, -3, 0, 39)
+                    row.BackgroundColor3 = Color3.fromRGB(31, 43, 58)
+                    row.BackgroundTransparency = 0.08
+                    row.BorderSizePixel = 0
+                    row.Parent = historyScroll
+                    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+                    local versionLabel = Instance.new("TextLabel")
+                    versionLabel.Size = UDim2.new(1, -68, 0, 16)
+                    versionLabel.Position = UDim2.new(0, 6, 0, 2)
+                    versionLabel.BackgroundTransparency = 1
+                    versionLabel.Font = Enum.Font.GothamBold
+                    versionLabel.Text = versionName .. " • " .. message
+                    versionLabel.TextColor3 = Color3.fromRGB(225, 235, 245)
+                    versionLabel.TextSize = 8
+                    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    versionLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                    versionLabel.Parent = row
+
+                    local detail = Instance.new("TextLabel")
+                    detail.Size = UDim2.new(1, -68, 0, 13)
+                    detail.Position = UDim2.new(0, 6, 0, 20)
+                    detail.BackgroundTransparency = 1
+                    detail.Font = Enum.Font.Gotham
+                    detail.Text = tostring(author.date or "Tanggal tidak tersedia") .. " • " .. sha:sub(1, 7)
+                    detail.TextColor3 = Color3.fromRGB(135, 160, 185)
+                    detail.TextSize = 7
+                    detail.TextXAlignment = Enum.TextXAlignment.Left
+                    detail.Parent = row
+
+                    if sha == selectedSha then
+                        local current = Instance.new("TextLabel")
+                        current.Size = UDim2.new(0, 54, 0, 12)
+                        current.Position = UDim2.new(1, -60, 0, 2)
+                        current.BackgroundTransparency = 1
+                        current.Font = Enum.Font.GothamBold
+                        current.Text = "DIPAKAI"
+                        current.TextColor3 = Color3.fromRGB(100, 235, 155)
+                        current.TextSize = 7
+                        current.Parent = row
+                    end
+
+                    local choose = Instance.new("TextButton")
+                    choose.Size = UDim2.new(0, 54, 0, 19)
+                    choose.Position = UDim2.new(1, -60, 0, 18)
+                    choose.BackgroundColor3 = Color3.fromRGB(35, 105, 150)
+                    choose.BorderSizePixel = 0
+                    choose.Font = Enum.Font.GothamBold
+                    choose.Text = "PILIH"
+                    choose.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    choose.TextSize = 8
+                    choose.Parent = row
+                    Instance.new("UICorner", choose).CornerRadius = UDim.new(0, 4)
+                    choose.MouseButton1Click:Connect(function()
+                        selectedPluginVersions[path] = sha
+                        saveSelectedPluginVersions()
+                        for cacheKey in pairs(loadedModules) do
+                            if getPluginSourcePath(cacheKey) == path then loadedModules[cacheKey] = nil end
+                        end
+                        info.Text = versionName .. " dipilih. Jalankan ulang fitur untuk memuat source ini."
+                        refreshPanel()
+                    end)
+                end
+                updateHistoryCanvas(historyScroll)
+            end)
+        end
+
+        arrow.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            if expanded then
+                arrow.Text = "⌃"
+                refreshPanel()
+                card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
+            else
+                arrow.Text = "⌄"
+                if panel then panel:Destroy() panel = nil end
+                card.Size = UDim2.new(1, 0, 0, baseHeight)
+            end
+            task.defer(function() updateHistoryCanvas(scrollContainer) end)
+        end)
+    end
+
     local loadedModules = {}
     local loadedModuleFingerprints = {}
     local stableFixPrompted = {}
@@ -372,16 +663,17 @@ return function(speaker)
 
     -- Keep the exact source fingerprint used to create each cached module.
     local function loadPluginModule(rawUrl)
-        local source = game:HttpGet(rawUrl)
+        local resolvedUrl = getResolvedPluginUrl(rawUrl)
+        local source = game:HttpGet(resolvedUrl)
         if type(source) ~= "string" or source == "" then
-            error("Source plugin kosong atau gagal diunduh: " .. tostring(rawUrl))
+            error("Source plugin kosong atau gagal diunduh: " .. tostring(resolvedUrl))
         end
         local compiled, compileError = loadstring(source)
         if type(compiled) ~= "function" then
             error("Gagal compile plugin: " .. tostring(compileError))
         end
         local module = compiled()
-        loadedModuleFingerprints[tostring(rawUrl):match("^[^?]+") or tostring(rawUrl)] = getPluginSourceFingerprint(source)
+        loadedModuleFingerprints[tostring(resolvedUrl):match("^[^?]+") or tostring(resolvedUrl)] = getPluginSourceFingerprint(source)
         return module
     end
 
@@ -3234,6 +3526,19 @@ return function(speaker)
             currentActiveScroll.Visible = true
         end)
 
+        local parentSourcePath = getPluginSourcePath(rawUrl)
+        local subSourcePaths, subPathSeen = {}, {}
+        for _, feature in ipairs(subFeatures) do
+            local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or rawUrl
+            local featurePath = getPluginSourcePath(featureUrl)
+            if featurePath and not subPathSeen[featurePath] then
+                subPathSeen[featurePath] = true
+                table.insert(subSourcePaths, featurePath)
+            end
+        end
+        local allSubFeaturesShareParentSource = parentSourcePath ~= nil and #subSourcePaths == 1
+            and subSourcePaths[1] == parentSourcePath
+
         local orderedSubFeatures = {}
         for index, feature in ipairs(subFeatures) do
             table.insert(orderedSubFeatures, { item = feature, index = index })
@@ -3248,6 +3553,7 @@ return function(speaker)
         for _, subEntry in ipairs(orderedSubFeatures) do
             local subFeat = subEntry.item
             local subRawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or rawUrl
+            local subSourcePath = getPluginSourcePath(subRawUrl)
             local uniqueKey = tostring(subRawUrl) .. "_" .. tostring(subFeat.Cmd)
             if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
@@ -3280,7 +3586,7 @@ return function(speaker)
                 activeBadgeColor = Color3.fromRGB(255, 60, 60)
             end
 
-            if isFeatureNew(badgeKey, timestamp) or isMaintenance then
+            if (isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(subFeat)) or isMaintenance then
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
                 
@@ -3314,6 +3620,21 @@ return function(speaker)
             local descHeight = math.max(14, textBounds.Y + 5)
             LblDesc.Size = UDim2.new(1, -118, 0, descHeight)
             Item.Size = UDim2.new(1, 0, 0, descHeight + 28)
+
+            if subSourcePath and not allSubFeaturesShareParentSource then
+                local firstSubPath = true
+                for priorIndex = 1, subEntry.index - 1 do
+                    local prior = subFeatures[priorIndex]
+                    local priorUrl = (prior.RawUrl and prior.RawUrl ~= "") and prior.RawUrl or rawUrl
+                    if getPluginSourcePath(priorUrl) == subSourcePath then
+                        firstSubPath = false
+                        break
+                    end
+                end
+                if firstSubPath and subSourcePath ~= parentSourcePath then
+                    attachPublicVersionHistory(Item, SubScroll, subRawUrl, tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName)
+                end
+            end
 
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
@@ -3481,6 +3802,7 @@ return function(speaker)
             NameLabel.Parent = ItemFrame
 
             local uniqueKey = tostring(item.RawUrl or "") .. "_" .. tostring(item.Cmd or item.Name)
+            local itemSourcePath = getPluginSourcePath(item.RawUrl)
             local badgeKey = getFeatureBadgeKey(item, uniqueKey)
             local timestamp = item.UpdateTimestamp or ""
             local activeBadgeText = item.BadgeText or "New!"
@@ -3503,7 +3825,7 @@ return function(speaker)
                     if isFeatureInMaintenance(sub) then
                         hasSubMaintenance = true
                     end
-                    if isFeatureNew(subKey, subTimestamp) then
+                    if isFeatureNew(subKey, subTimestamp) and not isLegacyUpdateBadge(sub) then
                         table.insert(badgeFeatureKeys, { key = subKey, timestamp = subTimestamp })
                         if #badgeFeatureKeys == 1 then
                             activeBadgeText = sub.BadgeText or activeBadgeText
@@ -3511,7 +3833,7 @@ return function(speaker)
                         end
                     end
                 end
-            elseif isFeatureNew(badgeKey, timestamp) then
+            elseif isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(item) then
                 table.insert(badgeFeatureKeys, { key = badgeKey, timestamp = timestamp })
             end
 
@@ -3572,6 +3894,10 @@ return function(speaker)
             local descHeight = math.max(14, textBounds.Y + 5)
             DescLabel.Size = UDim2.new(1, -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
+
+            if itemSourcePath then
+                attachPublicVersionHistory(ItemFrame, targetParentScroll, item.RawUrl, tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel)
+            end
 
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
