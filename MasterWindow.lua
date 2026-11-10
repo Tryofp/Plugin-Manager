@@ -354,7 +354,674 @@ return function(speaker)
         return favoritePlugins[key] == true
     end
 
+
+    -- ==========================================================
     local loadedModules = {}
+    local loadedPluginVersionShas = {}
+    -- PUBLIC VERSION HISTORY (STABLE ONLY)
+    -- Every source starts at V0.1 from this rollout baseline.
+    -- Later commits affecting that exact file on stable increment it.
+    -- ==========================================================
+    local VERSION_HISTORY_BASELINES = {
+        ["Plugin/Interactable"] = "fce4275585d4547c07d136e93d56ec0b56eac776",
+        ["Plugin/colorESP"] = "e8ede9f6b9be9b9db8cdd652767a8519c1a9d0e5",
+        ["Plugin/Waypoint"] = "502b56c9511d7cef29bc198e1d3415a4a8a19e0d",
+        ["Plugin/PlayerTeleport"] = "d74ac425926ba70324bc40320f5cd2b6c16ebc8a",
+        ["Plugin/SoundandView"] = "75f89f5110440e0c9958d8f4cd10c902597c7641",
+        ["Plugin/MusicTimeML"] = "f16aad35ed0383eb81b88b3e99a7384e103a15ab",
+        ["Plugin/TPitem"] = "f132f123e65c2b0a546dca769042d29360ee3717",
+        ["Tools/clickinspector"] = "3e1845a2e48c2f2f272c2ccf223ccd39c1195277",
+        ["Tools/AntiAFK"] = "dab262ab6542bbcae55fa2158efae02f81e76f1a",
+        ["Plugin/LastRejoin"] = "c279773579cde6d858870f4755d4d58ef6d352c8",
+        ["Plugin/SmartRejoin"] = "431bf62301241d39ec0245df9150846e0be8c19b",
+        ["Plugin/SimpleAimbot"] = "59f0f72f4f409c34c4527fddbcc6316de7513349",
+        ["Plugin/F1Lock"] = "49453083033b894ec6df776ec5fc7b369498c624",
+        ["Tools/AntiEffect"] = "fb8b8f928a8a28d11dacd10fd1ea1c86d52c9cd8",
+        ["Tools/Fullbright"] = "a6c65cc72ac51da8af544b3eaba59b1b193bee86",
+        ["Tools/InstanPrompt"] = "79d1be4f87c503d73342beefbed0c42bff56614f",
+        ["Tools/WalkSpeed"] = "e48fe3690404492011ae4c803e6c7130d508f71d",
+        ["Tools/InfiniteJump"] = "76721c6781e1571528d177f519b382efe47dd78a",
+        ["Tools/AdminDetect"] = "c05cd9b7fab156cdbe04bf9fb4b77e3e20ae1994",
+        ["Tools/Noclip"] = "cdb525f8413b898315c9a9d7ebe56aed19957d03",
+        ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
+    }
+
+    local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
+    local VERSION_PROFILE_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_versions.json"
+    local selectedPluginVersions = {}
+    local function loadSelectedPluginVersions()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
+        local ok, exists = pcall(isfile, VERSION_PROFILE_FILE)
+        if not ok or not exists then return end
+        local readOk, raw = pcall(readfile, VERSION_PROFILE_FILE)
+        if not readOk or type(raw) ~= "string" or raw == "" then return end
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if decodeOk and type(decoded) == "table" then selectedPluginVersions = decoded end
+    end
+    local function saveSelectedPluginVersions()
+        if type(writefile) ~= "function" then return end
+        if type(makefolder) == "function" then
+            pcall(makefolder, "PluginManager")
+            pcall(makefolder, VERSION_PROFILE_FOLDER)
+        end
+        local ok, encoded = pcall(function() return HttpService:JSONEncode(selectedPluginVersions) end)
+        if ok and type(encoded) == "string" then pcall(writefile, VERSION_PROFILE_FILE, encoded) end
+    end
+    loadSelectedPluginVersions()
+
+    local function getPluginSourcePath(rawUrl)
+        local url = tostring(rawUrl or "")
+        local stablePath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
+            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
+        if stablePath then return stablePath end
+        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
+    end
+
+    -- If a parent card has no RawUrl but all of its subfeatures share one source,
+    -- expose one history control on the parent instead of duplicating it per child.
+    local function getSharedSubFeatureSourceUrl(subFeatures, fallbackUrl)
+        if type(subFeatures) ~= "table" then return nil end
+        local sharedPath, sharedUrl
+        for _, feature in ipairs(subFeatures) do
+            local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or fallbackUrl
+            local featurePath = getPluginSourcePath(featureUrl)
+            if featurePath then
+                if sharedPath and sharedPath ~= featurePath then return nil end
+                sharedPath = featurePath
+                sharedUrl = sharedUrl or featureUrl
+            end
+        end
+        return sharedUrl
+    end
+
+    local function getResolvedPluginUrl(rawUrl)
+        local path = getPluginSourcePath(rawUrl)
+        local selectedSha = path and tostring(selectedPluginVersions[path] or "") or ""
+        if selectedSha ~= "" and #selectedSha >= 7 then
+            return "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/" .. selectedSha .. "/" .. path
+        end
+        return rawUrl
+    end
+
+    local stableLatestShaCache = {}
+    -- Cache paginated history by source path so retries resume at the failed page.
+    local stableHistoryCache = {}
+
+    -- Retry short-lived GitHub/API interruptions without duplicating cached commits.
+    local function requestGitHubWithRetry(url, attempts)
+        attempts = math.max(1, tonumber(attempts) or 3)
+        local lastError = nil
+        for attempt = 1, attempts do
+            local ok, response = pcall(function()
+                return game:HttpGet(url)
+            end)
+            if ok and type(response) == "string" and response ~= "" then
+                return true, response
+            end
+            lastError = ok and "Respons GitHub kosong." or tostring(response)
+            if attempt < attempts then
+                task.wait(attempt * 1.25)
+            end
+        end
+        return false, lastError
+    end
+
+    local function isPluginSourceActive(path)
+        for featureKey, isActive in pairs(featureStates) do
+            if isActive then
+                local rawUrl = tostring(featureKey):match("^(https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^_]+)")
+                if rawUrl and getPluginSourcePath(rawUrl) == path then return true end
+            end
+        end
+        return false
+    end
+
+    local function clearPluginModuleCache(path)
+        if not path or isPluginSourceActive(path) then return end
+        for cacheKey in pairs(loadedModules) do
+            if getPluginSourcePath(cacheKey) == path then loadedModules[cacheKey] = nil end
+        end
+        loadedPluginVersionShas[path] = nil
+    end
+
+    local function isLegacyUpdateBadge(feature)
+        local badgeText = string.lower(tostring(feature and feature.BadgeText or ""))
+        return string.find(badgeText, "update", 1, true) ~= nil
+    end
+
+    local function updateHistoryCanvas(scroll)
+        if not scroll then return end
+        local layout = scroll:FindFirstChildOfClass("UIListLayout")
+        if layout then
+            scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
+        end
+    end
+
+    local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel)
+        local path = getPluginSourcePath(rawUrl)
+        if not path then return end
+
+        local arrow = Instance.new("TextButton")
+        arrow.Name = "PublicVersionHistoryToggle"
+        arrow.Size = UDim2.new(0, 20, 0, 20)
+        arrow.AnchorPoint = Vector2.new(1, 0.5)
+        -- Keep the toggle anchored to the original feature row when the history panel expands.
+        arrow.Position = UDim2.new(1, -8, 0, baseHeight / 2)
+        arrow.ZIndex = (card.ZIndex or 1) + 5
+        arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
+        arrow.BackgroundTransparency = 0.1
+        arrow.BorderSizePixel = 0
+        arrow.Font = Enum.Font.GothamBold
+        arrow.Text = "v"
+        arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
+        arrow.TextSize = 14
+        arrow.Parent = card
+        Instance.new("UICorner", arrow).CornerRadius = UDim.new(0, 4)
+
+        local updateBadge = Instance.new("TextLabel")
+        updateBadge.Name = "StableUpdateBadge"
+        updateBadge.Size = UDim2.new(0, 48, 0, 13)
+        updateBadge.AnchorPoint = Vector2.new(1, 0)
+        updateBadge.Position = UDim2.new(1, -160, 0, 5)
+        updateBadge.BackgroundTransparency = 1
+        updateBadge.Font = Enum.Font.GothamBold
+        updateBadge.Text = "UPDATE!"
+        updateBadge.TextColor3 = Color3.fromRGB(80, 235, 145)
+        updateBadge.TextSize = 8
+        updateBadge.Visible = false
+        updateBadge.Parent = card
+        local function setStableUpdateVisible(visible)
+            updateBadge.Visible = visible == true
+            if updateBadge.Visible and nameLabel then
+                local measured = TextService:GetTextSize(tostring(displayName), 11, Enum.Font.GothamBold, Vector2.new(220, 20)).X
+                local safeX = math.min(8 + measured + 4, math.max(8, card.AbsoluteSize.X - 212))
+                updateBadge.AnchorPoint = Vector2.new(0, 0)
+                updateBadge.Position = UDim2.new(0, safeX, 0, 5)
+            end
+        end
+
+        -- Only users pinned to an older SHA need an UPDATE! check.
+        local savedVersionSha = tostring(selectedPluginVersions[path] or "")
+        if savedVersionSha ~= "" then
+            local cachedLatest = stableLatestShaCache[path]
+            if cachedLatest then
+                setStableUpdateVisible(cachedLatest ~= savedVersionSha)
+            else
+                task.spawn(function()
+                    local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
+                        .. path .. "&sha=main&per_page=1"
+                    local ok, response = requestGitHubWithRetry(checkUrl, 3)
+                    if not ok then return end
+                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                    if decodeOk and type(decoded) == "table" and decoded[1] then
+                        stableLatestShaCache[path] = tostring(decoded[1].sha or "")
+                        if card.Parent then setStableUpdateVisible(stableLatestShaCache[path] ~= savedVersionSha) end
+                    end
+                end)
+            end
+        end
+
+        local panel
+        local expanded = false
+        local function refreshPanel()
+            if panel then panel:Destroy() panel = nil end
+            panel = Instance.new("Frame")
+            panel.Name = "PublicVersionHistoryPanel"
+            panel.Position = UDim2.new(0, 6, 0, baseHeight)
+            panel.Size = UDim2.new(1, -12, 0, 148)
+            panel.BackgroundColor3 = Color3.fromRGB(16, 23, 33)
+            panel.BackgroundTransparency = 0.08
+            panel.BorderSizePixel = 0
+            panel.ZIndex = math.max(1, (card.ZIndex or 1) + 1)
+            panel.Parent = card
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 5)
+
+            local info = Instance.new("TextLabel")
+            info.Size = UDim2.new(1, -12, 0, 18)
+            info.Position = UDim2.new(0, 6, 0, 3)
+            info.BackgroundTransparency = 1
+            info.Font = Enum.Font.GothamBold
+            info.Text = "Memuat riwayat stable..."
+            info.TextColor3 = Color3.fromRGB(220, 235, 250)
+            info.TextSize = 10
+            info.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            info.TextStrokeTransparency = 0.65
+            info.TextXAlignment = Enum.TextXAlignment.Left
+            info.Parent = panel
+
+            local historyScroll = Instance.new("ScrollingFrame")
+            historyScroll.Name = "VersionRows"
+            historyScroll.Position = UDim2.new(0, 5, 0, 23)
+            historyScroll.Size = UDim2.new(1, -10, 1, -28)
+            historyScroll.BackgroundTransparency = 1
+            historyScroll.BorderSizePixel = 0
+            historyScroll.ScrollBarThickness = 3
+            historyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            historyScroll.Parent = panel
+
+            local rowsLayout = Instance.new("UIListLayout")
+            rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            rowsLayout.Padding = UDim.new(0, 4)
+            rowsLayout.Parent = historyScroll
+
+            local baselineSha = VERSION_HISTORY_BASELINES[path]
+            task.spawn(function()
+                local history = stableHistoryCache[path]
+                if not history then
+                    history = { commits = {}, nextPage = 1, complete = false }
+                    stableHistoryCache[path] = history
+                end
+                local loadWarning = nil
+                local foundBaseline = false
+                for _, entry in ipairs(history.commits) do
+                    if tostring(entry.sha or "") == baselineSha then foundBaseline = true break end
+                end
+
+                while not foundBaseline and not history.complete and history.nextPage <= 10 do
+                    local page = history.nextPage
+                    local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
+                        .. path .. "&sha=main&per_page=100&page=" .. tostring(page)
+                    local ok, response = requestGitHubWithRetry(apiUrl, 3)
+                    if not ok or type(response) ~= "string" or response == "" then
+                        loadWarning = "GitHub belum merespons setelah 3 percobaan. Riwayat yang sudah diterima tetap ditampilkan; tekan panah lagi untuk mencoba ulang."
+                        break
+                    end
+                    local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                    if not decodeOk or type(decoded) ~= "table" or decoded.message then
+                        loadWarning = "GitHub membatasi atau gagal merespons. Riwayat yang sudah diterima tetap ditampilkan; buka ulang untuk mencoba lagi."
+                        break
+                    end
+                    local knownShas = {}
+                    for _, cachedEntry in ipairs(history.commits) do
+                        knownShas[tostring(cachedEntry.sha or "")] = true
+                    end
+                    for _, entry in ipairs(decoded) do
+                        local entrySha = tostring(entry.sha or "")
+                        if entrySha ~= "" and not knownShas[entrySha] then
+                            table.insert(history.commits, entry)
+                            knownShas[entrySha] = true
+                        end
+                        if entrySha == baselineSha then foundBaseline = true break end
+                    end
+                    history.nextPage = page + 1
+                    if foundBaseline or #decoded < 100 then history.complete = true break end
+                end
+
+                local commits = history.commits
+                if not baselineSha and #commits > 0 then
+                    baselineSha = tostring(commits[#commits].sha or "")
+                    history.complete = true
+                end
+
+                local baselineIndex
+                for index, entry in ipairs(commits) do
+                    if tostring(entry.sha or "") == baselineSha then baselineIndex = index break end
+                end
+                if not baselineIndex and not loadWarning then
+                    loadWarning = history.complete
+                        and "Baseline V0.1 tidak ditemukan di riwayat stable."
+                        or "Baseline belum terjangkau. Commit terbaru tetap ditampilkan; buka ulang untuk melanjutkan."
+                end
+
+                if #commits == 0 then
+                    info.Text = loadWarning or "Riwayat stable belum tersedia. Coba buka lagi."
+                    return
+                end
+
+                local totalVersions = baselineIndex or #commits
+                local latestSha = tostring(commits[1] and commits[1].sha or "")
+                stableLatestShaCache[path] = latestSha
+                local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
+                local loadedSha = loadedPluginVersionShas[path]
+                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
+                setStableUpdateVisible(selectedPluginVersions[path] ~= nil and selectedSha ~= latestSha)
+
+                info.Text = baselineIndex
+                    and (displayName .. " • " .. tostring(totalVersions) .. " versi • stable")
+                    or (displayName .. " • commit terbaru • stable")
+                if loadWarning then info.Text = info.Text .. " | " .. loadWarning end
+                for index = 1, math.min(12, #commits) do
+                    local entry = commits[index]
+                    local sha = tostring(entry.sha or "")
+                    local commitData = entry.commit or {}
+                    local author = commitData.author or {}
+                    local versionNumber = totalVersions - index + 1
+                    local versionName = baselineIndex and ("V0." .. tostring(versionNumber)) or ("Commit #" .. tostring(index))
+                    local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
+                    if #message > 58 then message = message:sub(1, 55) .. "..." end
+
+                    local row = Instance.new("Frame")
+                    row.Size = UDim2.new(1, -3, 0, 39)
+                    row.BackgroundColor3 = Color3.fromRGB(31, 43, 58)
+                    row.BackgroundTransparency = 0.08
+                    row.BorderSizePixel = 0
+                    row.ZIndex = panel.ZIndex + 1
+                    row.Parent = historyScroll
+                    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+                    local versionLabel = Instance.new("TextLabel")
+                    versionLabel.Size = UDim2.new(1, -68, 0, 16)
+                    versionLabel.Position = UDim2.new(0, 6, 0, 2)
+                    versionLabel.BackgroundTransparency = 1
+                    versionLabel.Font = Enum.Font.GothamBold
+                    versionLabel.Text = versionName .. " • " .. message
+                    versionLabel.TextColor3 = Color3.fromRGB(225, 235, 245)
+                    versionLabel.TextSize = 8
+                    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    versionLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                    versionLabel.ZIndex = row.ZIndex + 1
+                    versionLabel.Parent = row
+
+                    local detail = Instance.new("TextLabel")
+                    detail.Size = UDim2.new(1, -68, 0, 13)
+                    detail.Position = UDim2.new(0, 6, 0, 20)
+                    detail.BackgroundTransparency = 1
+                    detail.Font = Enum.Font.Gotham
+                    detail.Text = tostring(author.date or "Tanggal tidak tersedia") .. " • " .. sha:sub(1, 7)
+                    detail.TextColor3 = Color3.fromRGB(135, 160, 185)
+                    detail.TextSize = 7
+                    detail.TextXAlignment = Enum.TextXAlignment.Left
+                    detail.ZIndex = row.ZIndex + 1
+                    detail.Parent = row
+
+                    if sha == currentSha or sha == selectedSha then
+                        local current = Instance.new("TextLabel")
+                        current.Size = UDim2.new(0, 54, 0, 12)
+                        current.Position = UDim2.new(1, -60, 0, 2)
+                        current.BackgroundTransparency = 1
+                        current.Font = Enum.Font.GothamBold
+                        current.Text = sha == currentSha and loadedSha ~= nil and "DIPAKAI" or "DIPILIH"
+                        current.TextColor3 = sha == currentSha and loadedSha ~= nil
+                            and Color3.fromRGB(100, 235, 155) or Color3.fromRGB(125, 195, 245)
+                        current.TextSize = 7
+                        current.ZIndex = row.ZIndex + 1
+                        current.Parent = row
+                    end
+
+                    local choose = Instance.new("TextButton")
+                    choose.Size = UDim2.new(0, 54, 0, 19)
+                    choose.Position = UDim2.new(1, -60, 0, 18)
+                    choose.BackgroundColor3 = Color3.fromRGB(35, 105, 150)
+                    choose.BorderSizePixel = 0
+                    choose.Font = Enum.Font.GothamBold
+                    choose.Text = "PILIH"
+                    choose.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    choose.TextSize = 8
+                    choose.ZIndex = row.ZIndex + 1
+                    choose.Parent = row
+                    Instance.new("UICorner", choose).CornerRadius = UDim.new(0, 4)
+                    choose.MouseButton1Click:Connect(function()
+                        selectedPluginVersions[path] = sha
+                        saveSelectedPluginVersions()
+                        -- Keep an active module cached so its UNEXECUTE command can still clean up.
+                        -- Inactive modules are invalidated immediately and use the selected SHA next time.
+                        clearPluginModuleCache(path)
+                        info.Text = versionName .. " dipilih. Jalankan ulang fitur untuk memuat source ini."
+                        refreshPanel()
+                    end)
+                end
+                updateHistoryCanvas(historyScroll)
+            end)
+        end
+
+        arrow.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            if expanded then
+                arrow.Text = "^"
+                refreshPanel()
+                card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
+            else
+                arrow.Text = "v"
+                if panel then panel:Destroy() panel = nil end
+                card.Size = UDim2.new(1, 0, 0, baseHeight)
+            end
+            task.defer(function() updateHistoryCanvas(scrollContainer) end)
+        end)
+        return true
+    end
+
+    local loadedModuleFingerprints = {}
+    local stableFixPrompted = {}
+    local stableFixPromptActive = false
+    -- Forward declaration: the stable prompt is defined before the Health Check UI.
+    local HealthCheckInfo
+
+    -- Fingerprint is only a lightweight content comparison, not a security hash.
+    local function getPluginSourceFingerprint(source)
+        local fingerprint = 0
+        for index = 1, #source do
+            fingerprint = (fingerprint * 131 + string.byte(source, index)) % 2147483647
+        end
+        return tostring(#source) .. ":" .. tostring(fingerprint)
+    end
+
+    -- Keep the exact source fingerprint used to create each cached module.
+    local function loadPluginModule(rawUrl)
+        local resolvedUrl = getResolvedPluginUrl(rawUrl)
+        local source = game:HttpGet(resolvedUrl)
+        if type(source) ~= "string" or source == "" then
+            error("Source plugin kosong atau gagal diunduh: " .. tostring(resolvedUrl))
+        end
+        local compiled, compileError = loadstring(source)
+        if type(compiled) ~= "function" then
+            error("Gagal compile plugin: " .. tostring(compileError))
+        end
+        local module = compiled()
+        local sourcePath = getPluginSourcePath(rawUrl)
+        if sourcePath then
+            loadedPluginVersionShas[sourcePath] = selectedPluginVersions[sourcePath] or "__STABLE_LATEST__"
+        end
+        loadedModuleFingerprints[tostring(resolvedUrl):match("^[^?]+") or tostring(resolvedUrl)] = getPluginSourceFingerprint(source)
+        loadedModuleFingerprints[tostring(rawUrl):match("^[^?]+") or tostring(rawUrl)] = getPluginSourceFingerprint(source)
+        return module
+    end
+
+    local function showStableFixPrompt(pluginName, commandName, sourceUrl, latestSource)
+        if stableFixPromptActive then return end
+        local gui = CoreGui:FindFirstChild("MasterPluginHub")
+        if not gui then return end
+
+        stableFixPromptActive = true
+        local prompt = Instance.new("Frame")
+        prompt.Name = "StableFixAvailablePrompt"
+        prompt.Size = UDim2.new(0, 248, 0, 112)
+        prompt.Position = UDim2.new(0.5, -124, 0.5, -56)
+        prompt.BackgroundColor3 = Color3.fromRGB(25, 33, 45)
+        prompt.BorderSizePixel = 0
+        prompt.ZIndex = 100
+        prompt.Parent = gui
+        Instance.new("UICorner", prompt).CornerRadius = UDim.new(0, 7)
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, -16, 0, 22)
+        title.Position = UDim2.new(0, 8, 0, 6)
+        title.BackgroundTransparency = 1
+        title.Font = Enum.Font.GothamBold
+        title.Text = "PERBAIKAN STABLE TERSEDIA"
+        title.TextColor3 = Color3.fromRGB(100, 230, 150)
+        title.TextSize = 10
+        title.ZIndex = 101
+        title.Parent = prompt
+
+        local detail = Instance.new("TextLabel")
+        detail.Size = UDim2.new(1, -16, 0, 34)
+        detail.Position = UDim2.new(0, 8, 0, 29)
+        detail.BackgroundTransparency = 1
+        detail.Font = Enum.Font.Gotham
+        detail.Text = tostring(pluginName) .. " / " .. tostring(commandName)
+            .. "\nSource stable berubah. Muat ulang source untuk mencoba versi terbaru."
+        detail.TextColor3 = Color3.fromRGB(205, 215, 228)
+        detail.TextSize = 8
+        detail.TextWrapped = true
+        detail.TextXAlignment = Enum.TextXAlignment.Left
+        detail.ZIndex = 101
+        detail.Parent = prompt
+
+        local reloadButton = Instance.new("TextButton")
+        reloadButton.Size = UDim2.new(0.58, -6, 0, 26)
+        reloadButton.Position = UDim2.new(0, 8, 1, -34)
+        reloadButton.BackgroundColor3 = Color3.fromRGB(0, 145, 95)
+        reloadButton.BorderSizePixel = 0
+        reloadButton.Font = Enum.Font.GothamBold
+        reloadButton.Text = "MUAT ULANG HUB"
+        reloadButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        reloadButton.TextSize = 8
+        reloadButton.ZIndex = 101
+        reloadButton.Parent = prompt
+        Instance.new("UICorner", reloadButton).CornerRadius = UDim.new(0, 4)
+
+        local laterButton = Instance.new("TextButton")
+        laterButton.Size = UDim2.new(0.42, -6, 0, 26)
+        laterButton.Position = UDim2.new(0.58, 2, 1, -34)
+        laterButton.BackgroundColor3 = Color3.fromRGB(65, 76, 92)
+        laterButton.BorderSizePixel = 0
+        laterButton.Font = Enum.Font.GothamBold
+        laterButton.Text = "NANTI"
+        laterButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        laterButton.TextSize = 8
+        laterButton.ZIndex = 101
+        laterButton.Parent = prompt
+        Instance.new("UICorner", laterButton).CornerRadius = UDim.new(0, 4)
+
+        laterButton.MouseButton1Click:Connect(function()
+            prompt:Destroy()
+            stableFixPromptActive = false
+        end)
+
+        reloadButton.Text = "MUAT ULANG SOURCE"
+        reloadButton.MouseButton1Click:Connect(function()
+            reloadButton.Text = "MEMUAT..."
+            reloadButton.Active = false
+            task.spawn(function()
+                local ok, err = pcall(function()
+                    local chunk, compileError = loadstring(latestSource)
+                    if type(chunk) ~= "function" then
+                        error("Source stable gagal di-compile: " .. tostring(compileError))
+                    end
+                    local updatedModule = chunk()
+                    if type(updatedModule) ~= "table" or type(updatedModule.Commands) ~= "table" then
+                        error("Source terbaru tidak menghasilkan modul Commands yang valid.")
+                    end
+
+                    loadedModules[sourceUrl] = updatedModule
+                    loadedModuleFingerprints[sourceUrl] = getPluginSourceFingerprint(latestSource)
+
+                    -- Reset only the failed feature's toggle state so its next
+                    -- EXECUTE click uses the refreshed command, not stale UNEXECUTE.
+                    local data = globalLoaderData
+                    if type(data) == "table" then
+                        for _, tabInfo in ipairs(data.Tabs or {}) do
+                            local list = type(tabInfo) == "table" and data[tabInfo.DataKey] or nil
+                            if type(list) == "table" then
+                                for _, item in ipairs(list) do
+                                    if type(item) == "table" then
+                                        local candidates = type(item.SubFeatures) == "table" and #item.SubFeatures > 0
+                                            and item.SubFeatures or {item}
+                                        for _, feature in ipairs(candidates) do
+                                            if type(feature) == "table" then
+                                                local featureUrl = tostring((feature.RawUrl and feature.RawUrl ~= "")
+                                                    and feature.RawUrl or item.RawUrl or "")
+                                                if featureUrl == sourceUrl
+                                                    and (tostring(feature.Cmd or "") == tostring(commandName)
+                                                        or tostring(feature.UnCmd or "") == tostring(commandName)) then
+                                                    local featureKey = featureUrl .. "_" .. tostring(feature.Cmd or "")
+                                                    featureStates[featureKey] = false
+                                                    for _, button in ipairs(activeButtons[featureKey] or {}) do
+                                                        if button and button.Parent then
+                                                            button.Text = "EXECUTE"
+                                                            button.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    prompt:Destroy()
+                    stableFixPromptActive = false
+                    if HealthCheckInfo and HealthCheckInfo.Parent then
+                        HealthCheckInfo.Text = "BERHASIL: source stable terbaru sudah diunduh, di-compile, divalidasi, dan cache module diperbarui. Fitur yang sedang berjalan tidak otomatis di-restart; tekan EXECUTE untuk menjalankan versi terbaru."
+                    end
+                end)
+                if not ok then
+                    reloadButton.Text = "GAGAL - COBA LAGI"
+                    reloadButton.Active = true
+                    warn("[Plugin Manager] Gagal memuat source stable terbaru: " .. tostring(err))
+                    if HealthCheckInfo and HealthCheckInfo.Parent then
+                        HealthCheckInfo.Text = "GAGAL memuat source stable: " .. tostring(err)
+                    end
+                end
+            end)
+        end)
+    end
+
+    local function checkStableFixAvailable(pluginName, commandName, sourceUrl, forcePrompt)
+        local normalizedUrl = tostring(sourceUrl or ""):match("^[^?]+") or ""
+        local loadedFingerprint = loadedModuleFingerprints[normalizedUrl]
+        if not loadedFingerprint then return end
+
+        local path = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)$")
+            or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)$")
+        if not path then return end
+        -- A manually selected historical version is intentional; use its UPDATE! badge
+        -- instead of silently offering to replace it with moving stable source.
+        if selectedPluginVersions[path] then return end
+
+        local latestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/" .. path
+        local ok, latestSource = pcall(function() return game:HttpGet(latestUrl) end)
+        if not ok or type(latestSource) ~= "string" or latestSource == "" then return end
+
+        local latestFingerprint = getPluginSourceFingerprint(latestSource)
+        if latestFingerprint == loadedFingerprint then return end
+
+        local promptKey = latestUrl .. "|" .. latestFingerprint
+        if stableFixPrompted[promptKey] and not forcePrompt then return end
+        stableFixPrompted[promptKey] = true
+        showStableFixPrompt(pluginName, commandName, latestUrl, latestSource)
+    end
+
+    -- Anonymous, non-blocking runtime reports. Detached plugin tasks may not be attributable.
+    local runtimeErrorLastSent = {}
+    local function reportPluginRuntimeError(pluginName, commandName, sourceUrl, errorMessage)
+        local plugin = tostring(pluginName or "Unknown Plugin"):sub(1, 120)
+        local command = tostring(commandName or "Unknown Command"):sub(1, 100)
+        local source = tostring(sourceUrl or ""):sub(1, 500)
+        local errText = tostring(errorMessage or "Unknown runtime error"):sub(1, 1500)
+        local fingerprint = plugin .. "|" .. command .. "|" .. errText
+        local now = os.clock()
+        if runtimeErrorLastSent[fingerprint] and now - runtimeErrorLastSent[fingerprint] < 60 then return end
+        runtimeErrorLastSent[fingerprint] = now
+
+        task.spawn(function()
+            pcall(function()
+                local req = request or http_request or (syn and syn.request)
+                if type(req) ~= "function" then return end
+                local body = HttpService:JSONEncode({
+                    Type = "PluginRuntimeError",
+                    Plugin = plugin,
+                    Command = command,
+                    Source = source,
+                    Error = errText,
+                    PlaceId = tostring(game.PlaceId)
+                })
+                req({
+                    Url = SHEETS_WEB_APP_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = body
+                })
+            end)
+        end)
+
+        -- Only offer a fix when the published stable source differs from the
+        -- exact source currently cached in this session.
+        task.spawn(function()
+            pcall(checkStableFixAvailable, plugin, command, source)
+        end)
+    end
 
     local oldCore = CoreGui:FindFirstChild("MasterPluginHub")
     if oldCore then oldCore:Destroy() end
@@ -896,9 +1563,48 @@ return function(speaker)
     HealthCheckExportBtn.Parent = HealthCheckView
     Instance.new("UICorner", HealthCheckExportBtn).CornerRadius = UDim.new(0, 4)
 
-    local HealthCheckInfo = Instance.new("TextLabel")
-    HealthCheckInfo.Size = UDim2.new(1, 0, 0, 30)
-    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 64)
+    local RuntimeHistoryBtn = Instance.new("TextButton")
+    RuntimeHistoryBtn.Size = UDim2.new(0.49, 0, 0, 25)
+    RuntimeHistoryBtn.Position = UDim2.new(0, 0, 0, 64)
+    RuntimeHistoryBtn.BackgroundColor3 = Color3.fromRGB(105, 75, 155)
+    RuntimeHistoryBtn.BorderSizePixel = 0
+    RuntimeHistoryBtn.Font = Enum.Font.GothamBold
+    RuntimeHistoryBtn.Text = "RIWAYAT ERROR"
+    RuntimeHistoryBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RuntimeHistoryBtn.TextSize = 9
+    RuntimeHistoryBtn.ZIndex = 32
+    RuntimeHistoryBtn.Parent = HealthCheckView
+    Instance.new("UICorner", RuntimeHistoryBtn).CornerRadius = UDim.new(0, 4)
+
+    local RuntimeTestBtn = Instance.new("TextButton")
+    RuntimeTestBtn.Size = UDim2.new(0.49, 0, 0, 25)
+    RuntimeTestBtn.Position = UDim2.new(0.51, 0, 0, 64)
+    RuntimeTestBtn.BackgroundColor3 = Color3.fromRGB(150, 95, 35)
+    RuntimeTestBtn.BorderSizePixel = 0
+    RuntimeTestBtn.Font = Enum.Font.GothamBold
+    RuntimeTestBtn.Text = "TES LAPORAN"
+    RuntimeTestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RuntimeTestBtn.TextSize = 9
+    RuntimeTestBtn.ZIndex = 32
+    RuntimeTestBtn.Parent = HealthCheckView
+    Instance.new("UICorner", RuntimeTestBtn).CornerRadius = UDim.new(0, 4)
+
+    local StableUpdateTestBtn = Instance.new("TextButton")
+    StableUpdateTestBtn.Size = UDim2.new(1, 0, 0, 25)
+    StableUpdateTestBtn.Position = UDim2.new(0, 0, 0, 94)
+    StableUpdateTestBtn.BackgroundColor3 = Color3.fromRGB(35, 115, 105)
+    StableUpdateTestBtn.BorderSizePixel = 0
+    StableUpdateTestBtn.Font = Enum.Font.GothamBold
+    StableUpdateTestBtn.Text = "TES UPDATE STABLE"
+    StableUpdateTestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    StableUpdateTestBtn.TextSize = 9
+    StableUpdateTestBtn.ZIndex = 32
+    StableUpdateTestBtn.Parent = HealthCheckView
+    Instance.new("UICorner", StableUpdateTestBtn).CornerRadius = UDim.new(0, 4)
+
+    HealthCheckInfo = Instance.new("TextLabel")
+    HealthCheckInfo.Size = UDim2.new(1, 0, 0, 28)
+    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 124)
     HealthCheckInfo.BackgroundTransparency = 1
     HealthCheckInfo.Font = Enum.Font.Gotham
     HealthCheckInfo.Text = "Pemeriksaan belum dijalankan. Source hanya diunduh dan dikompilasi, tidak dieksekusi."
@@ -910,8 +1616,8 @@ return function(speaker)
     HealthCheckInfo.Parent = HealthCheckView
 
     local HealthCheckScroll = Instance.new("ScrollingFrame")
-    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -100)
-    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 96)
+    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -160)
+    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 156)
     HealthCheckScroll.BackgroundTransparency = 1
     HealthCheckScroll.BorderSizePixel = 0
     HealthCheckScroll.ScrollBarThickness = 4
@@ -1572,12 +2278,147 @@ return function(speaker)
 
     HealthCheckRunBtn.MouseButton1Click:Connect(runPluginHealthCheck)
 
-    HealthCheckExportBtn.MouseButton1Click:Connect(function()
-        if #healthReportLines == 0 then
-            HealthCheckInfo.Text = "Belum ada hasil untuk diekspor. Jalankan pemeriksaan dulu."
+    local runtimeTestSent = false
+    RuntimeTestBtn.MouseButton1Click:Connect(function()
+        if runtimeTestSent then
+            HealthCheckInfo.Text = "Tes laporan baru saja dikirim. Muat riwayat untuk memeriksa hasilnya."
             return
         end
-        local reportText = table.concat(healthReportLines, "\n")
+        runtimeTestSent = true
+        RuntimeTestBtn.Text = "MENGIRIM TES..."
+        RuntimeTestBtn.Active = false
+        HealthCheckInfo.Text = "Mengirim satu laporan simulasi. Tidak ada command plugin asli yang dijalankan atau diubah."
+
+        reportPluginRuntimeError(
+            "Plugin Manager - TEST",
+            "RuntimeReportTest",
+            "internal://runtime-monitor-test",
+            "SIMULASI: pengujian jalur laporan runtime error. Ini bukan error plugin asli."
+        )
+
+        task.delay(3, function()
+            if RuntimeTestBtn and RuntimeTestBtn.Parent then
+                RuntimeTestBtn.Text = "TES TERKIRIM - CEK RIWAYAT"
+                RuntimeTestBtn.Active = true
+            end
+        end)
+    end)
+
+    local stableUpdateTestRunning = false
+    StableUpdateTestBtn.MouseButton1Click:Connect(function()
+        if stableUpdateTestRunning then return end
+        if stableFixPromptActive then
+            HealthCheckInfo.Text = "Tutup prompt perbaikan yang sedang terbuka sebelum mengulang tes."
+            return
+        end
+
+        local stableSourceUrl
+        for url, fingerprint in pairs(loadedModuleFingerprints) do
+            local normalizedUrl = tostring(url):match("^[^?]+") or tostring(url)
+            local isStableSource = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/.+$")
+                or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/.+$")
+            if isStableSource and fingerprint and loadedModules[normalizedUrl] then
+                stableSourceUrl = normalizedUrl
+                break
+            end
+        end
+
+        if not stableSourceUrl then
+            HealthCheckInfo.Text = "Belum ada plugin dari branch stable yang dimuat. Jalankan satu plugin stable dahulu, lalu tes lagi."
+            return
+        end
+
+        stableUpdateTestRunning = true
+        StableUpdateTestBtn.Active = false
+        StableUpdateTestBtn.Text = "MENYIAPKAN TES..."
+        HealthCheckInfo.Text = "Simulasi perbedaan fingerprint pada source stable yang sudah dimuat. Branch stable tidak diubah dan tidak ada laporan error palsu dikirim."
+
+        task.spawn(function()
+            local originalFingerprint = loadedModuleFingerprints[stableSourceUrl]
+            local ok, err = pcall(function()
+                loadedModuleFingerprints[stableSourceUrl] = "__PLUGIN_MANAGER_STABLE_UPDATE_TEST__"
+                checkStableFixAvailable("Plugin Manager - TEST", "StableUpdateTest", stableSourceUrl, true)
+            end)
+            loadedModuleFingerprints[stableSourceUrl] = originalFingerprint
+
+            if not ok then
+                HealthCheckInfo.Text = "Tes gagal dijalankan: " .. tostring(err)
+            else
+                HealthCheckInfo.Text = "Tes dipicu. Jika prompt PERBAIKAN STABLE TERSEDIA muncul, tekan NANTI untuk menutup tanpa reload atau MUAT ULANG SOURCE untuk menguji reload."
+            end
+            StableUpdateTestBtn.Text = "ULANGI TES UPDATE STABLE"
+            StableUpdateTestBtn.Active = true
+            stableUpdateTestRunning = false
+        end)
+    end)
+
+    local runtimeHistoryLoading = false
+    RuntimeHistoryBtn.MouseButton1Click:Connect(function()
+        if runtimeHistoryLoading then return end
+        runtimeHistoryLoading = true
+        RuntimeHistoryBtn.Text = "MEMUAT RIWAYAT..."
+        HealthCheckInfo.Text = "Mengambil laporan runtime error terbaru..."
+        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
+        end
+
+        task.spawn(function()
+            local ok, response = pcall(function()
+                return game:HttpGet(SHEETS_WEB_APP_URL .. "?action=PluginErrors&limit=50&_=" .. tostring(DateTime.now().UnixTimestampMillis))
+            end)
+            local decoded
+            if ok and type(response) == "string" and response ~= "" then
+                local decodeOk, result = pcall(function() return HttpService:JSONDecode(response) end)
+                if decodeOk and type(result) == "table" then decoded = result end
+            end
+
+            if not decoded or decoded.status ~= "success" or type(decoded.records) ~= "table" then
+                HealthCheckInfo.Text = "Gagal mengambil riwayat. Periksa koneksi atau deployment Apps Script."
+                addHealthCheckResult("Riwayat tidak tersedia", ok and "Respons server tidak valid." or tostring(response), true)
+            elseif #decoded.records == 0 then
+                HealthCheckInfo.Text = "Belum ada runtime error yang tercatat di server."
+                addHealthCheckResult("Belum ada laporan", "Laporan error akan muncul setelah command gagal dijalankan.", false)
+            else
+                HealthCheckInfo.Text = tostring(#decoded.records) .. " laporan terbaru berhasil dimuat."
+                for _, record in ipairs(decoded.records) do
+                    local title = tostring(record.Plugin or "Unknown Plugin") .. " / " .. tostring(record.Command or "Unknown Command")
+                    local detail = tostring(record.Error or "Tanpa detail")
+                    if record.Timestamp then detail = tostring(record.Timestamp) .. " | " .. detail end
+                    if record.PlaceId and record.PlaceId ~= "" then detail = detail .. " | PlaceId " .. tostring(record.PlaceId) end
+                    addHealthCheckResult(title, detail, true)
+                end
+            end
+            RuntimeHistoryBtn.Text = "MUAT ULANG RIWAYAT ERROR"
+            runtimeHistoryLoading = false
+        end)
+    end)
+
+    HealthCheckExportBtn.MouseButton1Click:Connect(function()
+        -- Export exactly the rows currently displayed, whether they are health-check
+        -- results or runtime-error history. Do not reuse the separate scan baseline.
+        local exportLines = {"PLUGIN MANAGER - HASIL YANG SEDANG DITAMPILKAN", "============================================"}
+        local rowCount = 0
+        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
+            if child:IsA("Frame") then
+                local labels = {}
+                for _, item in ipairs(child:GetChildren()) do
+                    if item:IsA("TextLabel") then
+                        table.insert(labels, item.Text)
+                    end
+                end
+                if #labels > 0 then
+                    rowCount = rowCount + 1
+                    table.insert(exportLines, labels[1] .. (#labels > 1 and (" | " .. labels[2]) or ""))
+                end
+            end
+        end
+
+        if rowCount == 0 then
+            HealthCheckInfo.Text = "Tidak ada hasil yang sedang ditampilkan untuk diekspor."
+            return
+        end
+
+        local reportText = table.concat(exportLines, "\n")
         local copied = false
         if type(setclipboard) == "function" then
             copied = pcall(setclipboard, reportText)
@@ -1585,10 +2426,10 @@ return function(speaker)
             copied = pcall(toclipboard, reportText)
         end
         if copied then
-            HealthCheckInfo.Text = "Hasil berhasil disalin. Tinggal paste ke chat."
+            HealthCheckInfo.Text = tostring(rowCount) .. " hasil yang tampil berhasil disalin."
         elseif type(writefile) == "function" then
             local ok = pcall(writefile, "PluginHealthCheck.txt", reportText)
-            HealthCheckInfo.Text = ok and "Clipboard tidak tersedia. Laporan disimpan ke PluginHealthCheck.txt." or "Gagal menyalin dan menyimpan laporan."
+            HealthCheckInfo.Text = ok and "Clipboard tidak tersedia. Hasil yang tampil disimpan ke PluginHealthCheck.txt." or "Gagal menyalin dan menyimpan hasil."
         else
             HealthCheckInfo.Text = "Clipboard/file export tidak didukung executor ini."
         end
@@ -2827,6 +3668,20 @@ return function(speaker)
             currentActiveScroll.Visible = true
         end)
 
+        local parentSourcePath = getPluginSourcePath(rawUrl)
+            or getPluginSourcePath(getSharedSubFeatureSourceUrl(subFeatures, rawUrl))
+        local subSourcePaths, subPathSeen = {}, {}
+        for _, feature in ipairs(subFeatures) do
+            local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or rawUrl
+            local featurePath = getPluginSourcePath(featureUrl)
+            if featurePath and not subPathSeen[featurePath] then
+                subPathSeen[featurePath] = true
+                table.insert(subSourcePaths, featurePath)
+            end
+        end
+        local allSubFeaturesShareParentSource = parentSourcePath ~= nil and #subSourcePaths == 1
+            and subSourcePaths[1] == parentSourcePath
+
         local orderedSubFeatures = {}
         for index, feature in ipairs(subFeatures) do
             table.insert(orderedSubFeatures, { item = feature, index = index })
@@ -2841,6 +3696,7 @@ return function(speaker)
         for _, subEntry in ipairs(orderedSubFeatures) do
             local subFeat = subEntry.item
             local subRawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or rawUrl
+            local subSourcePath = getPluginSourcePath(subRawUrl)
             local uniqueKey = tostring(subRawUrl) .. "_" .. tostring(subFeat.Cmd)
             if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
@@ -2873,7 +3729,7 @@ return function(speaker)
                 activeBadgeColor = Color3.fromRGB(255, 60, 60)
             end
 
-            if isFeatureNew(badgeKey, timestamp) or isMaintenance then
+            if (isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(subFeat)) or isMaintenance then
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
                 
@@ -2908,10 +3764,26 @@ return function(speaker)
             LblDesc.Size = UDim2.new(1, -118, 0, descHeight)
             Item.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
+            local subHasHistory = false
+            if subSourcePath and not allSubFeaturesShareParentSource then
+                local firstSubPath = true
+                for priorIndex = 1, subEntry.index - 1 do
+                    local prior = subFeatures[priorIndex]
+                    local priorUrl = (prior.RawUrl and prior.RawUrl ~= "") and prior.RawUrl or rawUrl
+                    if getPluginSourcePath(priorUrl) == subSourcePath then
+                        firstSubPath = false
+                        break
+                    end
+                end
+                if firstSubPath and subSourcePath ~= parentSourcePath then
+                    subHasHistory = attachPublicVersionHistory(Item, SubScroll, subRawUrl, tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName) == true
+                end
+            end
+
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            SubFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -122 or -104, 0.5, 0)
             SubFavoriteBtn.BackgroundTransparency = 1
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
@@ -2926,9 +3798,9 @@ return function(speaker)
             end)
 
             local ExecSub = Instance.new("TextButton")
-            ExecSub.Size = UDim2.new(0, 75, 0, 24)
+            ExecSub.Size = UDim2.new(0, subHasHistory and 68 or 75, 0, 24)
             ExecSub.AnchorPoint = Vector2.new(0, 0.5)
-            ExecSub.Position = UDim2.new(1, -80, 0.5, 0)
+            ExecSub.Position = UDim2.new(1, subHasHistory and -96 or -80, 0.5, 0)
             ExecSub.BorderSizePixel = 0
             ExecSub.Text = featureStates[uniqueKey] and "UNEXECUTE" or "EXECUTE"
             ExecSub.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -2948,10 +3820,10 @@ return function(speaker)
 
                 ExecSub.MouseButton1Click:Connect(function()
                     local function runCommand(customArgs, isUnexec)
-                        pcall(function()
+                        local commandOk, commandErr = xpcall(function()
                             local targetRaw = subRawUrl
                             if not loadedModules[targetRaw] then
-                                loadedModules[targetRaw] = loadstring(game:HttpGet(targetRaw))()
+                                loadedModules[targetRaw] = loadPluginModule(targetRaw)
                             end
                             local pluginMod = loadedModules[targetRaw]
                             if pluginMod and pluginMod.Commands then
@@ -2972,9 +3844,21 @@ return function(speaker)
                                         end
                                     end
                                 end
-                                if foundFunc then task.spawn(function() foundFunc(customArgs or {}, speaker) end) end
+                                if foundFunc then
+                                    task.spawn(function()
+                                        local ok, err = xpcall(function() foundFunc(customArgs or {}, speaker) end, function(e) return debug.traceback(tostring(e), 2) end)
+                                        if not ok then reportPluginRuntimeError(subFeat.Name, isUnexec and (subFeat.UnCmd or subFeat.Cmd) or subFeat.Cmd, targetRaw, err) end
+                                    end)
+                                else
+                                    error("Command function tidak ditemukan: " .. tostring(targetCmd))
+                                end
+                            else
+                                error("Modul plugin tidak memiliki tabel Commands: " .. tostring(subFeat.Name))
                             end
-                        end)
+                        end, function(err) return debug.traceback(tostring(err), 2) end)
+                                if not commandOk then
+                                    reportPluginRuntimeError(subFeat.Name, isUnexec and (subFeat.UnCmd or subFeat.Cmd) or subFeat.Cmd, subRawUrl, commandErr)
+                                end
 
                         local hasUnCmd = (subFeat.UnCmd and subFeat.UnCmd ~= "")
                             or string.lower(tostring(subFeat.Cmd or "")) == "ws"
@@ -2984,6 +3868,9 @@ return function(speaker)
                         else
                             featureStates[uniqueKey] = false
                             updateAllButtonStates(uniqueKey, false)
+                        end
+                        if isUnexec and not featureStates[uniqueKey] then
+                            clearPluginModuleCache(getPluginSourcePath(subRawUrl))
                         end
                     end
 
@@ -3062,6 +3949,12 @@ return function(speaker)
             NameLabel.Parent = ItemFrame
 
             local uniqueKey = tostring(item.RawUrl or "") .. "_" .. tostring(item.Cmd or item.Name)
+            local historyRawUrl = item.RawUrl
+            if (not historyRawUrl or historyRawUrl == "") and item.SubFeatures and #item.SubFeatures > 0 then
+                historyRawUrl = getSharedSubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
+            end
+            local itemSourcePath = getPluginSourcePath(historyRawUrl)
+            local itemHasHistory = false
             local badgeKey = getFeatureBadgeKey(item, uniqueKey)
             local timestamp = item.UpdateTimestamp or ""
             local activeBadgeText = item.BadgeText or "New!"
@@ -3084,7 +3977,7 @@ return function(speaker)
                     if isFeatureInMaintenance(sub) then
                         hasSubMaintenance = true
                     end
-                    if isFeatureNew(subKey, subTimestamp) then
+                    if isFeatureNew(subKey, subTimestamp) and not isLegacyUpdateBadge(sub) then
                         table.insert(badgeFeatureKeys, { key = subKey, timestamp = subTimestamp })
                         if #badgeFeatureKeys == 1 then
                             activeBadgeText = sub.BadgeText or activeBadgeText
@@ -3092,7 +3985,7 @@ return function(speaker)
                         end
                     end
                 end
-            elseif isFeatureNew(badgeKey, timestamp) then
+            elseif isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(item) then
                 table.insert(badgeFeatureKeys, { key = badgeKey, timestamp = timestamp })
             end
 
@@ -3149,15 +4042,20 @@ return function(speaker)
             DescLabel.TextWrapped = true
             DescLabel.Parent = ItemFrame
 
-            local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(174, 10000))
+            local descWidth = math.max(120, ItemFrame.AbsoluteSize.X - (itemSourcePath and 166 or 126))
+            local textBounds = TextService:GetTextSize(item.Desc, 10, Enum.Font.Gotham, Vector2.new(descWidth, 10000))
             local descHeight = math.max(14, textBounds.Y + 5)
-            DescLabel.Size = UDim2.new(1, -118, 0, descHeight)
+            DescLabel.Size = UDim2.new(1, itemSourcePath and -158 or -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
+
+            if itemSourcePath then
+                itemHasHistory = attachPublicVersionHistory(ItemFrame, targetParentScroll, historyRawUrl, tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel) == true
+            end
 
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            MenuFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -122 or -104, 0.5, 0)
             MenuFavoriteBtn.BackgroundTransparency = 1
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
@@ -3176,9 +4074,9 @@ return function(speaker)
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 local OpenBtn = Instance.new("TextButton")
-                OpenBtn.Size = UDim2.new(0, 75, 0, 24)
+                OpenBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
                 OpenBtn.AnchorPoint = Vector2.new(0, 0.5)
-                OpenBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                OpenBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
                 OpenBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
                 OpenBtn.BackgroundTransparency = 0.2
                 OpenBtn.BorderSizePixel = 0
@@ -3190,15 +4088,15 @@ return function(speaker)
                 Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(0, 4)
 
                 OpenBtn.MouseButton1Click:Connect(function()
-                    showSubMenu(item.Name, item.RawUrl, item.SubFeatures, tabName)
+                    showSubMenu(item.Name, historyRawUrl or item.RawUrl, item.SubFeatures, tabName)
                 end)
             else
                 if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
                 local ExecBtn = Instance.new("TextButton")
-                ExecBtn.Size = UDim2.new(0, 75, 0, 24)
+                ExecBtn.Size = UDim2.new(0, itemHasHistory and 68 or 75, 0, 24)
                 ExecBtn.AnchorPoint = Vector2.new(0, 0.5)
-                ExecBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                ExecBtn.Position = UDim2.new(1, itemHasHistory and -96 or -80, 0.5, 0)
                 ExecBtn.BorderSizePixel = 0
                 ExecBtn.BackgroundTransparency = 0.2
                 ExecBtn.Font = Enum.Font.GothamBold
@@ -3219,9 +4117,9 @@ return function(speaker)
 
                     ExecBtn.MouseButton1Click:Connect(function()
                         local function runDirectCommand(customArgs, isUnexec)
-                            pcall(function()
+                            local commandOk, commandErr = xpcall(function()
                                 if not loadedModules[item.RawUrl] then
-                                    loadedModules[item.RawUrl] = loadstring(game:HttpGet(item.RawUrl))()
+                                    loadedModules[item.RawUrl] = loadPluginModule(item.RawUrl)
                                 end
                                 local pluginMod = loadedModules[item.RawUrl]
                                 if pluginMod and pluginMod.Commands then
@@ -3235,9 +4133,21 @@ return function(speaker)
                                             end
                                         end
                                     end
-                                    if foundFunc then task.spawn(function() foundFunc(customArgs or {}, speaker) end) end
+                                    if foundFunc then
+                                    task.spawn(function()
+                                        local ok, err = xpcall(function() foundFunc(customArgs or {}, speaker) end, function(e) return debug.traceback(tostring(e), 2) end)
+                                        if not ok then reportPluginRuntimeError(item.Name, isUnexec and (item.UnCmd or item.Cmd) or item.Cmd, item.RawUrl, err) end
+                                    end)
+                                    else
+                                        error("Command function tidak ditemukan: " .. tostring(targetCmd))
+                                    end
+                                else
+                                    error("Modul plugin tidak memiliki tabel Commands: " .. tostring(item.Name))
                                 end
-                            end)
+                            end, function(err) return debug.traceback(tostring(err), 2) end)
+                                if not commandOk then
+                                    reportPluginRuntimeError(item.Name, isUnexec and (item.UnCmd or item.Cmd) or item.Cmd, item.RawUrl, commandErr)
+                                end
 
                             local hasUnCmd = item.UnCmd and item.UnCmd ~= ""
                             if hasUnCmd then
@@ -3246,6 +4156,9 @@ return function(speaker)
                             else
                                 featureStates[uniqueKey] = false
                                 updateAllButtonStates(uniqueKey, false)
+                            end
+                            if isUnexec and not featureStates[uniqueKey] then
+                                clearPluginModuleCache(getPluginSourcePath(item.RawUrl))
                             end
                         end
 
