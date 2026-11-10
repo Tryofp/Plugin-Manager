@@ -3218,22 +3218,62 @@ return function(speaker)
         VersionHistoryInfo.Text = "Memuat " .. fileInfo.name .. "..."
         task.spawn(function()
             local encodedPath = tostring(fileInfo.path):gsub(" ", "%%20")
-            local url = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path=" .. encodedPath .. "&per_page=12"
-            local ok, response = pcall(function() return game:HttpGet(url) end)
-            if not ok or type(response) ~= "string" or response == "" then
-                VersionHistoryInfo.Text = fileInfo.name .. " • Gagal menghubungi GitHub"
-                addVersionHistoryMessage("Periksa koneksi lalu coba pilih file lagi.")
-                return
+            local sourceBranch = tostring(fileInfo.branch or "main")
+            local url = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
+                .. encodedPath .. "&sha=" .. sourceBranch .. "&per_page=12"
+
+            -- Samakan jalur request dengan Version History pada kartu plugin:
+            -- retry saat gangguan sementara, lalu gunakan manifest Raw jika API gagal.
+            local ok, response = requestGitHubWithRetry(url, 3)
+            local decoded = nil
+            local apiError = nil
+            if ok then
+                local decodeOk, result = pcall(function() return HttpService:JSONDecode(response) end)
+                if decodeOk and type(result) == "table" and not result.message then
+                    decoded = result
+                else
+                    apiError = type(result) == "table" and tostring(result.message or "Respons API tidak valid")
+                        or "Respons GitHub bukan JSON yang valid."
+                end
+            else
+                apiError = tostring(response or "GitHub tidak merespons.")
             end
 
-            local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-            if not decodeOk or type(decoded) ~= "table" or decoded.message then
+            local usedManifestFallback = false
+            if not decoded or #decoded == 0 then
+                local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/"
+                    .. sourceBranch .. "/VersionManifest.json"
+                local manifestOk, manifestResponse = pcall(function()
+                    return game:HttpGet(manifestUrl)
+                end)
+                if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
+                    local manifestDecodeOk, manifest = pcall(function()
+                        return HttpService:JSONDecode(manifestResponse)
+                    end)
+                    local item = manifestDecodeOk and type(manifest) == "table" and manifest[fileInfo.path]
+                    if type(item) == "table" and type(item.sha) == "string" and #item.sha >= 7 then
+                        decoded = {{
+                            sha = item.sha,
+                            commit = {
+                                message = item.message or "Versi terbaru (manifest fallback)",
+                                author = { date = item.date or "Tanggal tidak tersedia" }
+                            }
+                        }}
+                        usedManifestFallback = true
+                    end
+                end
+            end
+
+            if not decoded then
                 VersionHistoryInfo.Text = fileInfo.name .. " • GitHub API tidak tersedia"
-                addVersionHistoryMessage(type(decoded) == "table" and tostring(decoded.message or "Respons tidak valid") or "Respons GitHub tidak valid.")
+                addVersionHistoryMessage("API: " .. tostring(apiError or "Riwayat kosong.")
+                    .. " Manifest fallback juga tidak tersedia untuk branch " .. sourceBranch .. ".")
                 return
             end
 
             VersionHistoryInfo.Text = fileInfo.name .. " • " .. fileInfo.path
+                .. " • " .. sourceBranch
+                .. (usedManifestFallback and " • manifest fallback (versi terbaru saja)" or "")
 
             local fileBack = Instance.new("TextButton")
             fileBack.Size = UDim2.new(1, -4, 0, 26)
@@ -3415,13 +3455,15 @@ return function(speaker)
                 local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or {item}
                 for _, feature in ipairs(candidates) do
                     local rawUrl = tostring(feature.RawUrl or item.RawUrl or "")
-                    local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/Beta/(.+)")
-                        or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/Beta/(.+)")
-                        or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
-                        or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
+                    local path = getPluginSourcePath(rawUrl)
+                    local branch = getPluginSourceBranch(rawUrl)
                     if path and not seen[path] then
                         seen[path] = true
-                        table.insert(files, {name = tostring(feature.Name or item.Name or path), path = path})
+                        table.insert(files, {
+                            name = tostring(feature.Name or item.Name or path),
+                            path = path,
+                            branch = branch
+                        })
                     end
                 end
             end
