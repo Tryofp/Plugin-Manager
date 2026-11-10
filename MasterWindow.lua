@@ -4044,6 +4044,7 @@ return function(speaker)
             local activeBadgeColor = getColorFromName(subFeat.BadgeColor)
             local hasSubUpdateBadge = (subSourcePath and releaseUpdateByPath[subSourcePath] == true)
                 or (activeBadgeText == "UPDATE!" and isFeatureNew(badgeKey, timestamp))
+            if hasSubUpdateBadge then activeBadgeColor = Color3.fromRGB(60, 255, 100) end
             local showSubBadgeText = hasSubUpdateBadge and "UPDATE!"
                 or (activeBadgeText and isFeatureNew(badgeKey, timestamp) and activeBadgeText or nil)
 
