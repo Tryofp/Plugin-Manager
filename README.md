@@ -23,10 +23,20 @@
 
 (Hati hati terhadap penipuan akun discord, akun asli saya hanya ada di README))
 
-## Usage
+## Beta / Experimental Usage
 
 Skrip Plugin di sini selalu Up to date tanpa perlu mendownload ulang!
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Main.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/Main.lua"))()
 ```
+
+## Infinite Yield Beta Plugin
+
+```text
+;addplugin https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/Pluginmaster.iy
+```
+
+Perintah: `;hub` atau `;masterhub`.
+
+> Branch ini khusus pengujian. Untuk penggunaan publik, gunakan branch `main`.
