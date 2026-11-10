@@ -645,6 +645,76 @@ return function(speaker)
     VersionHistoryView.ZIndex = 31
     VersionHistoryView.Parent = DevPanelContainer
 
+    -- Read-only Plugin Health Check UI
+    local HealthCheckView = Instance.new("Frame")
+    HealthCheckView.Size = UDim2.new(1, -16, 1, -45)
+    HealthCheckView.Position = UDim2.new(0, 8, 0, 40)
+    HealthCheckView.BackgroundTransparency = 1
+    HealthCheckView.Visible = false
+    HealthCheckView.ZIndex = 31
+    HealthCheckView.Parent = DevPanelContainer
+
+    local HealthCheckBackBtn = Instance.new("TextButton")
+    HealthCheckBackBtn.Size = UDim2.new(1, 0, 0, 28)
+    HealthCheckBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+    HealthCheckBackBtn.BorderSizePixel = 0
+    HealthCheckBackBtn.Font = Enum.Font.GothamBold
+    HealthCheckBackBtn.Text = "< KEMBALI KE MENU DEV"
+    HealthCheckBackBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
+    HealthCheckBackBtn.TextSize = 10
+    HealthCheckBackBtn.ZIndex = 32
+    HealthCheckBackBtn.Parent = HealthCheckView
+    Instance.new("UICorner", HealthCheckBackBtn).CornerRadius = UDim.new(0, 4)
+    HealthCheckBackBtn.MouseButton1Click:Connect(function()
+        HealthCheckView.Visible = false
+        DevMainMenu.Visible = true
+    end)
+
+    local HealthCheckRunBtn = Instance.new("TextButton")
+    HealthCheckRunBtn.Size = UDim2.new(1, 0, 0, 28)
+    HealthCheckRunBtn.Position = UDim2.new(0, 0, 0, 33)
+    HealthCheckRunBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 90)
+    HealthCheckRunBtn.BorderSizePixel = 0
+    HealthCheckRunBtn.Font = Enum.Font.GothamBold
+    HealthCheckRunBtn.Text = "JALANKAN PEMERIKSAAN"
+    HealthCheckRunBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    HealthCheckRunBtn.TextSize = 9
+    HealthCheckRunBtn.ZIndex = 32
+    HealthCheckRunBtn.Parent = HealthCheckView
+    Instance.new("UICorner", HealthCheckRunBtn).CornerRadius = UDim.new(0, 4)
+
+    local HealthCheckInfo = Instance.new("TextLabel")
+    HealthCheckInfo.Size = UDim2.new(1, 0, 0, 30)
+    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 64)
+    HealthCheckInfo.BackgroundTransparency = 1
+    HealthCheckInfo.Font = Enum.Font.Gotham
+    HealthCheckInfo.Text = "Pemeriksaan belum dijalankan. Source hanya diunduh dan dikompilasi, tidak dieksekusi."
+    HealthCheckInfo.TextColor3 = Color3.fromRGB(160, 175, 195)
+    HealthCheckInfo.TextSize = 8
+    HealthCheckInfo.TextWrapped = true
+    HealthCheckInfo.TextXAlignment = Enum.TextXAlignment.Left
+    HealthCheckInfo.ZIndex = 32
+    HealthCheckInfo.Parent = HealthCheckView
+
+    local HealthCheckScroll = Instance.new("ScrollingFrame")
+    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -100)
+    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 96)
+    HealthCheckScroll.BackgroundTransparency = 1
+    HealthCheckScroll.BorderSizePixel = 0
+    HealthCheckScroll.ScrollBarThickness = 4
+    HealthCheckScroll.Active = true
+    HealthCheckScroll.ScrollingEnabled = true
+    HealthCheckScroll.ZIndex = 32
+    HealthCheckScroll.Parent = HealthCheckView
+
+    local HealthCheckLayout = Instance.new("UIListLayout")
+    HealthCheckLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    HealthCheckLayout.Padding = UDim.new(0, 5)
+    HealthCheckLayout.Parent = HealthCheckScroll
+    HealthCheckLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        HealthCheckScroll.CanvasSize = UDim2.new(0, 0, 0, HealthCheckLayout.AbsoluteContentSize.Y + 8)
+    end)
+
     local VersionHistoryBackBtn = Instance.new("TextButton")
     VersionHistoryBackBtn.Size = UDim2.new(1, 0, 0, 28)
     VersionHistoryBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
@@ -789,6 +859,166 @@ return function(speaker)
     BadgeScrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
     BadgeScrollLayout.Padding = UDim.new(0, 6)
     BadgeScrollLayout.Parent = BadgeScroll
+
+    local healthScanRunning = false
+
+    local function addHealthCheckResult(title, detail, isError)
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, 0, 0, 42)
+        row.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
+        row.BorderSizePixel = 0
+        row.ZIndex = 33
+        row.Parent = HealthCheckScroll
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+        local titleLabel = Instance.new("TextLabel")
+        titleLabel.Size = UDim2.new(1, -14, 0, 17)
+        titleLabel.Position = UDim2.new(0, 7, 0, 4)
+        titleLabel.BackgroundTransparency = 1
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.Text = (isError and "✖ " or "✓ ") .. tostring(title)
+        titleLabel.TextColor3 = isError and Color3.fromRGB(255, 105, 105) or Color3.fromRGB(100, 230, 150)
+        titleLabel.TextSize = 9
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        titleLabel.ZIndex = 34
+        titleLabel.Parent = row
+
+        local detailLabel = Instance.new("TextLabel")
+        detailLabel.Size = UDim2.new(1, -14, 0, 16)
+        detailLabel.Position = UDim2.new(0, 7, 0, 21)
+        detailLabel.BackgroundTransparency = 1
+        detailLabel.Font = Enum.Font.Gotham
+        detailLabel.Text = tostring(detail or "")
+        detailLabel.TextColor3 = Color3.fromRGB(165, 178, 195)
+        detailLabel.TextSize = 8
+        detailLabel.TextXAlignment = Enum.TextXAlignment.Left
+        detailLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        detailLabel.ZIndex = 34
+        detailLabel.Parent = row
+    end
+
+    local function runPluginHealthCheck()
+        if healthScanRunning then return end
+        healthScanRunning = true
+        HealthCheckRunBtn.Active = false
+        HealthCheckRunBtn.Text = "MEMERIKSA..."
+        HealthCheckInfo.Text = "Mengumpulkan konfigurasi Loader..."
+        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
+        end
+
+        task.spawn(function()
+            local errors, checks = 0, 0
+            local function report(title, detail, failed)
+                checks = checks + 1
+                if failed then errors = errors + 1 end
+                addHealthCheckResult(title, detail, failed)
+            end
+
+            local data = globalLoaderData
+            if type(data) ~= "table" then
+                report("Loader tidak tersedia", "Data Loader belum berhasil dimuat.", true)
+            else
+                local tabs = data.Tabs
+                if type(tabs) ~= "table" or #tabs == 0 then
+                    report("Struktur Tabs", "Loader.Tabs kosong atau bukan tabel.", true)
+                else
+                    report("Struktur Tabs", tostring(#tabs) .. " tab ditemukan.", false)
+                end
+
+                local features, seenIds, seenCmds, urls = {}, {}, {}, {}
+                for _, tabInfo in ipairs(type(tabs) == "table" and tabs or {}) do
+                    if type(tabInfo) ~= "table" or type(tabInfo.Name) ~= "string" or tabInfo.Name == "" then
+                        report("Data tab tidak valid", "Ditemukan entri tab tanpa Name yang valid.", true)
+                    else
+                        local list = data[tabInfo.DataKey]
+                        if type(list) ~= "table" then
+                            report("Tab " .. tabInfo.Name, "DataKey tidak menunjuk ke tabel: " .. tostring(tabInfo.DataKey), true)
+                        else
+                            for _, item in ipairs(list) do
+                                if type(item) == "table" and type(item.SubFeatures) == "table" and #item.SubFeatures > 0 then
+                                    for _, sub in ipairs(item.SubFeatures) do
+                                        table.insert(features, { feature = sub, parent = item, tab = tabInfo.Name })
+                                    end
+                                elseif type(item) == "table" then
+                                    table.insert(features, { feature = item, parent = item, tab = tabInfo.Name })
+                                end
+                            end
+                        end
+                    end
+                end
+
+                for _, entry in ipairs(features) do
+                    local feature, parent = entry.feature, entry.parent
+                    local name = tostring(feature.Name or feature.Cmd or "Fitur tanpa nama")
+                    local url = tostring((feature.RawUrl and feature.RawUrl ~= "" and feature.RawUrl) or parent.RawUrl or "")
+                    local cmd = tostring(feature.Cmd or "")
+                    local featureId = tostring(feature.FeatureId or "")
+                    if featureId == "" then
+                        report(name, "FeatureId kosong (" .. entry.tab .. ").", true)
+                    elseif seenIds[featureId] then
+                        report(name, "FeatureId duplikat: " .. featureId, true)
+                    else
+                        seenIds[featureId] = name
+                    end
+                    if cmd == "" then
+                        report(name, "Command kosong; tidak bisa dipetakan.", true)
+                    else
+                        local key = string.lower(url .. "|" .. cmd)
+                        if seenCmds[key] then
+                            report(name, "Kombinasi URL + command duplikat dengan " .. seenCmds[key] .. ".", true)
+                        else
+                            seenCmds[key] = name
+                        end
+                    end
+                    if url == "" then
+                        report(name, "RawUrl kosong.", true)
+                    else
+                        urls[url] = urls[url] or {}
+                        table.insert(urls[url], { name = name, cmd = cmd })
+                    end
+                end
+
+                local urlCount = 0
+                for _ in pairs(urls) do urlCount = urlCount + 1 end
+                report("Konfigurasi fitur", tostring(#features) .. " entri fitur dan " .. tostring(urlCount) .. " URL unik diperiksa.", false)
+
+                for url, mapped in pairs(urls) do
+                    HealthCheckInfo.Text = "Memeriksa source " .. tostring(urlCount) .. " URL..."
+                    local requestOk, source = pcall(function() return game:HttpGet(url) end)
+                    if not requestOk or type(source) ~= "string" or source == "" then
+                        report("URL gagal diakses", url, true)
+                    else
+                        local compileOk, compileResult = pcall(function()
+                            if type(loadstring) ~= "function" then error("loadstring tidak tersedia") end
+                            return loadstring(source)
+                        end)
+                        if not compileOk or type(compileResult) ~= "function" then
+                            report("Syntax/source error", url .. " | " .. tostring(compileResult), true)
+                        else
+                            report("Source OK", url .. " | " .. tostring(#mapped) .. " mapping fitur.", false)
+                            for _, mapping in ipairs(mapped) do
+                                local escaped = mapping.cmd:gsub("([^%w])", "%%%1")
+                                local commandPattern = '%["' .. escaped .. '"%]%s*='
+                                if not string.find(source, commandPattern) then
+                                    report("Command tidak ditemukan", mapping.name .. " → " .. mapping.cmd, true)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.1)
+                end
+            end
+
+            HealthCheckInfo.Text = string.format("Selesai: %d pemeriksaan, %d temuan. Source tidak dieksekusi.", checks, errors)
+            HealthCheckRunBtn.Text = "JALANKAN ULANG PEMERIKSAAN"
+            HealthCheckRunBtn.Active = true
+            healthScanRunning = false
+        end)
+    end
+
+    HealthCheckRunBtn.MouseButton1Click:Connect(runPluginHealthCheck)
 
     local function addDevMenuOption(titleText, descText, onClickCallback)
         local OptionBtn = Instance.new("TextButton")
@@ -1731,6 +1961,12 @@ return function(speaker)
         end)
     end
 
+    addDevMenuOption("🩺 Plugin Health Check", "Periksa Loader, URL, sintaks, dan mapping command tanpa menjalankan plugin", function()
+        DevMainMenu.Visible = false
+        HealthCheckView.Visible = true
+        runPluginHealthCheck()
+    end)
+
     addDevMenuOption("🕘 Version History", "Lihat 12 commit terakhir setiap file plugin", function()
         DevMainMenu.Visible = false
         loadVersionHistoryFiles()
@@ -1768,6 +2004,7 @@ return function(speaker)
             BadgeListView.Visible = false
             MaintenanceListView.Visible = false
             VersionHistoryView.Visible = false
+            HealthCheckView.Visible = false
             DevPanelContainer.Visible = true
         end
     end)
