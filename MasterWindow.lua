@@ -23,6 +23,8 @@ return function(speaker)
     local playerBadgeCache = {}
     local globalLoaderData = nil
     local refreshBadgeUI = nil
+    local openPublicHistoryPanels = 0
+    local pendingPublicBadgeRefresh = false
 
     local function fetchRemoteMetadata()
         local cacheBuster = tostring(DateTime.now().UnixTimestampMillis)
@@ -386,7 +388,35 @@ return function(speaker)
         ["Tools/CodeFinder"] = "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd"
     }
 
+    -- Manually assigned stable release per plugin path. Set the exact commit SHA when approved.
+    -- Example: VERSION_HISTORY_STABLE["Plugin/Waypoint"] = "<40-character-commit-sha>"
+    local VERSION_HISTORY_STABLE = {}
+
+    -- Per-user acknowledgement of released stable commits.
+    -- A release stays marked UPDATE! until this user has selected that release once.
     local VERSION_PROFILE_FOLDER = "PluginManager/Profiles"
+    local VERSION_RELEASE_ACK_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_release_ack.json"
+    local acknowledgedReleaseShas = {}
+    local function loadAcknowledgedReleases()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
+        local ok, exists = pcall(isfile, VERSION_RELEASE_ACK_FILE)
+        if not ok or not exists then return end
+        local readOk, raw = pcall(readfile, VERSION_RELEASE_ACK_FILE)
+        if not readOk or type(raw) ~= "string" or raw == "" then return end
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if decodeOk and type(decoded) == "table" then acknowledgedReleaseShas = decoded end
+    end
+    local function saveAcknowledgedReleases()
+        if type(writefile) ~= "function" then return end
+        if type(makefolder) == "function" then
+            pcall(makefolder, "PluginManager")
+            pcall(makefolder, VERSION_PROFILE_FOLDER)
+        end
+        local ok, encoded = pcall(function() return HttpService:JSONEncode(acknowledgedReleaseShas) end)
+        if ok and type(encoded) == "string" then pcall(writefile, VERSION_RELEASE_ACK_FILE, encoded) end
+    end
+    loadAcknowledgedReleases()
+
     local VERSION_PROFILE_FILE = VERSION_PROFILE_FOLDER .. "/" .. tostring(LocalPlayer.UserId) .. "_versions.json"
     local selectedPluginVersions = {}
     local function loadSelectedPluginVersions()
@@ -409,29 +439,142 @@ return function(speaker)
     end
     loadSelectedPluginVersions()
 
+    local function getPluginSourceBranch(rawUrl)
+        local url = tostring(rawUrl or "")
+        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/([^/]+)/")
+            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/([^/]+)/")
+            or "main"
+    end
+
     local function getPluginSourcePath(rawUrl)
         local url = tostring(rawUrl or "")
-        local stablePath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
-            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
-        if stablePath then return stablePath end
+        local branchPath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/[^/]+/(.+)")
+        if branchPath then return branchPath end
         return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
     end
 
-    -- If a parent card has no RawUrl but all of its subfeatures share one source,
-    -- expose one history control on the parent instead of duplicating it per child.
-    local function getSharedSubFeatureSourceUrl(subFeatures, fallbackUrl)
+
+    local function requestUserVersionProfile(action, branch, path, commitSha)
+        local req = request or http_request or (syn and syn.request)
+        if not req then return false, "Executor tidak menyediakan HTTP request." end
+        local payload = {
+            Type = "UserVersionProfile",
+            Action = action,
+            UserId = tostring(LocalPlayer.UserId),
+            Branch = tostring(branch or "main")
+        }
+        if path then payload.Path = tostring(path) end
+        if commitSha then payload.CommitSha = tostring(commitSha) end
+
+        local ok, response = pcall(function()
+            return req({
+                Url = SHEETS_WEB_APP_URL,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+        if not ok or not response then return false, tostring(response or "Server tidak merespons.") end
+        local body = response.Body or response.body or ""
+        local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+        if not decodeOk or type(decoded) ~= "table" then
+            return false, "Respons server bukan JSON yang valid."
+        end
+        if decoded.status ~= "success" then return false, tostring(decoded.message or "Server menolak penyimpanan.") end
+        return true, decoded
+    end
+
+    local function loadServerVersionProfiles()
+        if not globalLoaderData then return end
+        -- Public release UI only resolves stable sources from main.
+        -- Do not merge Beta profiles here: both branches share file paths and
+        -- would overwrite each other in the path-keyed client selection table.
+        local branches = { "main" }
+        local serverVersions = {}
+
+        for _, branch in ipairs(branches) do
+            local url = SHEETS_WEB_APP_URL .. "?action=GetUserVersionProfile&userId="
+                .. HttpService:UrlEncode(tostring(LocalPlayer.UserId))
+                .. "&branch=" .. HttpService:UrlEncode(branch)
+                .. "&_=" .. tostring(DateTime.now().UnixTimestampMillis)
+            local ok, response = pcall(function() return game:HttpGet(url) end)
+            if ok and type(response) == "string" and response ~= "" then
+                local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
+                if decodeOk and type(decoded) == "table" and decoded.status == "success"
+                    and type(decoded.versions) == "table" then
+                    for path, sha in pairs(decoded.versions) do
+                        if type(path) == "string" and type(sha) == "string" and #sha == 40 then
+                            serverVersions[path] = sha
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Server profile wins; local-only selections are migrated to the server.
+        for path, sha in pairs(serverVersions) do
+            selectedPluginVersions[path] = sha
+        end
+        -- If profile loading finishes after the stable scan, acknowledge a release
+        -- that the user had already selected so UPDATE! does not reappear.
+        for path, sha in pairs(selectedPluginVersions) do
+            if stableLatestShaCache[path] == sha then
+                if acknowledgedReleaseShas[path] ~= sha then
+                    acknowledgedReleaseShas[path] = sha
+                    saveAcknowledgedReleases()
+                end
+                releaseUpdateByPath[path] = false
+            end
+        end
+        saveSelectedPluginVersions()
+
+        for path, sha in pairs(selectedPluginVersions) do
+            if not serverVersions[path] then
+                local branchForPath = "main"
+                for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
+                    for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+                        local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or { item }
+                        for _, feature in ipairs(candidates) do
+                            local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or item.RawUrl
+                            if getPluginSourcePath(featureUrl) == path then
+                                branchForPath = getPluginSourceBranch(featureUrl)
+                                break
+                            end
+                        end
+                    end
+                end
+                requestUserVersionProfile("Save", branchForPath, path, sha)
+            end
+        end
+
+        if refreshBadgeUI then
+            task.defer(refreshBadgeUI)
+        end
+    end
+    -- A parent with mixed child sources uses its most common source for the parent
+    -- history arrow. Other source files keep their own arrows inside the submenu.
+    local function getPrimarySubFeatureSourceUrl(subFeatures, fallbackUrl)
         if type(subFeatures) ~= "table" then return nil end
-        local sharedPath, sharedUrl
+        local counts, urls, firstSeen = {}, {}, {}
         for _, feature in ipairs(subFeatures) do
             local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or fallbackUrl
             local featurePath = getPluginSourcePath(featureUrl)
             if featurePath then
-                if sharedPath and sharedPath ~= featurePath then return nil end
-                sharedPath = featurePath
-                sharedUrl = sharedUrl or featureUrl
+                if not counts[featurePath] then
+                    counts[featurePath] = 0
+                    urls[featurePath] = featureUrl
+                    table.insert(firstSeen, featurePath)
+                end
+                counts[featurePath] = counts[featurePath] + 1
             end
         end
-        return sharedUrl
+        local bestPath, bestCount
+        for _, path in ipairs(firstSeen) do
+            if not bestCount or counts[path] > bestCount then
+                bestPath, bestCount = path, counts[path]
+            end
+        end
+        return bestPath and urls[bestPath] or nil
     end
 
     local function getResolvedPluginUrl(rawUrl)
@@ -443,6 +586,12 @@ return function(speaker)
         return rawUrl
     end
 
+    local stableLatestShaCache = {}
+    local releaseUpdateByPath = {}
+    local releaseStatusCheckStarted = false
+    -- Cache paginated history by source path so retries resume at the failed page.
+    local stableHistoryCache = {}
+
     -- Retry short-lived GitHub/API interruptions without duplicating cached commits.
     local function requestGitHubWithRetry(url, attempts)
         attempts = math.max(1, tonumber(attempts) or 3)
@@ -451,15 +600,69 @@ return function(speaker)
             local ok, response = pcall(function()
                 return game:HttpGet(url)
             end)
-            if ok and type(response) == "string" and response ~= "" then
-                return true, response
-            end
+            if ok and type(response) == "string" and response ~= "" then return true, response end
             lastError = ok and "Respons GitHub kosong." or tostring(response)
-            if attempt < attempts then
-                task.wait(attempt * 1.25)
-            end
+            if attempt < attempts then task.wait(attempt * 1.25) end
         end
         return false, lastError
+    end
+
+    local function checkStableReleaseUpdates()
+        if releaseStatusCheckStarted or not globalLoaderData then return end
+        releaseStatusCheckStarted = true
+        task.spawn(function()
+            local paths, seen = {}, {}
+            for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
+                for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+                    local candidates = type(item.SubFeatures) == "table" and #item.SubFeatures > 0 and item.SubFeatures or {item}
+                    for _, feature in ipairs(candidates) do
+                        local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or item.RawUrl
+                        local sourcePath = getPluginSourcePath(featureUrl)
+                        if sourcePath and VERSION_HISTORY_BASELINES[sourcePath] and not seen[sourcePath] then
+                            seen[sourcePath] = true
+                            table.insert(paths, sourcePath)
+                        end
+                    end
+                end
+            end
+            -- Periksa AntiEffect lebih dulu agar badge pengujian muncul tanpa
+            -- menunggu seluruh file lain selesai diperiksa.
+            table.sort(paths, function(a, b)
+                if a == "Tools/AntiEffect" then return true end
+                if b == "Tools/AntiEffect" then return false end
+                return a < b
+            end)
+            local changed = false
+            for _, sourcePath in ipairs(paths) do
+                -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
+                -- Hindari REST API publik langsung dari client Roblox (rate limit 60/jam).
+                local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                    .. HttpService:UrlEncode(sourcePath)
+                local ok, response = requestGitHubWithRetry(historyUrl, 3)
+                if ok then
+                    local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                    local commits = decodeOk and type(payload) == "table" and payload.status == "success"
+                        and payload.commits or nil
+                    local latest = type(commits) == "table" and commits[1] or nil
+                    local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
+                    if #latestSha == 40 then
+                        stableLatestShaCache[sourcePath] = latestSha
+                        if selectedPluginVersions[sourcePath] == latestSha and acknowledgedReleaseShas[sourcePath] ~= latestSha then
+                            acknowledgedReleaseShas[sourcePath] = latestSha
+                            saveAcknowledgedReleases()
+                        end
+                        releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
+                            and acknowledgedReleaseShas[sourcePath] ~= latestSha
+                        changed = true
+                        -- Perbarui badge segera setelah satu file selesai dicek,
+                        -- jangan menunggu semua request path selesai.
+                        if refreshBadgeUI then task.defer(refreshBadgeUI) end
+                    end
+                end
+                task.wait(0.05)
+            end
+            if changed and refreshBadgeUI then task.defer(refreshBadgeUI) end
+        end)
     end
 
     local function isPluginSourceActive(path)
@@ -483,6 +686,444 @@ return function(speaker)
     local function isLegacyUpdateBadge(feature)
         local badgeText = string.lower(tostring(feature and feature.BadgeText or ""))
         return string.find(badgeText, "update", 1, true) ~= nil
+    end
+
+    local function getUserFacingBadgeText(feature)
+        local badgeText = string.lower(tostring(feature and feature.BadgeText or "new"))
+        -- UPDATE! is reserved for a newly promoted stable source commit.
+        -- Loader metadata may describe an older Beta-side change and must not
+        -- independently create a stable release badge.
+        if string.find(badgeText, "update", 1, true) then return nil end
+        if string.find(badgeText, "new", 1, true) then return "NEW!" end
+        return nil
+    end
+
+    local function updateHistoryCanvas(scroll)
+        if not scroll then return end
+        local layout = scroll:FindFirstChildOfClass("UIListLayout")
+        if layout then
+            scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
+        end
+    end
+
+    local function attachPublicVersionHistory(card, scrollContainer, rawUrl, displayName, baseHeight, nameLabel, showUpdateDot)
+        local path = getPluginSourcePath(rawUrl)
+        if not path then return end
+
+        local arrow = Instance.new("TextButton")
+        arrow.Name = "PublicVersionHistoryToggle"
+        -- Samakan tinggi dengan tombol EXECUTE/OPEN (24 px) dan lebarkan area sentuh.
+        arrow.Size = UDim2.new(0, 30, 0, 24)
+        arrow.AnchorPoint = Vector2.new(1, 0.5)
+        -- Keep the toggle anchored to the original feature row when the history panel expands.
+        arrow.Position = UDim2.new(1, -8, 0, baseHeight / 2)
+        arrow.ZIndex = (card.ZIndex or 1) + 5
+        arrow.BackgroundColor3 = Color3.fromRGB(45, 65, 85)
+        arrow.BackgroundTransparency = 0.1
+        arrow.BorderSizePixel = 0
+        arrow.Font = Enum.Font.GothamBold
+        arrow.Text = "▼"
+        arrow.TextColor3 = Color3.fromRGB(190, 220, 245)
+        arrow.TextSize = 14
+        arrow.Parent = card
+        Instance.new("UICorner", arrow).CornerRadius = UDim.new(0, 4)
+
+        if showUpdateDot then
+            local updateDot = Instance.new("TextLabel")
+            updateDot.Name = "VersionUpdateDot"
+            updateDot.Size = UDim2.new(0, 10, 0, 10)
+            updateDot.AnchorPoint = Vector2.new(0.5, 0.5)
+            -- Center the dot directly above the arrow, not at the card's far corner.
+            updateDot.Position = UDim2.new(0.5, 0, 0, -4)
+            updateDot.BackgroundTransparency = 1
+            updateDot.Font = Enum.Font.GothamBold
+            updateDot.Text = "•"
+            updateDot.TextColor3 = Color3.fromRGB(70, 255, 135)
+            updateDot.TextSize = 17
+            updateDot.ZIndex = arrow.ZIndex + 2
+            updateDot.Parent = arrow
+            applyBlinkAnimation(updateDot)
+        end
+
+        local panel
+        local expanded = false
+        card.Destroying:Connect(function()
+            if expanded then
+                expanded = false
+                openPublicHistoryPanels = math.max(0, openPublicHistoryPanels - 1)
+                if openPublicHistoryPanels == 0 and pendingPublicBadgeRefresh then
+                    pendingPublicBadgeRefresh = false
+                    task.defer(function()
+                        if refreshBadgeUI then refreshBadgeUI() end
+                    end)
+                end
+            end
+        end)
+
+        local function refreshPanel()
+            if panel then panel:Destroy() panel = nil end
+            panel = Instance.new("Frame")
+            panel.Name = "PublicVersionHistoryPanel"
+            panel.Position = UDim2.new(0, 6, 0, baseHeight)
+            panel.Size = UDim2.new(1, -12, 0, 148)
+            panel.BackgroundColor3 = Color3.fromRGB(16, 23, 33)
+            panel.BackgroundTransparency = 0.08
+            panel.BorderSizePixel = 0
+            panel.ZIndex = math.max(1, (card.ZIndex or 1) + 1)
+            panel.Parent = card
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 5)
+
+            local info = Instance.new("TextLabel")
+            info.Size = UDim2.new(1, -12, 0, 18)
+            info.Position = UDim2.new(0, 6, 0, 3)
+            info.BackgroundTransparency = 1
+            info.Font = Enum.Font.GothamBold
+            info.Text = "Memuat riwayat stable..."
+            info.TextColor3 = Color3.fromRGB(255, 255, 255)
+            info.TextTransparency = 0
+            info.TextSize = 10
+            info.TextStrokeTransparency = 1
+            info.TextXAlignment = Enum.TextXAlignment.Left
+            info.Parent = panel
+
+            -- Keep connection warnings in their own fully visible row.
+            -- Do not append long warning text to the compact version header.
+            local warningLabel = Instance.new("TextLabel")
+            warningLabel.Name = "GitHubStatusWarning"
+            warningLabel.Position = UDim2.new(0, 6, 0, 22)
+            warningLabel.Size = UDim2.new(1, -12, 0, 27)
+            warningLabel.BackgroundTransparency = 1
+            warningLabel.Font = Enum.Font.GothamBold
+            warningLabel.Text = ""
+            warningLabel.TextColor3 = Color3.fromRGB(255, 220, 105)
+            warningLabel.TextTransparency = 0
+            warningLabel.TextSize = 10
+            warningLabel.TextWrapped = true
+            warningLabel.TextXAlignment = Enum.TextXAlignment.Left
+            warningLabel.TextYAlignment = Enum.TextYAlignment.Top
+            warningLabel.Visible = false
+            warningLabel.ZIndex = panel.ZIndex + 2
+            warningLabel.Parent = panel
+
+            local historyScroll = Instance.new("ScrollingFrame")
+            historyScroll.Name = "VersionRows"
+            -- Saat tidak ada pesan peringatan, naikkan daftar agar lebih dekat ke info header.
+            -- Ruang tambahan ini juga membuat lebih banyak versi terlihat tanpa perlu scroll.
+            historyScroll.Position = UDim2.new(0, 5, 0, 25)
+            historyScroll.Size = UDim2.new(1, -10, 1, -30)
+            historyScroll.BackgroundTransparency = 1
+
+            local function setHistoryListWarningLayout(showWarning)
+                historyScroll.Position = UDim2.new(0, 5, 0, showWarning and 51 or 25)
+                historyScroll.Size = UDim2.new(1, -10, 1, showWarning and -56 or -30)
+            end
+            historyScroll.BorderSizePixel = 0
+            historyScroll.ScrollBarThickness = 3
+            historyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            historyScroll.Parent = panel
+
+            local rowsLayout = Instance.new("UIListLayout")
+            rowsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            rowsLayout.Padding = UDim.new(0, 4)
+            rowsLayout.Parent = historyScroll
+
+            local baselineSha = VERSION_HISTORY_BASELINES[path]
+            task.spawn(function()
+                local history = stableHistoryCache[path]
+                if not history then
+                    history = { commits = {}, nextPage = 1, complete = false }
+                    stableHistoryCache[path] = history
+                end
+                local loadWarning = nil
+                local foundBaseline = baselineSha == nil
+                for _, entry in ipairs(history.commits) do
+                    if baselineSha and tostring(entry.sha or "") == baselineSha then
+                        foundBaseline = true
+                        break
+                    end
+                end
+                if foundBaseline and baselineSha then history.complete = true end
+
+                -- Ambil halaman tambahan hanya saat baseline belum ditemukan.
+                -- Maksimal 10 halaman per pembukaan agar request tetap terkendali.
+                local shouldFetch = #history.commits == 0
+                    or (baselineSha ~= nil and not foundBaseline and not history.complete)
+                if shouldFetch and not history.complete then
+                    local page = math.max(1, tonumber(history.nextPage) or 1)
+                    while page <= 10 and not history.complete do
+                        local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                            .. HttpService:UrlEncode(path) .. "&page=" .. tostring(page)
+                        local ok, response = requestGitHubWithRetry(historyUrl, 3)
+                        if not ok or type(response) ~= "string" or response == "" then
+                            loadWarning = "Server Version History belum merespons pada halaman "
+                                .. tostring(page) .. ". Buka ulang panah untuk mencoba lagi."
+                            break
+                        end
+
+                        local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                        local decoded = decodeOk and type(payload) == "table" and payload.status == "success"
+                            and payload.commits or nil
+                        if type(decoded) ~= "table" then
+                            loadWarning = "Server Version History gagal mengambil halaman "
+                                .. tostring(page) .. ": "
+                                .. tostring(type(payload) == "table" and payload.message or "respons tidak valid")
+                            break
+                        end
+
+                        local knownShas = {}
+                        for _, cachedEntry in ipairs(history.commits) do
+                            knownShas[tostring(cachedEntry.sha or "")] = true
+                        end
+                        for _, entry in ipairs(decoded) do
+                            local entrySha = tostring(entry.sha or "")
+                            if entrySha ~= "" and not knownShas[entrySha] then
+                                table.insert(history.commits, entry)
+                                knownShas[entrySha] = true
+                            end
+                            if baselineSha and entrySha == baselineSha then foundBaseline = true end
+                        end
+
+                        history.nextPage = page + 1
+                        history.complete = #decoded < 30 or foundBaseline
+                        page = page + 1
+                    end
+                end
+
+                local commits = history.commits
+                local usedStaticManifest = false
+                if #commits == 0 then
+                    -- Fallback statis dari GitHub Raw: tidak membutuhkan GitHub REST API.
+                    local manifestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/VersionManifest.json"
+                    local manifestOk, manifestResponse = pcall(function() return game:HttpGet(manifestUrl) end)
+                    if manifestOk and type(manifestResponse) == "string" and manifestResponse ~= "" then
+                        local manifestDecodeOk, manifest = pcall(function() return HttpService:JSONDecode(manifestResponse) end)
+                        local item = manifestDecodeOk and type(manifest) == "table" and manifest[path]
+                        if type(item) == "table" and type(item.sha) == "string" and #item.sha >= 7 then
+                            commits = {{
+                                sha = item.sha,
+                                commit = {
+                                    message = item.message or "Versi terbaru (manifest)",
+                                    author = { date = item.date or "Tanggal tidak tersedia" }
+                                }
+                            }}
+                            usedStaticManifest = true
+                            stableLatestShaCache[path] = item.sha
+                        end
+                    end
+                    if #commits > 0 then history.commits = commits end
+                end
+                if not baselineSha and #commits > 0 and not usedStaticManifest then
+                    baselineSha = tostring(commits[#commits].sha or "")
+                    history.complete = true
+                end
+
+                local baselineIndex
+                for index, entry in ipairs(commits) do
+                    if tostring(entry.sha or "") == baselineSha then baselineIndex = index break end
+                end
+                if not baselineIndex and not loadWarning then
+                    loadWarning = history.complete
+                        and "Baseline V0.1 tidak ditemukan di riwayat stable."
+                        or "Baseline belum terjangkau. Commit terbaru tetap ditampilkan; buka ulang untuk melanjutkan."
+                end
+
+                if #commits == 0 then
+                    local activeSha = loadedPluginVersionShas[path]
+                    if activeSha == "__STABLE_LATEST__" then
+                        info.Text = displayName .. " • versi branch aktif"
+                    elseif type(activeSha) == "string" and #activeSha >= 7 then
+                        info.Text = displayName .. " • aktif " .. activeSha:sub(1, 7)
+                    else
+                        info.Text = displayName .. " • versi aktif tidak teridentifikasi"
+                    end
+                    if loadWarning then
+                        warningLabel.Text = loadWarning
+                        warningLabel.Visible = true
+                    else
+                        warningLabel.Text = "Belum ada data riwayat yang dapat ditampilkan."
+                        warningLabel.Visible = true
+                    end
+                    setHistoryListWarningLayout(true)
+                    return
+                end
+
+                local totalVersions = baselineIndex or #commits
+                local latestSha = tostring(commits[1] and commits[1].sha or "")
+                stableLatestShaCache[path] = latestSha
+                local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
+                local loadedSha = loadedPluginVersionShas[path]
+                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
+
+                info.Text = usedStaticManifest
+                    and (displayName .. " • versi manifest main")
+                    or (baselineIndex
+                        and (displayName .. " • " .. tostring(totalVersions) .. " versi • main")
+                        or (displayName .. " • commit terbaru • main"))
+                if loadWarning then
+                    warningLabel.Text = usedStaticManifest
+                        and "API GitHub tidak merespons. Menampilkan versi terbaru dari manifest statis."
+                        or loadWarning
+                    warningLabel.Visible = true
+                elseif usedStaticManifest then
+                    warningLabel.Text = "Riwayat lengkap sementara tidak tersedia; versi terbaru tetap bisa dikenali."
+                    warningLabel.Visible = true
+                end
+                setHistoryListWarningLayout(warningLabel.Visible)
+                for index = 1, math.min(12, #commits) do
+                    local entry = commits[index]
+                    local sha = tostring(entry.sha or "")
+                    local commitData = entry.commit or {}
+                    local author = commitData.author or {}
+                    local versionNumber = totalVersions - index + 1
+                    local versionName = usedStaticManifest and "Versi terbaru" or (baselineIndex and ("V0." .. tostring(versionNumber)) or ("Commit #" .. tostring(index)))
+                    local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
+                    if #message > 58 then message = message:sub(1, 55) .. "..." end
+
+                    local row = Instance.new("Frame")
+                    row.Size = UDim2.new(1, -3, 0, 39)
+                    row.BackgroundColor3 = Color3.fromRGB(31, 43, 58)
+                    row.BackgroundTransparency = 0.08
+                    row.BorderSizePixel = 0
+                    row.ZIndex = panel.ZIndex + 1
+                    row.Parent = historyScroll
+                    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+                    -- If this user already selected the latest release before this tracker
+                    -- existed, treat it as acknowledged even if no acknowledgement file exists.
+                    if index == 1 and selectedPluginVersions[path] == latestSha
+                        and acknowledgedReleaseShas[path] ~= latestSha then
+                        acknowledgedReleaseShas[path] = latestSha
+                        saveAcknowledgedReleases()
+                    end
+                    local isUpdateAvailable = index == 1
+                        and sha ~= baselineSha
+                        and acknowledgedReleaseShas[path] ~= sha
+                    local isStableVersion = tostring(VERSION_HISTORY_STABLE[path] or "") ~= ""
+                        and sha == tostring(VERSION_HISTORY_STABLE[path])
+
+                    local versionLabel = Instance.new("TextLabel")
+                    versionLabel.Size = UDim2.new(1, -112, 0, 16)
+                    versionLabel.Position = UDim2.new(0, 6, 0, 2)
+                    versionLabel.BackgroundTransparency = 1
+                    versionLabel.Font = Enum.Font.GothamBold
+                    local versionBadges = isStableVersion and "  Stable!" or ""
+                    versionLabel.Text = versionName .. versionBadges .. " • " .. message
+                    versionLabel.TextColor3 = Color3.fromRGB(225, 235, 245)
+                    versionLabel.TextSize = 8
+                    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    versionLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                    versionLabel.ZIndex = row.ZIndex + 1
+                    versionLabel.Parent = row
+
+                    if isUpdateAvailable then
+                        local updateBadge = Instance.new("TextLabel")
+                        updateBadge.Name = "NewReleaseBadge"
+                        updateBadge.Size = UDim2.new(0, 46, 0, 13)
+                        updateBadge.Position = UDim2.new(1, -52, 0, 3)
+                        updateBadge.BackgroundTransparency = 1
+                        updateBadge.Font = Enum.Font.GothamBold
+                        updateBadge.Text = "UPDATE!"
+                        updateBadge.TextColor3 = Color3.fromRGB(80, 235, 145)
+                        updateBadge.TextSize = 8
+                        updateBadge.ZIndex = row.ZIndex + 2
+                        updateBadge.Parent = row
+                        local blink = TweenService:Create(
+                            updateBadge,
+                            TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+                            { TextTransparency = 0.8 }
+                        )
+                        blink:Play()
+                    end
+
+                    local detail = Instance.new("TextLabel")
+                    detail.Size = UDim2.new(1, -68, 0, 13)
+                    detail.Position = UDim2.new(0, 6, 0, 20)
+                    detail.BackgroundTransparency = 1
+                    detail.Font = Enum.Font.Gotham
+                    detail.Text = tostring(author.date or "Tanggal tidak tersedia") .. " • " .. sha:sub(1, 7)
+                    detail.TextColor3 = Color3.fromRGB(135, 160, 185)
+                    detail.TextSize = 7
+                    detail.TextXAlignment = Enum.TextXAlignment.Left
+                    detail.ZIndex = row.ZIndex + 1
+                    detail.Parent = row
+
+                    if usedStaticManifest or sha == currentSha or sha == selectedSha then
+                        local current = Instance.new("TextLabel")
+                        current.Size = UDim2.new(0, 54, 0, 12)
+                        current.Position = UDim2.new(1, -60, 0, 2)
+                        current.BackgroundTransparency = 1
+                        current.Font = Enum.Font.GothamBold
+                        current.Text = (sha == currentSha or (usedStaticManifest and loadedSha == "__STABLE_LATEST__")) and loadedSha ~= nil and "DIPAKAI" or "DIPILIH"
+                        current.TextColor3 = sha == currentSha and loadedSha ~= nil
+                            and Color3.fromRGB(100, 235, 155) or Color3.fromRGB(125, 195, 245)
+                        current.TextSize = 7
+                        current.ZIndex = row.ZIndex + 1
+                        current.Parent = row
+                    end
+
+                    local choose = Instance.new("TextButton")
+                    choose.Size = UDim2.new(0, 54, 0, 19)
+                    choose.Position = UDim2.new(1, -60, 0, 18)
+                    choose.BackgroundColor3 = Color3.fromRGB(35, 105, 150)
+                    choose.BorderSizePixel = 0
+                    choose.Font = Enum.Font.GothamBold
+                    choose.Text = "PILIH"
+                    choose.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    choose.TextSize = 8
+                    choose.ZIndex = row.ZIndex + 1
+                    choose.Parent = row
+                    Instance.new("UICorner", choose).CornerRadius = UDim.new(0, 4)
+                    choose.MouseButton1Click:Connect(function()
+                        selectedPluginVersions[path] = sha
+                        saveSelectedPluginVersions()
+                        -- Acknowledge a release only when this user actually selects the latest main release.
+                        if sha == latestSha then
+                            acknowledgedReleaseShas[path] = sha
+                            saveAcknowledgedReleases()
+                            releaseUpdateByPath[path] = false
+                            if refreshBadgeUI then task.defer(refreshBadgeUI) end
+                        end
+                        local selectedBranch = getPluginSourceBranch(rawUrl)
+                        info.Text = versionName .. " dipilih. Menyimpan profil ke server..."
+                        task.spawn(function()
+                            local saved, result = requestUserVersionProfile("Save", selectedBranch, path, sha)
+                            if saved then
+                                info.Text = versionName .. " dipilih dan tersimpan di server untuk UserId ini."
+                            else
+                                info.Text = versionName .. " tersimpan lokal, tetapi sinkronisasi server gagal: " .. tostring(result)
+                            end
+                        end)
+                        -- Keep an active module cached so its UNEXECUTE command can still clean up.
+                        -- Inactive modules are invalidated immediately and use the selected SHA next time.
+                        clearPluginModuleCache(path)
+                        info.Text = versionName .. " dipilih. Jalankan ulang fitur untuk memuat source ini."
+                        refreshPanel()
+                    end)
+                end
+                updateHistoryCanvas(historyScroll)
+            end)
+        end
+
+        arrow.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            if expanded then
+                openPublicHistoryPanels = openPublicHistoryPanels + 1
+                arrow.Text = "▲"
+                refreshPanel()
+                card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
+            else
+                openPublicHistoryPanels = math.max(0, openPublicHistoryPanels - 1)
+                arrow.Text = "▼"
+                if panel then panel:Destroy() panel = nil end
+                card.Size = UDim2.new(1, 0, 0, baseHeight)
+                if openPublicHistoryPanels == 0 and pendingPublicBadgeRefresh then
+                    pendingPublicBadgeRefresh = false
+                    task.defer(refreshBadgeUI)
+                end
+            end
+            task.defer(function() updateHistoryCanvas(scrollContainer) end)
+        end)
+        return true
     end
 
     local loadedModuleFingerprints = {}
@@ -857,29 +1498,6 @@ return function(speaker)
     MinBtn.Parent = TopBar
     Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 4)
 
-    local AUTHORIZED_USER_ID = 6141017541
-    local isAuthorized = (LocalPlayer.UserId == AUTHORIZED_USER_ID)
-
-    local DevBtn = Instance.new("TextButton")
-    DevBtn.Size = UDim2.new(0, 54, 0, 20)
-    DevBtn.Position = UDim2.new(1, -110, 0, 5) 
-    DevBtn.BorderSizePixel = 0
-    DevBtn.Font = Enum.Font.GothamBold
-    DevBtn.TextSize = 9
-    DevBtn.ZIndex = 11
-    DevBtn.Parent = TopBar
-    Instance.new("UICorner", DevBtn).CornerRadius = UDim.new(0, 4)
-
-    if isAuthorized then
-        DevBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
-        DevBtn.Text = "DEV PANEL"
-        DevBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    else
-        DevBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
-        DevBtn.Text = "DEV PANEL"
-        DevBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    end
-
     local TabBar = Instance.new("ScrollingFrame")
     TabBar.Size = UDim2.new(1, -12, 0, 24)
     TabBar.Position = UDim2.new(0, 6, 0, 34)
@@ -1033,2108 +1651,6 @@ return function(speaker)
 
     local tabButtons = {}
     local tabScrolls = {}
-
-    -- ==========================================
-    -- 🛠️ DEV PANEL CONTAINER & SISTEM HALAMAN
-    -- ==========================================
-    local DevPanelContainer = Instance.new("Frame")
-    DevPanelContainer.Size = UDim2.new(1, 0, 1, -30)
-    DevPanelContainer.Position = UDim2.new(0, 0, 0, 30)
-    DevPanelContainer.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
-    DevPanelContainer.BackgroundTransparency = 0.1
-    DevPanelContainer.BorderSizePixel = 0
-    DevPanelContainer.Visible = false
-    DevPanelContainer.ZIndex = 30
-    DevPanelContainer.Parent = Frame
-    Instance.new("UICorner", DevPanelContainer).CornerRadius = UDim.new(0, 6)
-
-    local DevTitle = Instance.new("TextLabel")
-    DevTitle.Size = UDim2.new(1, -70, 0, 30)
-    DevTitle.Position = UDim2.new(0, 10, 0, 5)
-    DevTitle.BackgroundTransparency = 1
-    DevTitle.Font = Enum.Font.GothamBold
-    DevTitle.Text = "⚙️ DEVELOPER CONTROL PANEL"
-    DevTitle.TextColor3 = Color3.fromRGB(0, 220, 255)
-    DevTitle.TextSize = 11
-    DevTitle.TextXAlignment = Enum.TextXAlignment.Left
-    DevTitle.ZIndex = 31
-    DevTitle.Parent = DevPanelContainer
-
-    local DevBackBtn = Instance.new("TextButton")
-    DevBackBtn.Size = UDim2.new(0, 50, 0, 20)
-    DevBackBtn.Position = UDim2.new(1, -60, 0, 8)
-    DevBackBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    DevBackBtn.BorderSizePixel = 0
-    DevBackBtn.Font = Enum.Font.GothamBold
-    DevBackBtn.Text = "CLOSE"
-    DevBackBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    DevBackBtn.TextSize = 9
-    DevBackBtn.ZIndex = 31
-    DevBackBtn.Parent = DevPanelContainer
-    Instance.new("UICorner", DevBackBtn).CornerRadius = UDim.new(0, 4)
-
-    DevBackBtn.MouseButton1Click:Connect(function()
-        DevPanelContainer.Visible = false
-        if currentActiveScroll then
-            currentActiveScroll.Visible = true
-        end
-    end)
-
-    local DevMainMenu = Instance.new("ScrollingFrame")
-    DevMainMenu.Size = UDim2.new(1, -16, 1, -45)
-    DevMainMenu.Position = UDim2.new(0, 8, 0, 40)
-    DevMainMenu.BackgroundTransparency = 1
-    DevMainMenu.BorderSizePixel = 0
-    DevMainMenu.ScrollBarThickness = 4
-    DevMainMenu.ZIndex = 31
-    DevMainMenu.Parent = DevPanelContainer
-
-    local MainMenuLayout = Instance.new("UIListLayout")
-    MainMenuLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    MainMenuLayout.Padding = UDim.new(0, 6)
-    MainMenuLayout.Parent = DevMainMenu
-
-    local BadgeListView = Instance.new("Frame")
-    BadgeListView.Size = UDim2.new(1, -16, 1, -45)
-    BadgeListView.Position = UDim2.new(0, 8, 0, 40)
-    BadgeListView.BackgroundTransparency = 1
-    BadgeListView.Visible = false
-    BadgeListView.ZIndex = 31
-    BadgeListView.Parent = DevPanelContainer
-
-    local MaintenanceListView = Instance.new("Frame")
-    MaintenanceListView.Size = UDim2.new(1, -16, 1, -45)
-    MaintenanceListView.Position = UDim2.new(0, 8, 0, 40)
-    MaintenanceListView.BackgroundTransparency = 1
-    MaintenanceListView.Visible = false
-    MaintenanceListView.ZIndex = 31
-    MaintenanceListView.Parent = DevPanelContainer
-
-    local VersionHistoryView = Instance.new("Frame")
-    VersionHistoryView.Size = UDim2.new(1, -16, 1, -45)
-    VersionHistoryView.Position = UDim2.new(0, 8, 0, 40)
-    VersionHistoryView.BackgroundTransparency = 1
-    VersionHistoryView.Visible = false
-    VersionHistoryView.ZIndex = 31
-    VersionHistoryView.Parent = DevPanelContainer
-
-    -- Read-only Plugin Health Check UI
-    local HealthCheckView = Instance.new("Frame")
-    HealthCheckView.Size = UDim2.new(1, -16, 1, -45)
-    HealthCheckView.Position = UDim2.new(0, 8, 0, 40)
-    HealthCheckView.BackgroundTransparency = 1
-    HealthCheckView.Visible = false
-    HealthCheckView.ZIndex = 31
-    HealthCheckView.Parent = DevPanelContainer
-
-    -- Plugin Update Checker UI
-    local UpdateCheckerView = Instance.new("Frame")
-    UpdateCheckerView.Size = UDim2.new(1, -16, 1, -45)
-    UpdateCheckerView.Position = UDim2.new(0, 8, 0, 40)
-    UpdateCheckerView.BackgroundTransparency = 1
-    UpdateCheckerView.Visible = false
-    UpdateCheckerView.ZIndex = 31
-    UpdateCheckerView.Parent = DevPanelContainer
-
-    local UpdateCheckerBackBtn = Instance.new("TextButton")
-    UpdateCheckerBackBtn.Size = UDim2.new(1, 0, 0, 28)
-    UpdateCheckerBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
-    UpdateCheckerBackBtn.BorderSizePixel = 0
-    UpdateCheckerBackBtn.Font = Enum.Font.GothamBold
-    UpdateCheckerBackBtn.Text = "< KEMBALI KE MENU DEV"
-    UpdateCheckerBackBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
-    UpdateCheckerBackBtn.TextSize = 10
-    UpdateCheckerBackBtn.ZIndex = 32
-    UpdateCheckerBackBtn.Parent = UpdateCheckerView
-    Instance.new("UICorner", UpdateCheckerBackBtn).CornerRadius = UDim.new(0, 4)
-    UpdateCheckerBackBtn.MouseButton1Click:Connect(function()
-        UpdateCheckerView.Visible = false
-        DevMainMenu.Visible = true
-    end)
-
-    local UpdateCheckerScanBtn = Instance.new("TextButton")
-    UpdateCheckerScanBtn.Size = UDim2.new(0.49, 0, 0, 28)
-    UpdateCheckerScanBtn.Position = UDim2.new(0, 0, 0, 33)
-    UpdateCheckerScanBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 90)
-    UpdateCheckerScanBtn.BorderSizePixel = 0
-    UpdateCheckerScanBtn.Font = Enum.Font.GothamBold
-    UpdateCheckerScanBtn.Text = "CEK UPDATE"
-    UpdateCheckerScanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    UpdateCheckerScanBtn.TextSize = 9
-    UpdateCheckerScanBtn.ZIndex = 32
-    UpdateCheckerScanBtn.Parent = UpdateCheckerView
-    Instance.new("UICorner", UpdateCheckerScanBtn).CornerRadius = UDim.new(0, 4)
-
-    local UpdateCheckerBaselineBtn = Instance.new("TextButton")
-    UpdateCheckerBaselineBtn.Size = UDim2.new(0.49, 0, 0, 28)
-    UpdateCheckerBaselineBtn.Position = UDim2.new(0.51, 0, 0, 33)
-    UpdateCheckerBaselineBtn.BackgroundColor3 = Color3.fromRGB(45, 95, 155)
-    UpdateCheckerBaselineBtn.BorderSizePixel = 0
-    UpdateCheckerBaselineBtn.Font = Enum.Font.GothamBold
-    UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
-    UpdateCheckerBaselineBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    UpdateCheckerBaselineBtn.TextSize = 9
-    UpdateCheckerBaselineBtn.ZIndex = 32
-    UpdateCheckerBaselineBtn.Parent = UpdateCheckerView
-    Instance.new("UICorner", UpdateCheckerBaselineBtn).CornerRadius = UDim.new(0, 4)
-
-    local UpdateCheckerAdminKeyBox = Instance.new("TextBox")
-    UpdateCheckerAdminKeyBox.Size = UDim2.new(1, 0, 0, 24)
-    UpdateCheckerAdminKeyBox.Position = UDim2.new(0, 0, 0, 64)
-    UpdateCheckerAdminKeyBox.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
-    UpdateCheckerAdminKeyBox.BorderSizePixel = 0
-    UpdateCheckerAdminKeyBox.Font = Enum.Font.Gotham
-    UpdateCheckerAdminKeyBox.PlaceholderText = "Kunci Dev Panel (untuk menyimpan baseline online)"
-    UpdateCheckerAdminKeyBox.Text = ""
-    UpdateCheckerAdminKeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    UpdateCheckerAdminKeyBox.PlaceholderColor3 = Color3.fromRGB(145, 160, 180)
-    UpdateCheckerAdminKeyBox.TextSize = 8
-    UpdateCheckerAdminKeyBox.ClearTextOnFocus = false
-    UpdateCheckerAdminKeyBox.ZIndex = 33
-    UpdateCheckerAdminKeyBox.Parent = UpdateCheckerView
-    Instance.new("UICorner", UpdateCheckerAdminKeyBox).CornerRadius = UDim.new(0, 4)
-
-    local UpdateCheckerInfo = Instance.new("TextLabel")
-    UpdateCheckerInfo.Size = UDim2.new(1, 0, 0, 28)
-    UpdateCheckerInfo.Position = UDim2.new(0, 0, 0, 91)
-    UpdateCheckerInfo.BackgroundTransparency = 1
-    UpdateCheckerInfo.Font = Enum.Font.Gotham
-    UpdateCheckerInfo.Text = "Cek commit GitHub. Pemeriksaan pertama perlu menyimpan baseline."
-    UpdateCheckerInfo.TextColor3 = Color3.fromRGB(160, 175, 195)
-    UpdateCheckerInfo.TextSize = 8
-    UpdateCheckerInfo.TextWrapped = true
-    UpdateCheckerInfo.TextXAlignment = Enum.TextXAlignment.Left
-    UpdateCheckerInfo.ZIndex = 32
-    UpdateCheckerInfo.Parent = UpdateCheckerView
-
-    local UpdateCheckerScroll = Instance.new("ScrollingFrame")
-    UpdateCheckerScroll.Size = UDim2.new(1, 0, 1, -130)
-    UpdateCheckerScroll.Position = UDim2.new(0, 0, 0, 126)
-    UpdateCheckerScroll.BackgroundTransparency = 1
-    UpdateCheckerScroll.BorderSizePixel = 0
-    UpdateCheckerScroll.ScrollBarThickness = 4
-    UpdateCheckerScroll.Active = true
-    UpdateCheckerScroll.ScrollingEnabled = true
-    UpdateCheckerScroll.ZIndex = 32
-    UpdateCheckerScroll.Parent = UpdateCheckerView
-
-    local UpdateCheckerLayout = Instance.new("UIListLayout")
-    UpdateCheckerLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UpdateCheckerLayout.Padding = UDim.new(0, 5)
-    UpdateCheckerLayout.Parent = UpdateCheckerScroll
-    UpdateCheckerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        UpdateCheckerScroll.CanvasSize = UDim2.new(0, 0, 0, UpdateCheckerLayout.AbsoluteContentSize.Y + 8)
-    end)
-
-    local HealthCheckBackBtn = Instance.new("TextButton")
-    HealthCheckBackBtn.Size = UDim2.new(1, 0, 0, 28)
-    HealthCheckBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
-    HealthCheckBackBtn.BorderSizePixel = 0
-    HealthCheckBackBtn.Font = Enum.Font.GothamBold
-    HealthCheckBackBtn.Text = "< KEMBALI KE MENU DEV"
-    HealthCheckBackBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
-    HealthCheckBackBtn.TextSize = 10
-    HealthCheckBackBtn.ZIndex = 32
-    HealthCheckBackBtn.Parent = HealthCheckView
-    Instance.new("UICorner", HealthCheckBackBtn).CornerRadius = UDim.new(0, 4)
-    HealthCheckBackBtn.MouseButton1Click:Connect(function()
-        HealthCheckView.Visible = false
-        DevMainMenu.Visible = true
-    end)
-
-    local HealthCheckRunBtn = Instance.new("TextButton")
-    HealthCheckRunBtn.Size = UDim2.new(0.49, 0, 0, 28)
-    HealthCheckRunBtn.Position = UDim2.new(0, 0, 0, 33)
-    HealthCheckRunBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 90)
-    HealthCheckRunBtn.BorderSizePixel = 0
-    HealthCheckRunBtn.Font = Enum.Font.GothamBold
-    HealthCheckRunBtn.Text = "JALANKAN PEMERIKSAAN"
-    HealthCheckRunBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    HealthCheckRunBtn.TextSize = 9
-    HealthCheckRunBtn.ZIndex = 32
-    HealthCheckRunBtn.Parent = HealthCheckView
-    Instance.new("UICorner", HealthCheckRunBtn).CornerRadius = UDim.new(0, 4)
-
-    local HealthCheckExportBtn = Instance.new("TextButton")
-    HealthCheckExportBtn.Size = UDim2.new(0.49, 0, 0, 28)
-    HealthCheckExportBtn.Position = UDim2.new(0.51, 0, 0, 33)
-    HealthCheckExportBtn.BackgroundColor3 = Color3.fromRGB(45, 95, 155)
-    HealthCheckExportBtn.BorderSizePixel = 0
-    HealthCheckExportBtn.Font = Enum.Font.GothamBold
-    HealthCheckExportBtn.Text = "EXPORT HASIL"
-    HealthCheckExportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    HealthCheckExportBtn.TextSize = 9
-    HealthCheckExportBtn.ZIndex = 32
-    HealthCheckExportBtn.Parent = HealthCheckView
-    Instance.new("UICorner", HealthCheckExportBtn).CornerRadius = UDim.new(0, 4)
-
-    local RuntimeHistoryBtn = Instance.new("TextButton")
-    RuntimeHistoryBtn.Size = UDim2.new(0.49, 0, 0, 25)
-    RuntimeHistoryBtn.Position = UDim2.new(0, 0, 0, 64)
-    RuntimeHistoryBtn.BackgroundColor3 = Color3.fromRGB(105, 75, 155)
-    RuntimeHistoryBtn.BorderSizePixel = 0
-    RuntimeHistoryBtn.Font = Enum.Font.GothamBold
-    RuntimeHistoryBtn.Text = "RIWAYAT ERROR"
-    RuntimeHistoryBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    RuntimeHistoryBtn.TextSize = 9
-    RuntimeHistoryBtn.ZIndex = 32
-    RuntimeHistoryBtn.Parent = HealthCheckView
-    Instance.new("UICorner", RuntimeHistoryBtn).CornerRadius = UDim.new(0, 4)
-
-    local RuntimeTestBtn = Instance.new("TextButton")
-    RuntimeTestBtn.Size = UDim2.new(0.49, 0, 0, 25)
-    RuntimeTestBtn.Position = UDim2.new(0.51, 0, 0, 64)
-    RuntimeTestBtn.BackgroundColor3 = Color3.fromRGB(150, 95, 35)
-    RuntimeTestBtn.BorderSizePixel = 0
-    RuntimeTestBtn.Font = Enum.Font.GothamBold
-    RuntimeTestBtn.Text = "TES LAPORAN"
-    RuntimeTestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    RuntimeTestBtn.TextSize = 9
-    RuntimeTestBtn.ZIndex = 32
-    RuntimeTestBtn.Parent = HealthCheckView
-    Instance.new("UICorner", RuntimeTestBtn).CornerRadius = UDim.new(0, 4)
-
-    local StableUpdateTestBtn = Instance.new("TextButton")
-    StableUpdateTestBtn.Size = UDim2.new(1, 0, 0, 25)
-    StableUpdateTestBtn.Position = UDim2.new(0, 0, 0, 94)
-    StableUpdateTestBtn.BackgroundColor3 = Color3.fromRGB(35, 115, 105)
-    StableUpdateTestBtn.BorderSizePixel = 0
-    StableUpdateTestBtn.Font = Enum.Font.GothamBold
-    StableUpdateTestBtn.Text = "TES UPDATE STABLE"
-    StableUpdateTestBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    StableUpdateTestBtn.TextSize = 9
-    StableUpdateTestBtn.ZIndex = 32
-    StableUpdateTestBtn.Parent = HealthCheckView
-    Instance.new("UICorner", StableUpdateTestBtn).CornerRadius = UDim.new(0, 4)
-
-    HealthCheckInfo = Instance.new("TextLabel")
-    HealthCheckInfo.Size = UDim2.new(1, 0, 0, 28)
-    HealthCheckInfo.Position = UDim2.new(0, 0, 0, 124)
-    HealthCheckInfo.BackgroundTransparency = 1
-    HealthCheckInfo.Font = Enum.Font.Gotham
-    HealthCheckInfo.Text = "Pemeriksaan belum dijalankan. Source hanya diunduh dan dikompilasi, tidak dieksekusi."
-    HealthCheckInfo.TextColor3 = Color3.fromRGB(160, 175, 195)
-    HealthCheckInfo.TextSize = 8
-    HealthCheckInfo.TextWrapped = true
-    HealthCheckInfo.TextXAlignment = Enum.TextXAlignment.Left
-    HealthCheckInfo.ZIndex = 32
-    HealthCheckInfo.Parent = HealthCheckView
-
-    local HealthCheckScroll = Instance.new("ScrollingFrame")
-    HealthCheckScroll.Size = UDim2.new(1, 0, 1, -160)
-    HealthCheckScroll.Position = UDim2.new(0, 0, 0, 156)
-    HealthCheckScroll.BackgroundTransparency = 1
-    HealthCheckScroll.BorderSizePixel = 0
-    HealthCheckScroll.ScrollBarThickness = 4
-    HealthCheckScroll.Active = true
-    HealthCheckScroll.ScrollingEnabled = true
-    HealthCheckScroll.ZIndex = 32
-    HealthCheckScroll.Parent = HealthCheckView
-
-    local HealthCheckLayout = Instance.new("UIListLayout")
-    HealthCheckLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    HealthCheckLayout.Padding = UDim.new(0, 5)
-    HealthCheckLayout.Parent = HealthCheckScroll
-    HealthCheckLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        HealthCheckScroll.CanvasSize = UDim2.new(0, 0, 0, HealthCheckLayout.AbsoluteContentSize.Y + 8)
-    end)
-
-    local VersionHistoryBackBtn = Instance.new("TextButton")
-    VersionHistoryBackBtn.Size = UDim2.new(1, 0, 0, 28)
-    VersionHistoryBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
-    VersionHistoryBackBtn.BorderSizePixel = 0
-    VersionHistoryBackBtn.Font = Enum.Font.GothamBold
-    VersionHistoryBackBtn.Text = "< KEMBALI KE MENU DEV"
-    VersionHistoryBackBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
-    VersionHistoryBackBtn.TextSize = 10
-    VersionHistoryBackBtn.ZIndex = 32
-    VersionHistoryBackBtn.Parent = VersionHistoryView
-    Instance.new("UICorner", VersionHistoryBackBtn).CornerRadius = UDim.new(0, 4)
-
-    local VersionHistoryInfo = Instance.new("TextLabel")
-    VersionHistoryInfo.Size = UDim2.new(1, 0, 0, 30)
-    VersionHistoryInfo.Position = UDim2.new(0, 0, 0, 32)
-    VersionHistoryInfo.BackgroundTransparency = 1
-    VersionHistoryInfo.Font = Enum.Font.Gotham
-    VersionHistoryInfo.Text = "Pilih file untuk melihat riwayat commit GitHub."
-    VersionHistoryInfo.TextColor3 = Color3.fromRGB(160, 175, 195)
-    VersionHistoryInfo.TextSize = 8
-    VersionHistoryInfo.TextWrapped = true
-    VersionHistoryInfo.TextXAlignment = Enum.TextXAlignment.Left
-    VersionHistoryInfo.ZIndex = 32
-    VersionHistoryInfo.Parent = VersionHistoryView
-
-    local VersionHistoryAdminKeyBox = Instance.new("TextBox")
-    VersionHistoryAdminKeyBox.Size = UDim2.new(1, 0, 0, 26)
-    VersionHistoryAdminKeyBox.Position = UDim2.new(0, 0, 0, 64)
-    VersionHistoryAdminKeyBox.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
-    VersionHistoryAdminKeyBox.BorderSizePixel = 0
-    VersionHistoryAdminKeyBox.Font = Enum.Font.Gotham
-    VersionHistoryAdminKeyBox.PlaceholderText = "Masukkan kunci Dev Panel untuk restore"
-    VersionHistoryAdminKeyBox.Text = ""
-    VersionHistoryAdminKeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    VersionHistoryAdminKeyBox.PlaceholderColor3 = Color3.fromRGB(145, 160, 180)
-    VersionHistoryAdminKeyBox.TextSize = 9
-    VersionHistoryAdminKeyBox.ClearTextOnFocus = false
-    VersionHistoryAdminKeyBox.ZIndex = 33
-    VersionHistoryAdminKeyBox.Parent = VersionHistoryView
-    Instance.new("UICorner", VersionHistoryAdminKeyBox).CornerRadius = UDim.new(0, 4)
-
-    local VersionHistoryScroll = Instance.new("ScrollingFrame")
-    VersionHistoryScroll.Size = UDim2.new(1, 0, 1, -96)
-    VersionHistoryScroll.Position = UDim2.new(0, 0, 0, 94)
-    VersionHistoryScroll.BackgroundTransparency = 1
-    VersionHistoryScroll.BorderSizePixel = 0
-    VersionHistoryScroll.ScrollBarThickness = 4
-    VersionHistoryScroll.Active = true
-    VersionHistoryScroll.ScrollingEnabled = true
-    VersionHistoryScroll.ZIndex = 32
-    VersionHistoryScroll.Parent = VersionHistoryView
-
-    local VersionHistoryLayout = Instance.new("UIListLayout")
-    VersionHistoryLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    VersionHistoryLayout.Padding = UDim.new(0, 6)
-    VersionHistoryLayout.Parent = VersionHistoryScroll
-
-    -- Keep the canvas matched to the real content height, including TextButton rows.
-    VersionHistoryLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, VersionHistoryLayout.AbsoluteContentSize.Y + 8)
-    end)
-
-    local MaintenanceBackBtn = Instance.new("TextButton")
-    MaintenanceBackBtn.Size = UDim2.new(1, 0, 0, 28)
-    MaintenanceBackBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
-    MaintenanceBackBtn.BorderSizePixel = 0
-    MaintenanceBackBtn.Font = Enum.Font.GothamBold
-    MaintenanceBackBtn.Text = "< KEMBALI KE MENU DEV"
-    MaintenanceBackBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
-    MaintenanceBackBtn.TextSize = 10
-    MaintenanceBackBtn.ZIndex = 32
-    MaintenanceBackBtn.Parent = MaintenanceListView
-    Instance.new("UICorner", MaintenanceBackBtn).CornerRadius = UDim.new(0, 4)
-
-    MaintenanceBackBtn.MouseButton1Click:Connect(function()
-        MaintenanceListView.Visible = false
-        DevMainMenu.Visible = true
-    end)
-
-    VersionHistoryBackBtn.MouseButton1Click:Connect(function()
-        VersionHistoryView.Visible = false
-        DevMainMenu.Visible = true
-    end)
-
-    local MaintenanceAdminKeyBox = Instance.new("TextBox")
-    MaintenanceAdminKeyBox.Size = UDim2.new(1, 0, 0, 26)
-    MaintenanceAdminKeyBox.Position = UDim2.new(0, 0, 0, 33)
-    MaintenanceAdminKeyBox.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
-    MaintenanceAdminKeyBox.BorderSizePixel = 0
-    MaintenanceAdminKeyBox.Font = Enum.Font.Gotham
-    MaintenanceAdminKeyBox.PlaceholderText = "Masukkan kunci Dev Panel"
-    MaintenanceAdminKeyBox.Text = ""
-    MaintenanceAdminKeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    MaintenanceAdminKeyBox.PlaceholderColor3 = Color3.fromRGB(145, 160, 180)
-    MaintenanceAdminKeyBox.TextSize = 9
-    MaintenanceAdminKeyBox.ClearTextOnFocus = false
-    MaintenanceAdminKeyBox.ZIndex = 32
-    MaintenanceAdminKeyBox.Parent = MaintenanceListView
-    Instance.new("UICorner", MaintenanceAdminKeyBox).CornerRadius = UDim.new(0, 4)
-
-    local MaintenanceScroll = Instance.new("ScrollingFrame")
-    MaintenanceScroll.Size = UDim2.new(1, 0, 1, -64)
-    MaintenanceScroll.Position = UDim2.new(0, 0, 0, 64)
-    MaintenanceScroll.BackgroundTransparency = 1
-    MaintenanceScroll.BorderSizePixel = 0
-    MaintenanceScroll.ScrollBarThickness = 4
-    MaintenanceScroll.ZIndex = 32
-    MaintenanceScroll.Parent = MaintenanceListView
-
-    local MaintenanceScrollLayout = Instance.new("UIListLayout")
-    MaintenanceScrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    MaintenanceScrollLayout.Padding = UDim.new(0, 6)
-    MaintenanceScrollLayout.Parent = MaintenanceScroll
-
-    local BadgeBackMenuBtn = Instance.new("TextButton")
-    BadgeBackMenuBtn.Size = UDim2.new(1, 0, 0, 28)
-    BadgeBackMenuBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
-    BadgeBackMenuBtn.BorderSizePixel = 0
-    BadgeBackMenuBtn.Font = Enum.Font.GothamBold
-    BadgeBackMenuBtn.Text = "< KEMBALI KE MENU DEV"
-    BadgeBackMenuBtn.TextColor3 = Color3.fromRGB(0, 200, 255)
-    BadgeBackMenuBtn.TextSize = 10
-    BadgeBackMenuBtn.ZIndex = 32
-    BadgeBackMenuBtn.Parent = BadgeListView
-    Instance.new("UICorner", BadgeBackMenuBtn).CornerRadius = UDim.new(0, 4)
-
-    BadgeBackMenuBtn.MouseButton1Click:Connect(function()
-        BadgeListView.Visible = false
-        DevMainMenu.Visible = true
-    end)
-
-    local BadgeScroll = Instance.new("ScrollingFrame")
-    BadgeScroll.Size = UDim2.new(1, 0, 1, -34)
-    BadgeScroll.Position = UDim2.new(0, 0, 0, 34)
-    BadgeScroll.BackgroundTransparency = 1
-    BadgeScroll.BorderSizePixel = 0
-    BadgeScroll.ScrollBarThickness = 4
-    BadgeScroll.ZIndex = 32
-    BadgeScroll.Parent = BadgeListView
-
-    local BadgeScrollLayout = Instance.new("UIListLayout")
-    BadgeScrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    BadgeScrollLayout.Padding = UDim.new(0, 6)
-    BadgeScrollLayout.Parent = BadgeScroll
-
-    local healthScanRunning = false
-    local healthReportLines = {}
-
-    local updateScanRunning = false
-    local updateScanResults = {}
-    local updateBaseline = {}
-    local updateBaselineLoaded = false
-    local UPDATE_BASELINE_KEY = "PluginUpdateCheckerBaseline"
-
-    local function loadUpdateBaseline()
-        updateBaseline = {}
-        local raw = tostring(remoteMetadata[UPDATE_BASELINE_KEY] or "")
-        if raw ~= "" then
-            local decodeOk, decoded = pcall(function()
-                return HttpService:JSONDecode(raw)
-            end)
-            if decodeOk and type(decoded) == "table" then
-                updateBaseline = decoded
-            end
-        end
-        updateBaselineLoaded = true
-    end
-
-    local function clearUpdateCheckerRows()
-        for _, child in ipairs(UpdateCheckerScroll:GetChildren()) do
-            if child:IsA("Frame") or child:IsA("TextLabel") then
-                child:Destroy()
-            end
-        end
-    end
-
-    local function addUpdateCheckerRow(title, detail, status)
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, -4, 0, 42)
-        row.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
-        row.BorderSizePixel = 0
-        row.ZIndex = 33
-        row.Parent = UpdateCheckerScroll
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-
-        local titleLabel = Instance.new("TextLabel")
-        titleLabel.Size = UDim2.new(1, -14, 0, 17)
-        titleLabel.Position = UDim2.new(0, 7, 0, 4)
-        titleLabel.BackgroundTransparency = 1
-        titleLabel.Font = Enum.Font.GothamBold
-        titleLabel.Text = tostring(status) .. " " .. tostring(title)
-        titleLabel.TextColor3 = status == "UPDATE" and Color3.fromRGB(255, 185, 90)
-            or status == "ERROR" and Color3.fromRGB(255, 105, 105)
-            or status == "BARU" and Color3.fromRGB(100, 190, 255)
-            or Color3.fromRGB(100, 230, 150)
-        titleLabel.TextSize = 9
-        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-        titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        titleLabel.ZIndex = 34
-        titleLabel.Parent = row
-
-        local detailLabel = Instance.new("TextLabel")
-        detailLabel.Size = UDim2.new(1, -14, 0, 16)
-        detailLabel.Position = UDim2.new(0, 7, 0, 21)
-        detailLabel.BackgroundTransparency = 1
-        detailLabel.Font = Enum.Font.Gotham
-        detailLabel.Text = tostring(detail or "")
-        detailLabel.TextColor3 = Color3.fromRGB(165, 178, 195)
-        detailLabel.TextSize = 8
-        detailLabel.TextXAlignment = Enum.TextXAlignment.Left
-        detailLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        detailLabel.ZIndex = 34
-        detailLabel.Parent = row
-    end
-
-    local function collectUpdateCheckerFiles()
-        local files, seen = {}, {}
-        local data = globalLoaderData
-        if type(data) ~= "table" then return files end
-        for _, tabInfo in ipairs(data.Tabs or {}) do
-            local dataKey = type(tabInfo) == "table" and tabInfo.DataKey or nil
-            local list = dataKey and dataKey ~= "" and data[dataKey] or nil
-            if type(list) == "table" then
-                for _, item in ipairs(list) do
-                    if type(item) == "table" then
-                        local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or {item}
-                        for _, feature in ipairs(candidates) do
-                            if type(feature) == "table" then
-                                local rawUrl = tostring((feature.RawUrl and feature.RawUrl ~= "" and feature.RawUrl) or item.RawUrl or "")
-                                local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
-                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
-                                if path and not seen[path] then
-                                    seen[path] = true
-                                    table.insert(files, {
-                                        path = path,
-                                        name = tostring(feature.Name or item.Name or path)
-                                    })
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        table.sort(files, function(a, b) return string.lower(a.path) < string.lower(b.path) end)
-        return files
-    end
-
-    local function runPluginUpdateCheck()
-        if updateScanRunning then return end
-        updateScanRunning = true
-        UpdateCheckerScanBtn.Active = false
-        UpdateCheckerBaselineBtn.Active = false
-        UpdateCheckerScanBtn.Text = "MEMERIKSA..."
-        UpdateCheckerInfo.Text = "Memeriksa isi source plugin dari GitHub..."
-        clearUpdateCheckerRows()
-        updateScanResults = {}
-        task.spawn(function()
-            -- Ambil baseline terbaru dari Metadata server sebelum membandingkan.
-            local metadataOk = fetchRemoteMetadata()
-            if metadataOk then
-                loadUpdateBaseline()
-            else
-                UpdateCheckerInfo.Text = "Gagal mengambil baseline online. Coba cek ulang."
-                UpdateCheckerScanBtn.Text = "CEK ULANG"
-                UpdateCheckerScanBtn.Active = true
-                UpdateCheckerBaselineBtn.Active = false
-                updateScanRunning = false
-                return
-            end
-
-            local files = collectUpdateCheckerFiles()
-            if #files == 0 then
-                addUpdateCheckerRow("Loader tidak tersedia", "Tidak ada source yang bisa diperiksa.", "ERROR")
-                UpdateCheckerInfo.Text = "Tidak ada source yang bisa diperiksa."
-                UpdateCheckerScanBtn.Text = "CEK ULANG"
-                UpdateCheckerScanBtn.Active = true
-                UpdateCheckerBaselineBtn.Active = false
-                updateScanRunning = false
-                return
-            end
-
-            -- Unduh source secara paralel agar tidak menunggu 21 request satu per satu.
-            -- Maksimal 4 worker untuk menjaga beban jaringan dan executor tetap terkendali.
-            local updated, unchanged, newBaseline, errors = 0, 0, 0, 0
-            local completed, nextIndex = 0, 0
-            local workerCount = math.min(4, #files)
-
-            local downloadRequest = request or http_request or (syn and syn.request)
-            local function checkOneFile(fileInfo)
-                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/main/" .. fileInfo.path
-                local rawOk, source
-                if type(downloadRequest) == "function" then
-                    rawOk, source = pcall(function()
-                        local response = downloadRequest({
-                            Url = rawUrl,
-                            Method = "GET",
-                            Timeout = 12
-                        })
-                        if not response then error("Tidak ada respons dari server") end
-                        local statusCode = tonumber(response.StatusCode or response.Status or 0)
-                        if statusCode ~= 200 then
-                            error("HTTP " .. tostring(statusCode) .. ": " .. string.sub(tostring(response.Body or response.StatusMessage or ""), 1, 70))
-                        end
-                        return response.Body
-                    end)
-                else
-                    rawOk, source = pcall(function() return game:HttpGet(rawUrl) end)
-                end
-
-                if not rawOk or type(source) ~= "string" or source == "" then
-                    errors = errors + 1
-                    addUpdateCheckerRow(fileInfo.name, "Gagal mengambil isi source: " .. string.sub(tostring(source), 1, 100), "ERROR")
-                else
-                    -- Fingerprint deterministik dari isi file (bukan hash keamanan).
-                    local fingerprint = 0
-                    for byteIndex = 1, #source do
-                        fingerprint = (fingerprint * 131 + string.byte(source, byteIndex)) % 2147483647
-                    end
-                    local latestFingerprint = "content:" .. tostring(#source) .. ":" .. tostring(fingerprint)
-                    updateScanResults[fileInfo.path] = {
-                        sha = latestFingerprint,
-                        name = fileInfo.name
-                    }
-
-                    local baselineFingerprint = tostring(updateBaseline[fileInfo.path] or "")
-                    if baselineFingerprint == "" then
-                        newBaseline = newBaseline + 1
-                        addUpdateCheckerRow(fileInfo.name, "Belum ada baseline • " .. tostring(#source) .. " byte", "BARU")
-                    elseif baselineFingerprint ~= latestFingerprint then
-                        updated = updated + 1
-                        addUpdateCheckerRow(fileInfo.name, "Isi file berubah sejak baseline terakhir.", "UPDATE")
-                    else
-                        unchanged = unchanged + 1
-                        addUpdateCheckerRow(fileInfo.name, "Isi file masih sama • " .. tostring(#source) .. " byte.", "OK")
-                    end
-                end
-            end
-
-            for worker = 1, workerCount do
-                task.spawn(function()
-                    while true do
-                        nextIndex = nextIndex + 1
-                        local index = nextIndex
-                        if index > #files then break end
-
-                        local fileInfo = files[index]
-                        UpdateCheckerInfo.Text = string.format(
-                            "Mengunduh paralel • %d/%d selesai • %s",
-                            completed, #files, fileInfo.name
-                        )
-
-                        local ok, err = pcall(checkOneFile, fileInfo)
-                        if not ok then
-                            errors = errors + 1
-                            addUpdateCheckerRow(fileInfo.name, "Kesalahan pemeriksaan: " .. string.sub(tostring(err), 1, 100), "ERROR")
-                        end
-
-                        completed = completed + 1
-                        UpdateCheckerInfo.Text = string.format(
-                            "Memeriksa source • %d/%d selesai (%d worker)",
-                            completed, #files, workerCount
-                        )
-                    end
-                end)
-            end
-
-            while completed < #files do
-                task.wait(0.05)
-            end
-
-            UpdateCheckerInfo.Text = string.format(
-                "Selesai • %d source • %d update • %d sama • %d baseline baru • %d gagal. Simpan baseline setelah meninjau.",
-                #files, updated, unchanged, newBaseline, errors
-            )
-            UpdateCheckerScanBtn.Text = "CEK ULANG"
-            UpdateCheckerScanBtn.Active = true
-            UpdateCheckerBaselineBtn.Active = next(updateScanResults) ~= nil
-            updateScanRunning = false
-        end)
-    end
-
-    UpdateCheckerScanBtn.MouseButton1Click:Connect(runPluginUpdateCheck)
-
-    UpdateCheckerBaselineBtn.MouseButton1Click:Connect(function()
-        if updateScanRunning or not next(updateScanResults) then
-            UpdateCheckerInfo.Text = "Jalankan pemeriksaan terlebih dahulu."
-            return
-        end
-        -- Keep old entries for files that failed this scan; never erase a valid baseline on a network error.
-        local nextBaseline = {}
-        for path, sha in pairs(updateBaseline) do
-            nextBaseline[path] = sha
-        end
-        for path, result in pairs(updateScanResults) do
-            nextBaseline[path] = result.sha
-        end
-        local encodedOk, encoded = pcall(function() return HttpService:JSONEncode(nextBaseline) end)
-        if not encodedOk then
-            UpdateCheckerInfo.Text = "Gagal membuat data baseline."
-            return
-        end
-
-        local adminKey = tostring(UpdateCheckerAdminKeyBox.Text or "")
-        if adminKey == "" then
-            UpdateCheckerInfo.Text = "Masukkan kunci Dev Panel untuk menyimpan baseline online."
-            return
-        end
-
-        UpdateCheckerBaselineBtn.Active = false
-        UpdateCheckerBaselineBtn.Text = "MENYIMPAN..."
-        local requestFn = request or http_request or (syn and syn.request)
-        if type(requestFn) ~= "function" then
-            UpdateCheckerInfo.Text = "Executor tidak menyediakan request untuk menyimpan ke server."
-            UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
-            UpdateCheckerBaselineBtn.Active = true
-            return
-        end
-
-        local beforeBaselineUpdatedAt = tostring(remoteMetadata.PluginUpdateCheckerBaselineUpdatedAt or "")
-        local requestOk, response = pcall(function()
-            return requestFn({
-                Url = SHEETS_WEB_APP_URL,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = HttpService:JSONEncode({
-                    Type = "UpdateBaseline",
-                    Action = "Save",
-                    Baseline = encoded,
-                    AdminKey = adminKey
-                })
-            })
-        end)
-
-        local saveSuccess = false
-        if requestOk and response then
-            -- Apps Script may redirect POST responses in some executors.
-            -- Confirm persistence from the public metadata snapshot instead of trusting the POST body.
-            for attempt = 1, 4 do
-                task.wait(attempt == 1 and 0.25 or 0.5)
-                local stateOk = fetchRemoteMetadata()
-                if stateOk then
-                    local savedAt = tostring(remoteMetadata.PluginUpdateCheckerBaselineUpdatedAt or "")
-                    local savedRaw = tostring(remoteMetadata[UPDATE_BASELINE_KEY] or "")
-                    if savedAt ~= "" and savedAt ~= beforeBaselineUpdatedAt and savedRaw == encoded then
-                        saveSuccess = true
-                        break
-                    end
-                end
-            end
-        end
-
-        if saveSuccess then
-            updateBaseline = nextBaseline
-            updateBaselineLoaded = true
-            UpdateCheckerInfo.Text = "Baseline berhasil disimpan ONLINE di Google Sheets. Bisa dipakai lintas perangkat."
-            UpdateCheckerAdminKeyBox.Text = ""
-        else
-            UpdateCheckerInfo.Text = requestOk
-                and "Server belum mengonfirmasi penyimpanan. Periksa kunci Dev Panel atau koneksi, lalu coba lagi."
-                or "Gagal menghubungi server untuk menyimpan baseline online."
-        end
-        UpdateCheckerBaselineBtn.Text = "SIMPAN BASELINE"
-        UpdateCheckerBaselineBtn.Active = not saveSuccess
-    end)
-
-    local function addHealthCheckResult(title, detail, isError)
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 42)
-        row.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
-        row.BorderSizePixel = 0
-        row.ZIndex = 33
-        row.Parent = HealthCheckScroll
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-
-        local titleLabel = Instance.new("TextLabel")
-        titleLabel.Size = UDim2.new(1, -14, 0, 17)
-        titleLabel.Position = UDim2.new(0, 7, 0, 4)
-        titleLabel.BackgroundTransparency = 1
-        titleLabel.Font = Enum.Font.GothamBold
-        titleLabel.Text = (isError and "✖ " or "✓ ") .. tostring(title)
-        titleLabel.TextColor3 = isError and Color3.fromRGB(255, 105, 105) or Color3.fromRGB(100, 230, 150)
-        titleLabel.TextSize = 9
-        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-        titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        titleLabel.ZIndex = 34
-        titleLabel.Parent = row
-
-        local detailLabel = Instance.new("TextLabel")
-        detailLabel.Size = UDim2.new(1, -14, 0, 16)
-        detailLabel.Position = UDim2.new(0, 7, 0, 21)
-        detailLabel.BackgroundTransparency = 1
-        detailLabel.Font = Enum.Font.Gotham
-        detailLabel.Text = tostring(detail or "")
-        detailLabel.TextColor3 = Color3.fromRGB(165, 178, 195)
-        detailLabel.TextSize = 8
-        detailLabel.TextXAlignment = Enum.TextXAlignment.Left
-        detailLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        detailLabel.ZIndex = 34
-        detailLabel.Parent = row
-    end
-
-    local function runPluginHealthCheck()
-        if healthScanRunning then return end
-        healthScanRunning = true
-        HealthCheckRunBtn.Active = false
-        HealthCheckRunBtn.Text = "MEMERIKSA..."
-        HealthCheckInfo.Text = "Mengumpulkan konfigurasi Loader..."
-        healthReportLines = {"PLUGIN HEALTH CHECK", "=================="}
-        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
-            if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
-        end
-
-        task.spawn(function()
-            local errors, checks = 0, 0
-            local function report(title, detail, failed)
-                checks = checks + 1
-                if failed then errors = errors + 1 end
-                table.insert(healthReportLines, (failed and "[ERROR] " or "[OK] ") .. tostring(title) .. " | " .. tostring(detail or ""))
-                addHealthCheckResult(title, detail, failed)
-            end
-
-            local data = globalLoaderData
-            if type(data) ~= "table" then
-                report("Loader tidak tersedia", "Data Loader belum berhasil dimuat.", true)
-            else
-                local tabs = data.Tabs
-                if type(tabs) ~= "table" or #tabs == 0 then
-                    report("Struktur Tabs", "Loader.Tabs kosong atau bukan tabel.", true)
-                else
-                    report("Struktur Tabs", tostring(#tabs) .. " tab ditemukan.", false)
-                end
-
-                local features, seenObjects = {}, {}
-                for _, tabInfo in ipairs(type(tabs) == "table" and tabs or {}) do
-                    if type(tabInfo) ~= "table" or type(tabInfo.Name) ~= "string" or tabInfo.Name == "" then
-                        report("Data tab tidak valid", "Ditemukan entri tab tanpa Name yang valid.", true)
-                    else
-                        local list = data[tabInfo.DataKey]
-                        if type(list) ~= "table" then
-                            report("Tab " .. tabInfo.Name, "DataKey tidak menunjuk ke tabel: " .. tostring(tabInfo.DataKey), true)
-                        else
-                            for _, item in ipairs(list) do
-                                if type(item) == "table" and type(item.SubFeatures) == "table" and #item.SubFeatures > 0 then
-                                    for _, sub in ipairs(item.SubFeatures) do
-                                        if type(sub) == "table" and not seenObjects[sub] then
-                                            seenObjects[sub] = true
-                                            table.insert(features, { feature = sub, parent = item, tab = tabInfo.Name })
-                                        end
-                                    end
-                                elseif type(item) == "table" and not seenObjects[item] then
-                                    seenObjects[item] = true
-                                    table.insert(features, { feature = item, parent = item, tab = tabInfo.Name })
-                                end
-                            end
-                        end
-                    end
-                end
-
-                local seenIds, seenCmds, urls = {}, {}, {}
-                if #features == 0 then
-                    report("Daftar fitur kosong", "Tidak ada fitur yang dapat diperiksa dari tab Loader.", true)
-                end
-                for _, entry in ipairs(features) do
-                    local feature, parent = entry.feature, entry.parent
-                    local name = tostring(feature.Name or feature.Cmd or "Fitur tanpa nama")
-                    local url = tostring((feature.RawUrl and feature.RawUrl ~= "" and feature.RawUrl) or parent.RawUrl or "")
-                    local cmd = tostring(feature.Cmd or "")
-                    local featureId = tostring(feature.FeatureId or "")
-                    if featureId == "" then
-                        report(name, "FeatureId kosong (" .. entry.tab .. ").", true)
-                    elseif seenIds[featureId] then
-                        report(name, "FeatureId duplikat: " .. featureId, true)
-                    else
-                        seenIds[featureId] = name
-                    end
-                    if cmd == "" then
-                        report(name, "Command kosong; tidak bisa dipetakan.", true)
-                    else
-                        local key = string.lower(url .. "|" .. cmd)
-                        if seenCmds[key] then
-                            report(name, "Kombinasi URL + command duplikat dengan " .. seenCmds[key] .. ".", true)
-                        else
-                            seenCmds[key] = name
-                        end
-                    end
-                    if url == "" then
-                        report(name, "RawUrl kosong.", true)
-                    else
-                        urls[url] = urls[url] or {}
-                        table.insert(urls[url], { name = name, cmd = cmd, mode = feature.ExecutionMode or parent.ExecutionMode })
-                    end
-                end
-
-                local urlCount = 0
-                for _ in pairs(urls) do urlCount = urlCount + 1 end
-                report("Konfigurasi fitur", tostring(#features) .. " entri fitur dan " .. tostring(urlCount) .. " URL unik diperiksa.", false)
-
-                for url, mapped in pairs(urls) do
-                    HealthCheckInfo.Text = "Memeriksa source " .. tostring(urlCount) .. " URL..."
-                    local requestOk, source = pcall(function() return game:HttpGet(url) end)
-                    if not requestOk or type(source) ~= "string" or source == "" then
-                        report("URL gagal diakses", url, true)
-                    else
-                        local compileOk, compileResult = pcall(function()
-                            if type(loadstring) ~= "function" then error("loadstring tidak tersedia") end
-                            return loadstring(source)
-                        end)
-                        if not compileOk or type(compileResult) ~= "function" then
-                            report("Syntax/source error", url .. " | " .. tostring(compileResult), true)
-                        else
-                            report("Source OK", url .. " | " .. tostring(#mapped) .. " mapping fitur.", false)
-                            for _, mapping in ipairs(mapped) do
-                                if mapping.mode == "standalone" then
-                                    report("Script mandiri", mapping.name .. " → " .. mapping.cmd .. " | validasi tabel Commands dilewati; source berjalan langsung saat dimuat.", false)
-                                else
-                                    local escaped = mapping.cmd:gsub("([^%w])", "%%%1")
-                                    -- Commands normally live inside a nested Commands table, so
-                                    -- search for the command key itself rather than requiring
-                                    -- the literal text "Commands" immediately before the key.
-                                    local dotPattern = "%.%s*" .. escaped .. "%s*="
-                                    local bracketPattern = "%[%s*[\"']" .. escaped .. "[\"']%s*%]%s*="
-                                    if not string.find(source, dotPattern) and not string.find(source, bracketPattern) then
-                                        report("Command tidak ditemukan", mapping.name .. " → " .. mapping.cmd, true)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                    task.wait(0.1)
-                end
-            end
-
-            table.insert(healthReportLines, "==================")
-            table.insert(healthReportLines, string.format("RINGKASAN: %d pemeriksaan, %d temuan.", checks, errors))
-            HealthCheckInfo.Text = string.format("Selesai: %d pemeriksaan, %d temuan. Source tidak dieksekusi.", checks, errors)
-            HealthCheckRunBtn.Text = "JALANKAN ULANG PEMERIKSAAN"
-            HealthCheckRunBtn.Active = true
-            healthScanRunning = false
-        end)
-    end
-
-    HealthCheckRunBtn.MouseButton1Click:Connect(runPluginHealthCheck)
-
-    local runtimeTestSent = false
-    RuntimeTestBtn.MouseButton1Click:Connect(function()
-        if runtimeTestSent then
-            HealthCheckInfo.Text = "Tes laporan baru saja dikirim. Muat riwayat untuk memeriksa hasilnya."
-            return
-        end
-        runtimeTestSent = true
-        RuntimeTestBtn.Text = "MENGIRIM TES..."
-        RuntimeTestBtn.Active = false
-        HealthCheckInfo.Text = "Mengirim satu laporan simulasi. Tidak ada command plugin asli yang dijalankan atau diubah."
-
-        reportPluginRuntimeError(
-            "Plugin Manager - TEST",
-            "RuntimeReportTest",
-            "internal://runtime-monitor-test",
-            "SIMULASI: pengujian jalur laporan runtime error. Ini bukan error plugin asli."
-        )
-
-        task.delay(3, function()
-            if RuntimeTestBtn and RuntimeTestBtn.Parent then
-                RuntimeTestBtn.Text = "TES TERKIRIM - CEK RIWAYAT"
-                RuntimeTestBtn.Active = true
-            end
-        end)
-    end)
-
-    local stableUpdateTestRunning = false
-    StableUpdateTestBtn.MouseButton1Click:Connect(function()
-        if stableUpdateTestRunning then return end
-        if stableFixPromptActive then
-            HealthCheckInfo.Text = "Tutup prompt perbaikan yang sedang terbuka sebelum mengulang tes."
-            return
-        end
-
-        local stableSourceUrl
-        for url, fingerprint in pairs(loadedModuleFingerprints) do
-            local normalizedUrl = tostring(url):match("^[^?]+") or tostring(url)
-            local isStableSource = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/.+$")
-                or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/.+$")
-            if isStableSource and fingerprint and loadedModules[normalizedUrl] then
-                stableSourceUrl = normalizedUrl
-                break
-            end
-        end
-
-        if not stableSourceUrl then
-            HealthCheckInfo.Text = "Belum ada plugin dari branch stable yang dimuat. Jalankan satu plugin stable dahulu, lalu tes lagi."
-            return
-        end
-
-        stableUpdateTestRunning = true
-        StableUpdateTestBtn.Active = false
-        StableUpdateTestBtn.Text = "MENYIAPKAN TES..."
-        HealthCheckInfo.Text = "Simulasi perbedaan fingerprint pada source stable yang sudah dimuat. Branch stable tidak diubah dan tidak ada laporan error palsu dikirim."
-
-        task.spawn(function()
-            local originalFingerprint = loadedModuleFingerprints[stableSourceUrl]
-            local ok, err = pcall(function()
-                loadedModuleFingerprints[stableSourceUrl] = "__PLUGIN_MANAGER_STABLE_UPDATE_TEST__"
-                checkStableFixAvailable("Plugin Manager - TEST", "StableUpdateTest", stableSourceUrl, true)
-            end)
-            loadedModuleFingerprints[stableSourceUrl] = originalFingerprint
-
-            if not ok then
-                HealthCheckInfo.Text = "Tes gagal dijalankan: " .. tostring(err)
-            else
-                HealthCheckInfo.Text = "Tes dipicu. Jika prompt PERBAIKAN STABLE TERSEDIA muncul, tekan NANTI untuk menutup tanpa reload atau MUAT ULANG SOURCE untuk menguji reload."
-            end
-            StableUpdateTestBtn.Text = "ULANGI TES UPDATE STABLE"
-            StableUpdateTestBtn.Active = true
-            stableUpdateTestRunning = false
-        end)
-    end)
-
-    local runtimeHistoryLoading = false
-    RuntimeHistoryBtn.MouseButton1Click:Connect(function()
-        if runtimeHistoryLoading then return end
-        runtimeHistoryLoading = true
-        RuntimeHistoryBtn.Text = "MEMUAT RIWAYAT..."
-        HealthCheckInfo.Text = "Mengambil laporan runtime error terbaru..."
-        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
-            if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
-        end
-
-        task.spawn(function()
-            local ok, response = pcall(function()
-                return game:HttpGet(SHEETS_WEB_APP_URL .. "?action=PluginErrors&limit=50&_=" .. tostring(DateTime.now().UnixTimestampMillis))
-            end)
-            local decoded
-            if ok and type(response) == "string" and response ~= "" then
-                local decodeOk, result = pcall(function() return HttpService:JSONDecode(response) end)
-                if decodeOk and type(result) == "table" then decoded = result end
-            end
-
-            if not decoded or decoded.status ~= "success" or type(decoded.records) ~= "table" then
-                HealthCheckInfo.Text = "Gagal mengambil riwayat. Periksa koneksi atau deployment Apps Script."
-                addHealthCheckResult("Riwayat tidak tersedia", ok and "Respons server tidak valid." or tostring(response), true)
-            elseif #decoded.records == 0 then
-                HealthCheckInfo.Text = "Belum ada runtime error yang tercatat di server."
-                addHealthCheckResult("Belum ada laporan", "Laporan error akan muncul setelah command gagal dijalankan.", false)
-            else
-                HealthCheckInfo.Text = tostring(#decoded.records) .. " laporan terbaru berhasil dimuat."
-                for _, record in ipairs(decoded.records) do
-                    local title = tostring(record.Plugin or "Unknown Plugin") .. " / " .. tostring(record.Command or "Unknown Command")
-                    local detail = tostring(record.Error or "Tanpa detail")
-                    if record.Timestamp then detail = tostring(record.Timestamp) .. " | " .. detail end
-                    if record.PlaceId and record.PlaceId ~= "" then detail = detail .. " | PlaceId " .. tostring(record.PlaceId) end
-                    addHealthCheckResult(title, detail, true)
-                end
-            end
-            RuntimeHistoryBtn.Text = "MUAT ULANG RIWAYAT ERROR"
-            runtimeHistoryLoading = false
-        end)
-    end)
-
-    HealthCheckExportBtn.MouseButton1Click:Connect(function()
-        -- Export exactly the rows currently displayed, whether they are health-check
-        -- results or runtime-error history. Do not reuse the separate scan baseline.
-        local exportLines = {"PLUGIN MANAGER - HASIL YANG SEDANG DITAMPILKAN", "============================================"}
-        local rowCount = 0
-        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
-            if child:IsA("Frame") then
-                local labels = {}
-                for _, item in ipairs(child:GetChildren()) do
-                    if item:IsA("TextLabel") then
-                        table.insert(labels, item.Text)
-                    end
-                end
-                if #labels > 0 then
-                    rowCount = rowCount + 1
-                    table.insert(exportLines, labels[1] .. (#labels > 1 and (" | " .. labels[2]) or ""))
-                end
-            end
-        end
-
-        if rowCount == 0 then
-            HealthCheckInfo.Text = "Tidak ada hasil yang sedang ditampilkan untuk diekspor."
-            return
-        end
-
-        local reportText = table.concat(exportLines, "\n")
-        local copied = false
-        if type(setclipboard) == "function" then
-            copied = pcall(setclipboard, reportText)
-        elseif type(toclipboard) == "function" then
-            copied = pcall(toclipboard, reportText)
-        end
-        if copied then
-            HealthCheckInfo.Text = tostring(rowCount) .. " hasil yang tampil berhasil disalin."
-        elseif type(writefile) == "function" then
-            local ok = pcall(writefile, "PluginHealthCheck.txt", reportText)
-            HealthCheckInfo.Text = ok and "Clipboard tidak tersedia. Hasil yang tampil disimpan ke PluginHealthCheck.txt." or "Gagal menyalin dan menyimpan hasil."
-        else
-            HealthCheckInfo.Text = "Clipboard/file export tidak didukung executor ini."
-        end
-    end)
-
-    local function addDevMenuOption(titleText, descText, onClickCallback)
-        local OptionBtn = Instance.new("TextButton")
-        OptionBtn.Size = UDim2.new(1, 0, 0, 40)
-        OptionBtn.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
-        OptionBtn.BorderSizePixel = 0
-        OptionBtn.Text = ""
-        OptionBtn.ZIndex = 32
-        OptionBtn.Parent = DevMainMenu
-        Instance.new("UICorner", OptionBtn).CornerRadius = UDim.new(0, 4)
-
-        local OptTitle = Instance.new("TextLabel")
-        OptTitle.Size = UDim2.new(1, -15, 0, 18)
-        OptTitle.Position = UDim2.new(0, 8, 0, 4)
-        OptTitle.BackgroundTransparency = 1
-        OptTitle.Font = Enum.Font.GothamBold
-        OptTitle.Text = titleText
-        OptTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-        OptTitle.TextSize = 10
-        OptTitle.TextXAlignment = Enum.TextXAlignment.Left
-        OptTitle.ZIndex = 33
-        OptTitle.Parent = OptionBtn
-
-        local OptDesc = Instance.new("TextLabel")
-        OptDesc.Size = UDim2.new(1, -15, 0, 14)
-        OptDesc.Position = UDim2.new(0, 8, 0, 20)
-        OptDesc.BackgroundTransparency = 1
-        OptDesc.Font = Enum.Font.Gotham
-        OptDesc.Text = descText
-        OptDesc.TextColor3 = Color3.fromRGB(160, 175, 195)
-        OptDesc.TextSize = 8
-        OptDesc.TextXAlignment = Enum.TextXAlignment.Left
-        OptDesc.ZIndex = 33
-        OptDesc.Parent = OptionBtn
-
-        OptionBtn.MouseButton1Click:Connect(function()
-            if onClickCallback then onClickCallback() end
-        end)
-    end
-
-
-    local function createBadgeRow(targetKey, displayName, parentScroll, webUrl, refreshCallback)
-        local ItemRow = Instance.new("Frame")
-        ItemRow.Size = UDim2.new(1, 0, 0, 36)
-        ItemRow.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
-        ItemRow.BorderSizePixel = 0
-        ItemRow.ZIndex = 33
-        ItemRow.Parent = parentScroll
-        Instance.new("UICorner", ItemRow).CornerRadius = UDim.new(0, 4)
-
-        local NameLbl = Instance.new("TextLabel")
-        NameLbl.Size = UDim2.new(1, -70, 1, 0)
-        NameLbl.Position = UDim2.new(0, 8, 0, 0)
-        NameLbl.BackgroundTransparency = 1
-        NameLbl.Font = Enum.Font.GothamBold
-        NameLbl.Text = displayName
-        NameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-        NameLbl.TextSize = 9
-        NameLbl.TextXAlignment = Enum.TextXAlignment.Left
-        NameLbl.ZIndex = 34
-        NameLbl.Parent = ItemRow
-
-        local DeleteBadgeBtn = Instance.new("TextButton")
-        DeleteBadgeBtn.Size = UDim2.new(0, 55, 0, 22)
-        DeleteBadgeBtn.AnchorPoint = Vector2.new(1, 0.5)
-        DeleteBadgeBtn.Position = UDim2.new(1, -8, 0.5, 0)
-        DeleteBadgeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        DeleteBadgeBtn.BorderSizePixel = 0
-        DeleteBadgeBtn.Font = Enum.Font.GothamBold
-        DeleteBadgeBtn.Text = "HAPUS"
-        DeleteBadgeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        DeleteBadgeBtn.TextSize = 8
-        DeleteBadgeBtn.ZIndex = 34
-        DeleteBadgeBtn.Parent = ItemRow
-        Instance.new("UICorner", DeleteBadgeBtn).CornerRadius = UDim.new(0, 4)
-
-        DeleteBadgeBtn.MouseButton1Click:Connect(function()
-            DeleteBadgeBtn.Text = "..."
-            task.spawn(function()
-                pcall(function()
-                    local req = request or http_request or (syn and syn.request)
-                    if req then
-                        req({
-                            Url = webUrl,
-                            Method = "POST",
-                            Headers = { ["Content-Type"] = "application/json" },
-                            Body = HttpService:JSONEncode({ Type = "FeatureUpdate", Key = targetKey, Timestamp = "" })
-                        })
-
-                        remoteMetadata[targetKey] = "CLEARED"
-                        playerBadgeCache[targetKey] = false
-                        if refreshBadgeUI then refreshBadgeUI() end
-                        DeleteBadgeBtn.Text = "SUKSES!"
-                        task.wait(1.5)
-                        if refreshCallback then refreshCallback() end
-                    else
-                        DeleteBadgeBtn.Text = "ERROR"
-                        task.wait(1)
-                        DeleteBadgeBtn.Text = "HAPUS"
-                    end
-                end)
-            end)
-        end)
-    end
-
-    local function loadBadgeListForDev()
-        for _, child in ipairs(BadgeScroll:GetChildren()) do
-            if child:IsA("Frame") or child:IsA("TextLabel") then
-                child:Destroy()
-            end
-        end
-
-        local ResetAllRow = Instance.new("Frame")
-        ResetAllRow.Size = UDim2.new(1, 0, 0, 36)
-        ResetAllRow.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        ResetAllRow.BorderSizePixel = 0
-        ResetAllRow.ZIndex = 33
-        ResetAllRow.Parent = BadgeScroll
-        Instance.new("UICorner", ResetAllRow).CornerRadius = UDim.new(0, 4)
-
-        local AllLbl = Instance.new("TextLabel")
-        AllLbl.Size = UDim2.new(1, -70, 1, 0)
-        AllLbl.Position = UDim2.new(0, 8, 0, 0)
-        AllLbl.BackgroundTransparency = 1
-        AllLbl.Font = Enum.Font.GothamBold
-        AllLbl.Text = "🚨 Hapus Semua Badge Global"
-        AllLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-        AllLbl.TextSize = 9
-        AllLbl.TextXAlignment = Enum.TextXAlignment.Left
-        AllLbl.ZIndex = 34
-        AllLbl.Parent = ResetAllRow
-
-        local ResetAllBtn = Instance.new("TextButton")
-        ResetAllBtn.Size = UDim2.new(0, 55, 0, 22)
-        ResetAllBtn.AnchorPoint = Vector2.new(1, 0.5)
-        ResetAllBtn.Position = UDim2.new(1, -8, 0.5, 0)
-        ResetAllBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        ResetAllBtn.BorderSizePixel = 0
-        ResetAllBtn.Font = Enum.Font.GothamBold
-        ResetAllBtn.Text = "SEMUA"
-        ResetAllBtn.TextColor3 = Color3.fromRGB(180, 40, 40)
-        ResetAllBtn.TextSize = 8
-        ResetAllBtn.ZIndex = 34
-        ResetAllBtn.Parent = ResetAllRow
-        Instance.new("UICorner", ResetAllBtn).CornerRadius = UDim.new(0, 4)
-
-        ResetAllBtn.MouseButton1Click:Connect(function()
-            ResetAllBtn.Text = "..."
-            task.spawn(function()
-                pcall(function()
-                    local req = request or http_request or (syn and syn.request)
-                    if req then
-                        req({
-                            Url = SHEETS_WEB_APP_URL,
-                            Method = "POST",
-                            Headers = { ["Content-Type"] = "application/json" },
-                            Body = HttpService:JSONEncode({ Type = "ClearAllBadges" })
-                        })
-                        remoteMetadata["BadgeClearBefore"] = tostring(DateTime.now().UnixTimestampMillis)
-                        playerBadgeCache = {}
-                        if refreshBadgeUI then refreshBadgeUI() end
-                        ResetAllBtn.Text = "SUKSES!"
-                        task.wait(1.5)
-                        loadBadgeListForDev()
-                    end
-                end)
-            end)
-        end)
-
-        if not globalLoaderData then
-            local LoadingLbl = Instance.new("TextLabel")
-            LoadingLbl.Size = UDim2.new(1, 0, 0, 30)
-            LoadingLbl.BackgroundTransparency = 1
-            LoadingLbl.Font = Enum.Font.GothamBold
-            LoadingLbl.Text = "Memuat data dari Loader..."
-            LoadingLbl.TextColor3 = Color3.fromRGB(160, 175, 195)
-            LoadingLbl.TextSize = 9
-            LoadingLbl.Parent = BadgeScroll
-            return
-        end
-
-        local activeBadgeCount = 0
-        local detectedTabs = globalLoaderData.Tabs or {}
-
-        for _, tabInfo in ipairs(detectedTabs) do
-            local tabName = tabInfo.Name
-            local dataKey = tabInfo.DataKey
-            local items = globalLoaderData[dataKey] or {}
-
-            local tabUniqueKey = "TabAutoBadge_" .. tabName
-            local isTabBadgeActive = isFeatureNew(tabUniqueKey, "071120260000, 86400")
-
-            local activeItemsInTab = {}
-
-            for _, item in ipairs(items) do
-                local legacyKey = tostring(item.RawUrl or "") .. "_" .. tostring(item.Cmd or item.Name)
-                local uniqueKey = getFeatureBadgeKey(item, legacyKey)
-                local timestamp = item.UpdateTimestamp or ""
-                local isMaintenance = (not item.SubFeatures and (not item.Cmd or item.Cmd == ""))
-                local hasBadge = isFeatureNew(uniqueKey, timestamp) or isMaintenance
-
-                local activeSubFeatures = {}
-                if item.SubFeatures and #item.SubFeatures > 0 then
-                    for _, sub in ipairs(item.SubFeatures) do
-                        local subRaw = (sub.RawUrl and sub.RawUrl ~= "") and sub.RawUrl or item.RawUrl
-                        local legacySubKey = tostring(subRaw) .. "_" .. tostring(sub.Cmd)
-                        local subKey = getFeatureBadgeKey(sub, legacySubKey)
-                        local subTimestamp = sub.UpdateTimestamp or ""
-                        local isSubMaint = (not sub.Cmd or sub.Cmd == "")
-                        if isFeatureNew(subKey, subTimestamp) or isSubMaint then
-                            table.insert(activeSubFeatures, {sub = sub, key = subKey})
-                        end
-                    end
-                end
-
-                if (not item.SubFeatures or #item.SubFeatures == 0) and (hasBadge or isMaintenance) then
-                    table.insert(activeItemsInTab, {item = item, key = uniqueKey, subFeatures = {}})
-                elseif #activeSubFeatures > 0 then
-                    table.insert(activeItemsInTab, {item = item, key = uniqueKey, subFeatures = activeSubFeatures})
-                end
-            end
-
-            if isTabBadgeActive or #activeItemsInTab > 0 then
-                activeBadgeCount = activeBadgeCount + 1
-
-                local TabHeader = Instance.new("TextLabel")
-                TabHeader.Size = UDim2.new(1, 0, 0, 24)
-                TabHeader.BackgroundTransparency = 1
-                TabHeader.Font = Enum.Font.GothamBold
-                TabHeader.Text = "📁 TAB: " .. string.upper(tabName)
-                TabHeader.TextColor3 = Color3.fromRGB(0, 220, 255)
-                TabHeader.TextSize = 9
-                TabHeader.ZIndex = 33
-                TabHeader.Parent = BadgeScroll
-
-                if isTabBadgeActive then
-                    createBadgeRow(tabUniqueKey, "Tab Utama: " .. tabName, BadgeScroll, SHEETS_WEB_APP_URL, loadBadgeListForDev)
-                end
-
-                for _, entry in ipairs(activeItemsInTab) do
-                    if #entry.subFeatures == 0 then
-                        createBadgeRow(entry.key, entry.item.Name, BadgeScroll, SHEETS_WEB_APP_URL, loadBadgeListForDev)
-                    end
-
-                    for _, subEntry in ipairs(entry.subFeatures) do
-                        createBadgeRow(subEntry.key, "  ↳ " .. subEntry.sub.Name, BadgeScroll, SHEETS_WEB_APP_URL, loadBadgeListForDev)
-                    end
-                end
-            end
-        end
-
-        if activeBadgeCount == 0 then
-            local EmptyNotice = Instance.new("TextLabel")
-            EmptyNotice.Size = UDim2.new(1, 0, 0, 40)
-            EmptyNotice.BackgroundTransparency = 1
-            EmptyNotice.Font = Enum.Font.GothamBold
-            EmptyNotice.Text = "✨ Tidak ada badge aktif saat ini!"
-            EmptyNotice.TextColor3 = Color3.fromRGB(160, 175, 195)
-            EmptyNotice.TextSize = 9
-            EmptyNotice.TextXAlignment = Enum.TextXAlignment.Center
-            EmptyNotice.ZIndex = 33
-            EmptyNotice.Parent = BadgeScroll
-        end
-
-        task.defer(function()
-            local totalH = 0
-            for _, child in ipairs(BadgeScroll:GetChildren()) do
-                if child:IsA("Frame") or child:IsA("TextLabel") then
-                    totalH = totalH + child.AbsoluteSize.Y + 6
-                end
-            end
-            BadgeScroll.CanvasSize = UDim2.new(0, 0, 0, totalH)
-        end)
-    end
-
-    addDevMenuOption("🗑️ Hapus Badge Fitur", "Pilih dan bersihkan badge update/new pada fitur secara spesifik", function()
-        DevMainMenu.Visible = false
-        loadBadgeListForDev()
-        BadgeListView.Visible = true
-    end)
-
-    local function loadMaintenanceListForDev()
-        for _, child in ipairs(MaintenanceScroll:GetChildren()) do
-            if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
-        end
-
-        if not globalLoaderData then
-            local loading = Instance.new("TextLabel")
-            loading.Size = UDim2.new(1, 0, 0, 30)
-            loading.BackgroundTransparency = 1
-            loading.Font = Enum.Font.GothamBold
-            loading.Text = "Memuat daftar fitur dari Loader..."
-            loading.TextColor3 = Color3.fromRGB(160, 175, 195)
-            loading.TextSize = 9
-            loading.Parent = MaintenanceScroll
-            return
-        end
-
-        local features, seen = {}, {}
-        for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
-            for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
-                if item.SubFeatures and #item.SubFeatures > 0 then
-                    for _, sub in ipairs(item.SubFeatures) do
-                        local id = tostring(sub.FeatureId or "")
-                        if id ~= "" and not seen[id] then
-                            seen[id] = true
-                            table.insert(features, { id = id, name = sub.Name or sub.Cmd or id, tab = tabInfo.Name })
-                        end
-                    end
-                else
-                    local id = tostring(item.FeatureId or "")
-                    if id ~= "" and not seen[id] then
-                        seen[id] = true
-                        table.insert(features, { id = id, name = item.Name or item.Cmd or id, tab = tabInfo.Name })
-                    end
-                end
-            end
-        end
-
-        table.sort(features, function(a, b) return string.lower(a.name) < string.lower(b.name) end)
-        if #features == 0 then
-            local empty = Instance.new("TextLabel")
-            empty.Size = UDim2.new(1, 0, 0, 36)
-            empty.BackgroundTransparency = 1
-            empty.Font = Enum.Font.GothamBold
-            empty.Text = "Tidak ada fitur ber-FeatureID di Loader."
-            empty.TextColor3 = Color3.fromRGB(160, 175, 195)
-            empty.TextSize = 9
-            empty.Parent = MaintenanceScroll
-            return
-        end
-
-        for _, feature in ipairs(features) do
-            local row = Instance.new("Frame")
-            row.Size = UDim2.new(1, 0, 0, 40)
-            row.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
-            row.BorderSizePixel = 0
-            row.ZIndex = 33
-            row.Parent = MaintenanceScroll
-            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-
-            local name = Instance.new("TextLabel")
-            name.Size = UDim2.new(1, -105, 0, 18)
-            name.Position = UDim2.new(0, 8, 0, 3)
-            name.BackgroundTransparency = 1
-            name.Font = Enum.Font.GothamBold
-            name.Text = feature.name
-            name.TextColor3 = Color3.fromRGB(255, 255, 255)
-            name.TextSize = 9
-            name.TextXAlignment = Enum.TextXAlignment.Left
-            name.ZIndex = 34
-            name.Parent = row
-
-            local status = Instance.new("TextLabel")
-            status.Size = UDim2.new(1, -105, 0, 13)
-            status.Position = UDim2.new(0, 8, 0, 21)
-            status.BackgroundTransparency = 1
-            status.Font = Enum.Font.Gotham
-            status.Text = feature.id .. "  •  " .. feature.tab
-            status.TextColor3 = Color3.fromRGB(145, 160, 180)
-            status.TextSize = 7
-            status.TextXAlignment = Enum.TextXAlignment.Left
-            status.ZIndex = 34
-            status.Parent = row
-
-            local enabled = tostring(remoteMetadata["FeatureMaintenance_" .. feature.id] or "") == "ACTIVE"
-            local toggle = Instance.new("TextButton")
-            toggle.Size = UDim2.new(0, 82, 0, 24)
-            toggle.AnchorPoint = Vector2.new(1, 0.5)
-            toggle.Position = UDim2.new(1, -7, 0.5, 0)
-            toggle.BackgroundColor3 = enabled and Color3.fromRGB(0, 130, 85) or Color3.fromRGB(150, 45, 45)
-            toggle.BorderSizePixel = 0
-            toggle.Font = Enum.Font.GothamBold
-            toggle.Text = enabled and "DISABLE MT" or "MAINTENANCE"
-            toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-            toggle.TextSize = 8
-            toggle.ZIndex = 34
-            toggle.Parent = row
-            Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 4)
-
-            toggle.MouseButton1Click:Connect(function()
-                toggle.Active = false
-                toggle.Text = "..."
-                task.spawn(function()
-                    local req = request or http_request or (syn and syn.request)
-                    local requestSent = false
-                    local expectedValue = (not enabled) and "ACTIVE" or ""
-                    local maintenanceKey = "FeatureMaintenance_" .. feature.id
-
-                    if req then
-                        local ok, response = pcall(function()
-                            return req({
-                                Url = SHEETS_WEB_APP_URL,
-                                Method = "POST",
-                                Headers = { ["Content-Type"] = "application/json" },
-                                Body = HttpService:JSONEncode({
-                                    Type = "FeatureMaintenance",
-                                    FeatureId = feature.id,
-                                    Enabled = not enabled,
-                                    AdminKey = MaintenanceAdminKeyBox.Text
-                                })
-                            })
-                        end)
-                        requestSent = ok and response ~= nil
-                    end
-
-                    -- Jangan menilai hasil dari JSON body POST saja.
-                    -- Beberapa executor mengembalikan respons redirect/format berbeda
-                    -- walaupun Apps Script sudah menjalankan perintahnya.
-                    -- Verifikasi status final langsung dari metadata server.
-                    local success = false
-                    if requestSent then
-                        for attempt = 1, 2 do
-                            local fetchOk = fetchRemoteMetadata()
-                            if fetchOk and tostring(remoteMetadata[maintenanceKey] or "") == expectedValue then
-                                success = true
-                                break
-                            end
-                            if attempt == 1 then task.wait(0.35) end
-                        end
-                    end
-
-                    if success then
-                        if refreshBadgeUI then task.defer(refreshBadgeUI) end
-                        loadMaintenanceListForDev()
-                    else
-                        toggle.Text = "ERROR"
-                        toggle.Active = true
-                        task.wait(1.2)
-                        if toggle and toggle.Parent then
-                            toggle.Text = enabled and "DISABLE MT" or "MAINTENANCE"
-                        end
-                    end
-                end)
-            end)
-        end
-
-        task.defer(function()
-            local total = 0
-            for _, child in ipairs(MaintenanceScroll:GetChildren()) do
-                if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextButton") then total = total + child.AbsoluteSize.Y + 6 end
-            end
-            MaintenanceScroll.CanvasSize = UDim2.new(0, 0, 0, total)
-        end)
-    end
-
-
-    local function clearVersionHistoryRows()
-        for _, child in ipairs(VersionHistoryScroll:GetChildren()) do
-            if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextButton") then child:Destroy() end
-        end
-        VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    end
-
-    local function addVersionHistoryMessage(message)
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, -4, 0, 34)
-        label.BackgroundTransparency = 1
-        label.Font = Enum.Font.Gotham
-        label.Text = message
-        label.TextColor3 = Color3.fromRGB(160, 175, 195)
-        label.TextSize = 9
-        label.TextWrapped = true
-        label.ZIndex = 33
-        label.Parent = VersionHistoryScroll
-    end
-
-    local loadVersionHistoryFiles
-    local loadVersionHistoryForFile
-    local activeVersionHistoryFile = nil
-    local selectedVersionCommit = nil
-    local pendingVersionAction = nil
-    local pendingVersionCommitSha = nil
-
-    local VersionHistoryConfirm = Instance.new("Frame")
-    VersionHistoryConfirm.Size = UDim2.new(1, -24, 0, 116)
-    VersionHistoryConfirm.Position = UDim2.new(0, 12, 0.5, -58)
-    VersionHistoryConfirm.BackgroundColor3 = Color3.fromRGB(22, 30, 42)
-    VersionHistoryConfirm.BorderSizePixel = 0
-    VersionHistoryConfirm.Visible = false
-    VersionHistoryConfirm.ZIndex = 50
-    VersionHistoryConfirm.Parent = VersionHistoryView
-    Instance.new("UICorner", VersionHistoryConfirm).CornerRadius = UDim.new(0, 8)
-
-    local VersionHistoryConfirmText = Instance.new("TextLabel")
-    VersionHistoryConfirmText.Size = UDim2.new(1, -16, 0, 58)
-    VersionHistoryConfirmText.Position = UDim2.new(0, 8, 0, 6)
-    VersionHistoryConfirmText.BackgroundTransparency = 1
-    VersionHistoryConfirmText.Font = Enum.Font.GothamBold
-    VersionHistoryConfirmText.Text = "Konfirmasi tindakan Version Manager"
-    VersionHistoryConfirmText.TextColor3 = Color3.fromRGB(235, 240, 248)
-    VersionHistoryConfirmText.TextSize = 9
-    VersionHistoryConfirmText.TextWrapped = true
-    VersionHistoryConfirmText.ZIndex = 51
-    VersionHistoryConfirmText.Parent = VersionHistoryConfirm
-
-    local VersionHistoryConfirmYes = Instance.new("TextButton")
-    VersionHistoryConfirmYes.Size = UDim2.new(0.5, -12, 0, 30)
-    VersionHistoryConfirmYes.Position = UDim2.new(0, 8, 1, -38)
-    VersionHistoryConfirmYes.BackgroundColor3 = Color3.fromRGB(0, 125, 85)
-    VersionHistoryConfirmYes.BorderSizePixel = 0
-    VersionHistoryConfirmYes.Font = Enum.Font.GothamBold
-    VersionHistoryConfirmYes.Text = "YA, LANJUTKAN"
-    VersionHistoryConfirmYes.TextColor3 = Color3.fromRGB(255, 255, 255)
-    VersionHistoryConfirmYes.TextSize = 8
-    VersionHistoryConfirmYes.ZIndex = 51
-    VersionHistoryConfirmYes.Parent = VersionHistoryConfirm
-    Instance.new("UICorner", VersionHistoryConfirmYes).CornerRadius = UDim.new(0, 4)
-
-    local VersionHistoryConfirmNo = Instance.new("TextButton")
-    VersionHistoryConfirmNo.Size = UDim2.new(0.5, -12, 0, 30)
-    VersionHistoryConfirmNo.Position = UDim2.new(0.5, 4, 1, -38)
-    VersionHistoryConfirmNo.BackgroundColor3 = Color3.fromRGB(75, 85, 100)
-    VersionHistoryConfirmNo.BorderSizePixel = 0
-    VersionHistoryConfirmNo.Font = Enum.Font.GothamBold
-    VersionHistoryConfirmNo.Text = "BATAL"
-    VersionHistoryConfirmNo.TextColor3 = Color3.fromRGB(255, 255, 255)
-    VersionHistoryConfirmNo.TextSize = 8
-    VersionHistoryConfirmNo.ZIndex = 51
-    VersionHistoryConfirmNo.Parent = VersionHistoryConfirm
-    Instance.new("UICorner", VersionHistoryConfirmNo).CornerRadius = UDim.new(0, 4)
-
-    local function runVersionManagerAction(action, commitSha, fileInfo)
-        task.spawn(function()
-            local req = request or http_request or (syn and syn.request)
-            if not req then
-                VersionHistoryInfo.Text = "Executor tidak menyediakan HTTP request."
-                return
-            end
-
-            VersionHistoryInfo.Text = "Memproses " .. action .. "..."
-
-            -- Simpan state sebelum POST. Apps Script ContentService kadang
-            -- mengembalikan HTTP 405 pada redirect executor walaupun aksi sudah
-            -- berhasil dijalankan. Hasil akhir diverifikasi dari metadata GET.
-            pcall(fetchRemoteMetadata)
-            local beforeStableUpdatedAt = tostring(remoteMetadata.StableBackupUpdatedAt or "")
-            local beforeRestoreAt = tostring(remoteMetadata.LastVersionRestoreAt or "")
-
-            local requestOk, response = pcall(function()
-                return req({
-                    Url = SHEETS_WEB_APP_URL,
-                    Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = HttpService:JSONEncode({
-                        Type = "VersionManager",
-                        Action = action,
-                        Path = fileInfo and fileInfo.path or "",
-                        CommitSha = commitSha or "",
-                        AdminKey = VersionHistoryAdminKeyBox.Text
-                    })
-                })
-            end)
-            if not requestOk or not response then
-                VersionHistoryInfo.Text = "Gagal menghubungi server Version Manager."
-                return
-            end
-
-            -- Verifikasi hasil dari server, bukan status/body POST yang dapat
-            -- terpengaruh redirect ContentService pada executor tertentu.
-            for attempt = 1, 4 do
-                task.wait(attempt == 1 and 0.25 or 0.5)
-                local stateOk = fetchRemoteMetadata()
-                if stateOk then
-                    if action == "SetStable" then
-                        local stableCommit = tostring(remoteMetadata.StableBackupCommit or "")
-                        local updatedAt = tostring(remoteMetadata.StableBackupUpdatedAt or "")
-                        if stableCommit ~= "" and updatedAt ~= "" and updatedAt ~= beforeStableUpdatedAt then
-                            VersionHistoryInfo.Text = "STABLE BACKUP tersimpan • " .. stableCommit:sub(1, 7)
-                            return
-                        end
-                    elseif action == "RestoreStable" or action == "RestoreSelected" then
-                        local restoreAt = tostring(remoteMetadata.LastVersionRestoreAt or "")
-                        local restorePath = tostring(remoteMetadata.LastVersionRestorePath or "")
-                        local newCommit = tostring(remoteMetadata.LastVersionRestoreCommit or "")
-                        if restoreAt ~= "" and restoreAt ~= beforeRestoreAt and restorePath == tostring(fileInfo.path) and newCommit ~= "" then
-                            VersionHistoryInfo.Text = "Restore berhasil • commit baru " .. newCommit:sub(1, 7)
-                            task.wait(0.5)
-                            loadVersionHistoryForFile(fileInfo)
-                            return
-                        end
-                    end
-                end
-            end
-
-            local function readVersionManagerResponse(httpResponse)
-                if type(httpResponse) ~= "table" then return nil, "Format respons HTTP tidak dikenali." end
-                local responseBody = httpResponse.Body or httpResponse.body or httpResponse.ResponseBody or ""
-                local headers = httpResponse.Headers or httpResponse.headers or {}
-                local redirectUrl
-                for headerName, headerValue in pairs(headers) do
-                    if tostring(headerName):lower() == "location" then
-                        redirectUrl = tostring(headerValue)
-                        break
-                    end
-                end
-                local statusCode = tonumber(httpResponse.StatusCode or httpResponse.Status or httpResponse.status_code)
-                local isHtml = type(responseBody) == "string" and responseBody:lower():find("<html", 1, true) ~= nil
-
-                -- Apps Script ContentService mengalihkan output ke URL googleusercontent.
-                -- Coba ikuti Location SEBELUM menerima body HTML sebagai hasil final.
-                if redirectUrl and (not responseBody or responseBody == "" or isHtml or (statusCode and statusCode >= 300 and statusCode < 400)) then
-                    local redirectOk, redirectResponse = pcall(function()
-                        return req({
-                            Url = redirectUrl,
-                            Method = "GET",
-                            Headers = { ["Accept"] = "application/json" },
-                            FollowRedirects = true
-                        })
-                    end)
-                    if redirectOk and type(redirectResponse) == "table" then
-                        local redirectedBody = redirectResponse.Body or redirectResponse.body or redirectResponse.ResponseBody or ""
-                        if type(redirectedBody) == "string" and redirectedBody ~= "" then
-                            return redirectedBody
-                        end
-                    end
-                end
-
-                if type(responseBody) == "string" and responseBody ~= "" then
-                    return responseBody
-                end
-
-                local responseUrl = tostring(httpResponse.Url or httpResponse.url or httpResponse.FinalUrl or httpResponse.final_url or "")
-                return nil, "HTTP " .. tostring(statusCode or "tidak diketahui") ..
-                    " • body kosong" ..
-                    (redirectUrl and " • redirect gagal diikuti" or " • Location tidak tersedia") ..
-                    (responseUrl ~= "" and " • URL: " .. responseUrl:sub(1, 100) or "")
-            end
-
-            local body, responseError = readVersionManagerResponse(response)
-            if not body then
-                VersionHistoryInfo.Text = "Respons server tidak terbaca: " .. tostring(responseError)
-                return
-            end
-            local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
-            if not decodeOk or type(result) ~= "table" then
-                local html = tostring(body)
-                local pageTitle = html:match("<title[^>]*>(.-)</title>") or html:match("<TITLE[^>]*>(.-)</TITLE>") or "judul tidak ditemukan"
-                pageTitle = pageTitle:gsub("%s+", " "):sub(1, 100)
-                local responseHeaders = response.Headers or response.headers or {}
-                local locationHeader = ""
-                for headerName, headerValue in pairs(responseHeaders) do
-                    if tostring(headerName):lower() == "location" then
-                        locationHeader = tostring(headerValue):sub(1, 120)
-                        break
-                    end
-                end
-                local responseStatus = tostring(response.StatusCode or response.Status or response.status_code or "?")
-                local responseUrl = tostring(response.Url or response.url or response.FinalUrl or response.final_url or "")
-                VersionHistoryInfo.Text = "Respons Google bukan JSON • HTTP " .. responseStatus ..
-                    " • " .. pageTitle ..
-                    (responseUrl ~= "" and " • URL: " .. responseUrl:sub(1, 100) or "") ..
-                    (locationHeader ~= "" and " • Location: " .. locationHeader or "") ..
-                    " • Cuplikan: " .. html:gsub("%s+", " "):sub(1, 220)
-                return
-            end
-            if result.status ~= "success" then
-                VersionHistoryInfo.Text = "Gagal: " .. tostring(result.message or "Permintaan ditolak")
-                return
-            end
-
-            if action == "SetStable" then
-                VersionHistoryInfo.Text = "STABLE BACKUP tersimpan • " .. tostring(result.stableCommit or ""):sub(1, 7)
-            else
-                VersionHistoryInfo.Text = "Restore berhasil • commit baru " .. tostring(result.newCommit or ""):sub(1, 7)
-                task.wait(0.5)
-                loadVersionHistoryForFile(fileInfo)
-            end
-        end)
-    end
-
-    local function askVersionManagerConfirmation(action, commitSha, fileInfo)
-        pendingVersionAction = action
-        pendingVersionCommitSha = commitSha
-        local target = action == "SetStable" and "Simpan posisi main saat ini sebagai Stable Backup?"
-            or (action == "RestoreStable" and "Kembalikan " .. fileInfo.name .. " ke Stable Backup?"
-            or "Kembalikan " .. fileInfo.name .. " ke commit " .. tostring(commitSha):sub(1, 7) .. "?")
-        VersionHistoryConfirmText.Text = target .. "\n\nVersi aktif sebelum restore tetap tercatat di GitHub. Stable Backup tidak akan ditimpa."
-        VersionHistoryConfirm.Visible = true
-    end
-
-    VersionHistoryConfirmNo.MouseButton1Click:Connect(function()
-        VersionHistoryConfirm.Visible = false
-        pendingVersionAction = nil
-        pendingVersionCommitSha = nil
-    end)
-
-    VersionHistoryConfirmYes.MouseButton1Click:Connect(function()
-        local action = pendingVersionAction
-        local commitSha = pendingVersionCommitSha
-        pendingVersionAction = nil
-        pendingVersionCommitSha = nil
-        VersionHistoryConfirm.Visible = false
-        if action then
-            -- The active file is assigned by the detail view before the prompt opens.
-            runVersionManagerAction(action, commitSha, activeVersionHistoryFile)
-        end
-    end)
-
-    loadVersionHistoryForFile = function(fileInfo)
-        activeVersionHistoryFile = fileInfo
-        selectedVersionCommit = nil
-        clearVersionHistoryRows()
-        VersionHistoryInfo.Text = "Memuat " .. fileInfo.name .. "..."
-        task.spawn(function()
-            local encodedPath = tostring(fileInfo.path):gsub(" ", "%%20")
-            local url = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path=" .. encodedPath .. "&per_page=12"
-            local ok, response = pcall(function() return game:HttpGet(url) end)
-            if not ok or type(response) ~= "string" or response == "" then
-                VersionHistoryInfo.Text = fileInfo.name .. " • Gagal menghubungi GitHub"
-                addVersionHistoryMessage("Periksa koneksi lalu coba pilih file lagi.")
-                return
-            end
-
-            local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
-            if not decodeOk or type(decoded) ~= "table" or decoded.message then
-                VersionHistoryInfo.Text = fileInfo.name .. " • GitHub API tidak tersedia"
-                addVersionHistoryMessage(type(decoded) == "table" and tostring(decoded.message or "Respons tidak valid") or "Respons GitHub tidak valid.")
-                return
-            end
-
-            VersionHistoryInfo.Text = fileInfo.name .. " • " .. fileInfo.path
-
-            local fileBack = Instance.new("TextButton")
-            fileBack.Size = UDim2.new(1, -4, 0, 26)
-            fileBack.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
-            fileBack.BorderSizePixel = 0
-            fileBack.Font = Enum.Font.GothamBold
-            fileBack.Text = "< KEMBALI KE DAFTAR FILE"
-            fileBack.TextColor3 = Color3.fromRGB(0, 200, 255)
-            fileBack.TextSize = 8
-            fileBack.ZIndex = 33
-            fileBack.Parent = VersionHistoryScroll
-            Instance.new("UICorner", fileBack).CornerRadius = UDim.new(0, 4)
-            fileBack.MouseButton1Click:Connect(function()
-                loadVersionHistoryFiles()
-            end)
-
-            local function createVersionActionButton(text, color, callback)
-                local button = Instance.new("TextButton")
-                button.Size = UDim2.new(1, -4, 0, 26)
-                button.BackgroundColor3 = color
-                button.BorderSizePixel = 0
-                button.Font = Enum.Font.GothamBold
-                button.Text = text
-                button.TextColor3 = Color3.fromRGB(255, 255, 255)
-                button.TextSize = 8
-                button.ZIndex = 33
-                button.Parent = VersionHistoryScroll
-                Instance.new("UICorner", button).CornerRadius = UDim.new(0, 4)
-                button.MouseButton1Click:Connect(callback)
-                return button
-            end
-
-            createVersionActionButton("★ SIMPAN / PERBARUI STABLE BACKUP", Color3.fromRGB(35, 105, 75), function()
-                askVersionManagerConfirmation("SetStable", nil, fileInfo)
-            end)
-            createVersionActionButton("↩ RESTORE STABLE BACKUP", Color3.fromRGB(65, 90, 125), function()
-                askVersionManagerConfirmation("RestoreStable", nil, fileInfo)
-            end)
-            local restoreSelectedButton = createVersionActionButton("RESTORE COMMIT TERPILIH", Color3.fromRGB(125, 80, 35), function()
-                if not selectedVersionCommit then
-                    VersionHistoryInfo.Text = "Pilih salah satu commit terlebih dahulu."
-                    return
-                end
-                askVersionManagerConfirmation("RestoreSelected", selectedVersionCommit.sha, fileInfo)
-            end)
-
-            task.spawn(function()
-                local req = request or http_request or (syn and syn.request)
-                if req then
-                    local ok, response = pcall(function()
-                        return req({
-                            Url = SHEETS_WEB_APP_URL,
-                            Method = "POST",
-                            Headers = { ["Content-Type"] = "application/json" },
-                            Body = HttpService:JSONEncode({
-                                Type = "VersionManager",
-                                Action = "GetState",
-                                AdminKey = VersionHistoryAdminKeyBox.Text
-                            })
-                        })
-                    end)
-                    if ok and response then
-                        local decodeOk, state = pcall(function() return HttpService:JSONDecode(response.Body or response.body or "") end)
-                        if decodeOk and type(state) == "table" and state.status == "success" then
-                            local stable = tostring(state.stableCommit or "")
-                            if stable ~= "" then
-                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup " .. stable:sub(1, 7)
-                            else
-                                VersionHistoryInfo.Text = fileInfo.name .. " • Stable Backup belum disimpan"
-                            end
-                        end
-                    end
-                end
-            end)
-
-            if #decoded == 0 then
-                addVersionHistoryMessage("Belum ada riwayat commit untuk file ini.")
-                return
-            end
-
-            for index, entry in ipairs(decoded) do
-                local commitData = entry.commit or {}
-                local authorData = commitData.author or {}
-                local sha = tostring(entry.sha or "")
-                local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
-                if #message > 90 then message = message:sub(1, 87) .. "..." end
-
-                local row = Instance.new("TextButton")
-                row.Size = UDim2.new(1, -4, 0, 48)
-                row.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
-                row.BackgroundTransparency = 0.15
-                row.BorderSizePixel = 0
-                row.Text = ""
-                row.AutoButtonColor = false
-                row.ZIndex = 33
-                row.Parent = VersionHistoryScroll
-                Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-
-                local title = Instance.new("TextLabel")
-                title.Size = UDim2.new(1, index == 1 and -104 or -12, 0, 18)
-                title.Position = UDim2.new(0, 6, 0, 3)
-                title.BackgroundTransparency = 1
-                title.Font = Enum.Font.GothamBold
-                title.Text = tostring(index) .. ". " .. message
-                title.TextColor3 = Color3.fromRGB(235, 240, 248)
-                title.TextSize = 8
-                title.TextXAlignment = Enum.TextXAlignment.Left
-                title.TextTruncate = Enum.TextTruncate.AtEnd
-                title.ZIndex = 34
-                title.Parent = row
-
-                if index == 1 then
-                    local currentBadge = Instance.new("TextLabel")
-                    currentBadge.Size = UDim2.new(0, 92, 0, 16)
-                    currentBadge.Position = UDim2.new(1, -98, 0, 4)
-                    currentBadge.BackgroundColor3 = Color3.fromRGB(35, 105, 75)
-                    currentBadge.BorderSizePixel = 0
-                    currentBadge.Font = Enum.Font.GothamBold
-                    currentBadge.Text = "CURRENT VERSION"
-                    currentBadge.TextColor3 = Color3.fromRGB(190, 255, 215)
-                    currentBadge.TextSize = 6
-                    currentBadge.ZIndex = 35
-                    currentBadge.Parent = row
-                    Instance.new("UICorner", currentBadge).CornerRadius = UDim.new(0, 4)
-                end
-
-                local details = Instance.new("TextLabel")
-                details.Size = UDim2.new(1, -12, 0, 14)
-                details.Position = UDim2.new(0, 6, 0, 24)
-                details.BackgroundTransparency = 1
-                details.Font = Enum.Font.Gotham
-                details.Text = tostring(authorData.date or "Tanggal tidak tersedia") .. " • " .. sha:sub(1, 7)
-                details.TextColor3 = Color3.fromRGB(145, 165, 190)
-                details.TextSize = 8
-                details.TextXAlignment = Enum.TextXAlignment.Left
-                details.ZIndex = 34
-                details.Parent = row
-
-                row.MouseButton1Click:Connect(function()
-                    selectedVersionCommit = {
-                        sha = sha,
-                        message = commitData.message or "Tanpa pesan",
-                        path = fileInfo.path,
-                        name = fileInfo.name,
-                        date = authorData.date or ""
-                    }
-                    for _, commitRow in ipairs(VersionHistoryScroll:GetChildren()) do
-                        if commitRow:IsA("TextButton") and commitRow ~= fileBack then
-                            commitRow.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
-                        end
-                    end
-                    row.BackgroundColor3 = Color3.fromRGB(35, 85, 125)
-                    restoreSelectedButton.Text = "RESTORE COMMIT " .. sha:sub(1, 7)
-                    VersionHistoryInfo.Text = "Terpilih: " .. fileInfo.name .. " • " .. sha:sub(1, 7)
-                end)
-            end
-
-            task.defer(function()
-                VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, VersionHistoryLayout.AbsoluteContentSize.Y + 8)
-                VersionHistoryScroll.CanvasPosition = Vector2.new(0, 0)
-            end)
-        end)
-    end
-
-    loadVersionHistoryFiles = function()
-        VersionHistoryConfirm.Visible = false
-        activeVersionHistoryFile = nil
-        selectedVersionCommit = nil
-        clearVersionHistoryRows()
-        if not globalLoaderData then
-            VersionHistoryInfo.Text = "Loader belum siap."
-            addVersionHistoryMessage("Buka kembali Dev Panel setelah Loader selesai dimuat.")
-            return
-        end
-
-        local files, seen = {}, {}
-        for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
-            for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
-                local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or {item}
-                for _, feature in ipairs(candidates) do
-                    local rawUrl = tostring(feature.RawUrl or item.RawUrl or "")
-                    local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
-                        or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
-                    if path and not seen[path] then
-                        seen[path] = true
-                        table.insert(files, {name = tostring(feature.Name or item.Name or path), path = path})
-                    end
-                end
-            end
-        end
-        table.sort(files, function(a, b) return string.lower(a.name) < string.lower(b.name) end)
-        VersionHistoryInfo.Text = "Pilih file • menampilkan 12 commit terakhir"
-        if #files == 0 then
-            addVersionHistoryMessage("Tidak ada RawUrl Plugin-Manager yang ditemukan di Loader.")
-            return
-        end
-
-        for _, fileInfo in ipairs(files) do
-            local row = Instance.new("TextButton")
-            row.Size = UDim2.new(1, -4, 0, 34)
-            row.BackgroundColor3 = Color3.fromRGB(28, 36, 48)
-            row.BackgroundTransparency = 0.15
-            row.BorderSizePixel = 0
-            row.Font = Enum.Font.GothamBold
-            row.Text = "  " .. fileInfo.name .. "   ›"
-            row.TextColor3 = Color3.fromRGB(235, 240, 248)
-            row.TextSize = 9
-            row.TextXAlignment = Enum.TextXAlignment.Left
-            row.ZIndex = 33
-            row.Parent = VersionHistoryScroll
-            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-            row.MouseButton1Click:Connect(function() loadVersionHistoryForFile(fileInfo) end)
-        end
-
-        task.defer(function()
-            VersionHistoryScroll.CanvasSize = UDim2.new(0, 0, 0, VersionHistoryLayout.AbsoluteContentSize.Y + 8)
-            VersionHistoryScroll.CanvasPosition = Vector2.new(0, 0)
-        end)
-    end
-
-    addDevMenuOption("🩺 Plugin Health Check", "Periksa Loader, URL, sintaks, dan mapping command tanpa menjalankan plugin", function()
-        DevMainMenu.Visible = false
-        HealthCheckView.Visible = true
-        runPluginHealthCheck()
-    end)
-
-    addDevMenuOption("🔄 Plugin Update Checker", "Bandingkan commit source GitHub dengan baseline tersimpan", function()
-        DevMainMenu.Visible = false
-        UpdateCheckerView.Visible = true
-        runPluginUpdateCheck()
-    end)
-
-    addDevMenuOption("🕘 Version History", "Lihat 12 commit terakhir setiap file plugin", function()
-        DevMainMenu.Visible = false
-        loadVersionHistoryFiles()
-        VersionHistoryView.Visible = true
-    end)
-
-    addDevMenuOption("🛠️ Maintenance Fitur", "Aktifkan/nonaktifkan Maintenance realtime untuk fitur di Loader", function()
-        DevMainMenu.Visible = false
-        loadMaintenanceListForDev()
-        MaintenanceListView.Visible = true
-    end)
-
-    DevBtn.MouseButton1Click:Connect(function()
-        if not isAuthorized then
-            pcall(function()
-                local StarterGui = game:GetService("StarterGui")
-                StarterGui:SetCore("SendNotification", {
-                    Title = "Access Denied",
-                    Text = "Menu ini khusus Developer!",
-                    Duration = 3
-                })
-            end)
-            return
-        end
-
-        if tabScrolls then
-            for _, scroll in pairs(tabScrolls) do
-                if scroll then scroll.Visible = false end
-            end
-        end
-        if SubMenuContainer then SubMenuContainer.Visible = false end
-
-        if DevPanelContainer then
-            DevMainMenu.Visible = true
-            BadgeListView.Visible = false
-            MaintenanceListView.Visible = false
-            VersionHistoryView.Visible = false
-            HealthCheckView.Visible = false
-            UpdateCheckerView.Visible = false
-            DevPanelContainer.Visible = true
-        end
-    end)
 
     local function setTabBadge(tabName, badgeText, badgeColor, priority, featureKeys)
         local tabBtn = tabButtons[tabName]
@@ -3322,8 +1838,6 @@ return function(speaker)
             TabBar.Visible = false
             HeaderContainer.Visible = false
             ContentArea.Visible = false
-            -- ⚡ TAMBAHAN: Sembunyikan juga Dev Panel saat di-minimize agar tidak nyembul keluar
-            DevPanelContainer.Visible = false
         else
             Frame.Size = UDim2.new(0, 280, 0, 340)
             MinBtn.Text = "-"
@@ -3374,7 +1888,7 @@ return function(speaker)
         end)
 
         local parentSourcePath = getPluginSourcePath(rawUrl)
-            or getPluginSourcePath(getSharedSubFeatureSourceUrl(subFeatures, rawUrl))
+            or getPluginSourcePath(getPrimarySubFeatureSourceUrl(subFeatures, rawUrl))
         local subSourcePaths, subPathSeen = {}, {}
         for _, feature in ipairs(subFeatures) do
             local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or rawUrl
@@ -3402,6 +1916,7 @@ return function(speaker)
             local subFeat = subEntry.item
             local subRawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or rawUrl
             local subSourcePath = getPluginSourcePath(subRawUrl)
+            local hasSubUpdateBadge = subSourcePath and releaseUpdateByPath[subSourcePath] == true or false
             local uniqueKey = tostring(subRawUrl) .. "_" .. tostring(subFeat.Cmd)
             if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
@@ -3425,16 +1940,19 @@ return function(speaker)
 
             local badgeKey = getFeatureBadgeKey(subFeat, uniqueKey)
             local timestamp = subFeat.UpdateTimestamp or ""
-            local activeBadgeText = subFeat.BadgeText or "New!"
+            local activeBadgeText = getUserFacingBadgeText(subFeat)
             local activeBadgeColor = getColorFromName(subFeat.BadgeColor)
             local isMaintenance = (not subFeat.Cmd or subFeat.Cmd == "") or isFeatureInMaintenance(subFeat)
 
             if isMaintenance then
                 activeBadgeText = "MAINTENANCE!"
                 activeBadgeColor = Color3.fromRGB(255, 60, 60)
+            elseif hasSubUpdateBadge then
+                activeBadgeText = "UPDATE!"
+                activeBadgeColor = Color3.fromRGB(80, 235, 145)
             end
 
-            if (isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(subFeat)) or isMaintenance then
+            if (activeBadgeText and isFeatureNew(badgeKey, timestamp)) or hasSubUpdateBadge or isMaintenance then
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
                 
@@ -3469,10 +1987,27 @@ return function(speaker)
             LblDesc.Size = UDim2.new(1, -118, 0, descHeight)
             Item.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
+            local subHasHistory = false
+            if subSourcePath and not allSubFeaturesShareParentSource then
+                local firstSubPath = true
+                for priorIndex = 1, subEntry.index - 1 do
+                    local prior = subFeatures[priorIndex]
+                    local priorUrl = (prior.RawUrl and prior.RawUrl ~= "") and prior.RawUrl or rawUrl
+                    if getPluginSourcePath(priorUrl) == subSourcePath then
+                        firstSubPath = false
+                        break
+                    end
+                end
+                if firstSubPath and subSourcePath ~= parentSourcePath then
+                    subHasHistory = attachPublicVersionHistory(Item, SubScroll, subRawUrl,
+                        tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName, hasSubUpdateBadge) == true
+                end
+            end
+
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            SubFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -122 or -108, 0.5, 0)
             SubFavoriteBtn.BackgroundTransparency = 1
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
@@ -3487,9 +2022,9 @@ return function(speaker)
             end)
 
             local ExecSub = Instance.new("TextButton")
-            ExecSub.Size = UDim2.new(0, 75, 0, 24)
+            ExecSub.Size = UDim2.new(0, subHasHistory and 58 or 75, 0, 24)
             ExecSub.AnchorPoint = Vector2.new(0, 0.5)
-            ExecSub.Position = UDim2.new(1, -80, 0.5, 0)
+            ExecSub.Position = UDim2.new(1, subHasHistory and -100 or -80, 0.5, 0)
             ExecSub.BorderSizePixel = 0
             ExecSub.Text = featureStates[uniqueKey] and "UNEXECUTE" or "EXECUTE"
             ExecSub.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -3640,8 +2175,10 @@ return function(speaker)
             local uniqueKey = tostring(item.RawUrl or "") .. "_" .. tostring(item.Cmd or item.Name)
             local historyRawUrl = item.RawUrl
             if (not historyRawUrl or historyRawUrl == "") and item.SubFeatures and #item.SubFeatures > 0 then
-                historyRawUrl = getSharedSubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
+                historyRawUrl = getPrimarySubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
             end
+            local itemSourcePath = getPluginSourcePath(historyRawUrl)
+            local hasUpdateBadge = itemSourcePath and releaseUpdateByPath[itemSourcePath] == true or false
             local badgeKey = getFeatureBadgeKey(item, uniqueKey)
             local timestamp = item.UpdateTimestamp or ""
             local activeBadgeText = item.BadgeText or "New!"
@@ -3664,15 +2201,18 @@ return function(speaker)
                     if isFeatureInMaintenance(sub) then
                         hasSubMaintenance = true
                     end
-                    if isFeatureNew(subKey, subTimestamp) and not isLegacyUpdateBadge(sub) then
+                    local subPath = getPluginSourcePath(subRaw)
+                    if subPath and releaseUpdateByPath[subPath] then hasUpdateBadge = true end
+                    local subBadgeText = getUserFacingBadgeText(sub)
+                    if subBadgeText and isFeatureNew(subKey, subTimestamp) then
                         table.insert(badgeFeatureKeys, { key = subKey, timestamp = subTimestamp })
-                        if #badgeFeatureKeys == 1 then
-                            activeBadgeText = sub.BadgeText or activeBadgeText
+                        if #badgeFeatureKeys == 1 or subBadgeText == "UPDATE!" then
+                            activeBadgeText = subBadgeText
                             activeBadgeColorName = sub.BadgeColor or activeBadgeColorName
                         end
                     end
                 end
-            elseif isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(item) then
+            elseif getUserFacingBadgeText(item) and isFeatureNew(badgeKey, timestamp) then
                 table.insert(badgeFeatureKeys, { key = badgeKey, timestamp = timestamp })
             end
 
@@ -3681,7 +2221,13 @@ return function(speaker)
                 activeBadgeColorName = "red"
             end
 
-            if #badgeFeatureKeys > 0 or isMaintenance or hasSubMaintenance then
+            if #badgeFeatureKeys > 0 or isMaintenance or hasSubMaintenance or hasUpdateBadge then
+                activeBadgeText = hasUpdateBadge and "UPDATE!" or "NEW!"
+                if hasUpdateBadge then activeBadgeColorName = "green" end
+                if isMaintenance or hasSubMaintenance then
+                    activeBadgeText = "MAINTENANCE!"
+                    activeBadgeColorName = "red"
+                end
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local badgeColor = getColorFromName(activeBadgeColorName)
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
@@ -3708,12 +2254,12 @@ return function(speaker)
                     local lowerBadgeText = string.lower(tostring(activeBadgeText))
                     if isMaintenance or hasSubMaintenance or string.find(lowerBadgeText, "maintenance", 1, true) then
                         badgeShortText = "MAINT"
-                    elseif string.find(lowerBadgeText, "update", 1, true) then
-                        badgeShortText = "UP"
+                    elseif hasUpdateBadge then
+                        badgeShortText = "UPDATE!"
                     else
-                        badgeShortText = "NEW"
+                        badgeShortText = "NEW!"
                     end
-                    setTabBadge(tabName, badgeShortText, badgeColor, 2, badgeFeatureKeys)
+                    setTabBadge(tabName, badgeShortText, badgeColor, hasUpdateBadge and 3 or 2, badgeFeatureKeys)
                 end
             end
 
@@ -3734,11 +2280,16 @@ return function(speaker)
             DescLabel.Size = UDim2.new(1, -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
+            local itemHasHistory = false
+            if itemSourcePath then
+                itemHasHistory = attachPublicVersionHistory(ItemFrame, targetParentScroll, historyRawUrl,
+                    tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel, hasUpdateBadge) == true
+            end
 
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            MenuFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -122 or -108, 0.5, 0)
             MenuFavoriteBtn.BackgroundTransparency = 1
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
@@ -3757,9 +2308,9 @@ return function(speaker)
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 local OpenBtn = Instance.new("TextButton")
-                OpenBtn.Size = UDim2.new(0, 75, 0, 24)
+                OpenBtn.Size = UDim2.new(0, itemHasHistory and 58 or 75, 0, 24)
                 OpenBtn.AnchorPoint = Vector2.new(0, 0.5)
-                OpenBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                OpenBtn.Position = UDim2.new(1, itemHasHistory and -100 or -80, 0.5, 0)
                 OpenBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
                 OpenBtn.BackgroundTransparency = 0.2
                 OpenBtn.BorderSizePixel = 0
@@ -3777,9 +2328,9 @@ return function(speaker)
                 if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
                 local ExecBtn = Instance.new("TextButton")
-                ExecBtn.Size = UDim2.new(0, 75, 0, 24)
+                ExecBtn.Size = UDim2.new(0, itemHasHistory and 58 or 75, 0, 24)
                 ExecBtn.AnchorPoint = Vector2.new(0, 0.5)
-                ExecBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                ExecBtn.Position = UDim2.new(1, itemHasHistory and -100 or -80, 0.5, 0)
                 ExecBtn.BorderSizePixel = 0
                 ExecBtn.BackgroundTransparency = 0.2
                 ExecBtn.Font = Enum.Font.GothamBold
@@ -3873,6 +2424,10 @@ return function(speaker)
     end
 
     refreshBadgeUI = function()
+        if openPublicHistoryPanels > 0 then
+            pendingPublicBadgeRefresh = true
+            return
+        end
         if not globalLoaderData then return end
         -- Ambil Loader terbaru agar timestamp fitur yang baru di-push langsung tersedia.
         local ok, newData = pcall(function()
@@ -3897,7 +2452,7 @@ return function(speaker)
                 end
                 local tabUniqueKey = "TabAutoBadge_" .. tabName
                 if isFeatureNew(tabUniqueKey, "071120260000, 86400") then
-                    setTabBadge(tabName, "BARU!", Color3.fromRGB(255, 215, 0), 1,
+                    setTabBadge(tabName, "NEW!", Color3.fromRGB(255, 215, 0), 1,
                         {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
                 end
                 renderMenuCategory(globalLoaderData[tabInfo.DataKey] or {}, scroll, tabName)
@@ -3925,6 +2480,7 @@ return function(speaker)
 
         globalLoaderData = data
         migrateLegacyFavorites(data)
+        task.defer(checkStableReleaseUpdates)
 
         local detectedTabs = data.Tabs or {
             { Name = "Main", DataKey = "Main" },
@@ -3957,7 +2513,7 @@ return function(speaker)
 
             local tabUniqueKey = "TabAutoBadge_" .. tabName
             if isFeatureNew(tabUniqueKey, "071120260000, 86400") then
-                setTabBadge(tabName, "BARU!", Color3.fromRGB(255, 215, 0), 1, {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
+                setTabBadge(tabName, "NEW!", Color3.fromRGB(255, 215, 0), 1, {{ key = tabUniqueKey, timestamp = "071120260000, 86400" }})
             end
 
             local Scroll = Instance.new("ScrollingFrame")
@@ -4000,8 +2556,11 @@ return function(speaker)
 
     if not configOk then
         warn("[MasterWindow] GAGAL memuat Loader.lua: " .. tostring(configErr))
-    elseif metadataReady and metadataRefreshPending and refreshBadgeUI then
-        metadataRefreshPending = false
-        task.defer(refreshBadgeUI)
+    else
+        task.spawn(loadServerVersionProfiles)
+        if metadataReady and metadataRefreshPending and refreshBadgeUI then
+            metadataRefreshPending = false
+            task.defer(refreshBadgeUI)
+        end
     end
 end
