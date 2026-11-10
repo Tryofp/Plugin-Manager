@@ -3361,12 +3361,38 @@ return function(speaker)
                 return
             end
 
+            -- CURRENT VERSION follows the source SHA of the code currently active.
+            -- Restore creates a new commit, so the active source SHA may be lower in history.
+            local currentVersionSha = tostring(decoded[1].sha or "")
+            local beforeVersionSha = tostring(decoded[2] and decoded[2].sha or "")
+            local latestCommitMessage = tostring((decoded[1].commit or {}).message or "")
+            local restoredSourcePrefix = latestCommitMessage:match("^[Rr]estore .- to ([a-fA-F0-9]+)")
+            if restoredSourcePrefix then
+                local prefix = string.lower(restoredSourcePrefix)
+                for _, historyEntry in ipairs(decoded) do
+                    local historySha = tostring(historyEntry.sha or "")
+                    if string.lower(historySha):sub(1, #prefix) == prefix then
+                        currentVersionSha = historySha
+                        beforeVersionSha = tostring(decoded[1].sha or "")
+                        break
+                    end
+                end
+            end
+
             for index, entry in ipairs(decoded) do
                 local commitData = entry.commit or {}
                 local authorData = commitData.author or {}
                 local sha = tostring(entry.sha or "")
-                local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\r\n]+", " ")
+                local message = tostring(commitData.message or "Tanpa pesan"):gsub("[\\r\\n]+", " ")
                 if #message > 90 then message = message:sub(1, 87) .. "..." end
+
+                local badgeText = nil
+                local isCurrentVersion = sha == currentVersionSha
+                if isCurrentVersion then
+                    badgeText = "CURRENT VERSION"
+                elseif sha == beforeVersionSha then
+                    badgeText = "BEFORE"
+                end
 
                 local row = Instance.new("TextButton")
                 row.Size = UDim2.new(1, -4, 0, 48)
@@ -3380,7 +3406,7 @@ return function(speaker)
                 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
 
                 local title = Instance.new("TextLabel")
-                title.Size = UDim2.new(1, (index == 1 or index == 2) and -104 or -12, 0, 18)
+                title.Size = UDim2.new(1, badgeText and -104 or -12, 0, 18)
                 title.Position = UDim2.new(0, 6, 0, 3)
                 title.BackgroundTransparency = 1
                 title.Font = Enum.Font.GothamBold
@@ -3392,18 +3418,20 @@ return function(speaker)
                 title.ZIndex = 34
                 title.Parent = row
 
-                if index == 1 or index == 2 then
+                if badgeText then
+                    local isCurrentBadge = badgeText == "CURRENT VERSION"
+                    local badgeWidth = isCurrentBadge and 92 or 48
                     local versionBadge = Instance.new("TextLabel")
-                    versionBadge.Size = UDim2.new(0, index == 1 and 92 or 48, 0, 16)
-                    versionBadge.Position = UDim2.new(1, index == 1 and -98 or -54, 0, 4)
-                    versionBadge.BackgroundColor3 = index == 1
+                    versionBadge.Size = UDim2.new(0, badgeWidth, 0, 16)
+                    versionBadge.Position = UDim2.new(1, -(badgeWidth + 6), 0, 4)
+                    versionBadge.BackgroundColor3 = isCurrentBadge
                         and Color3.fromRGB(35, 105, 75) or Color3.fromRGB(65, 75, 95)
                     versionBadge.BorderSizePixel = 0
                     versionBadge.Font = Enum.Font.GothamBold
-                    versionBadge.Text = index == 1 and "CURRENT VERSION" or "BEFORE"
-                    versionBadge.TextColor3 = index == 1
+                    versionBadge.Text = badgeText
+                    versionBadge.TextColor3 = isCurrentBadge
                         and Color3.fromRGB(190, 255, 215) or Color3.fromRGB(215, 225, 240)
-                    versionBadge.TextSize = index == 1 and 6 or 7
+                    versionBadge.TextSize = isCurrentBadge and 6 or 7
                     versionBadge.ZIndex = 35
                     versionBadge.Parent = row
                     Instance.new("UICorner", versionBadge).CornerRadius = UDim.new(0, 4)
