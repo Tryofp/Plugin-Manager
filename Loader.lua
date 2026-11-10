@@ -173,6 +173,7 @@ local SharedFeatures = {
         Desc = "tidak untuk semua map, hanya untuk Map yang bertema merapihkan barang",
         Cmd = "rgrab",
         UnCmd = "",
+        ExecutionMode = "standalone",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/TPitem",
         UpdateTimestamp = "091120261054, 86400",
         BadgeText = "Update!",
