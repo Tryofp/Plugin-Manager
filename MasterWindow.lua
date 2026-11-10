@@ -1700,11 +1700,31 @@ return function(speaker)
     end)
 
     HealthCheckExportBtn.MouseButton1Click:Connect(function()
-        if #healthReportLines == 0 then
-            HealthCheckInfo.Text = "Belum ada hasil untuk diekspor. Jalankan pemeriksaan dulu."
+        -- Export exactly the rows currently displayed, whether they are health-check
+        -- results or runtime-error history. Do not reuse the separate scan baseline.
+        local exportLines = {"PLUGIN MANAGER - HASIL YANG SEDANG DITAMPILKAN", "============================================"}
+        local rowCount = 0
+        for _, child in ipairs(HealthCheckScroll:GetChildren()) do
+            if child:IsA("Frame") then
+                local labels = {}
+                for _, item in ipairs(child:GetChildren()) do
+                    if item:IsA("TextLabel") then
+                        table.insert(labels, item.Text)
+                    end
+                end
+                if #labels > 0 then
+                    rowCount = rowCount + 1
+                    table.insert(exportLines, labels[1] .. (#labels > 1 and (" | " .. labels[2]) or ""))
+                end
+            end
+        end
+
+        if rowCount == 0 then
+            HealthCheckInfo.Text = "Tidak ada hasil yang sedang ditampilkan untuk diekspor."
             return
         end
-        local reportText = table.concat(healthReportLines, "\n")
+
+        local reportText = table.concat(exportLines, "\n")
         local copied = false
         if type(setclipboard) == "function" then
             copied = pcall(setclipboard, reportText)
@@ -1712,10 +1732,10 @@ return function(speaker)
             copied = pcall(toclipboard, reportText)
         end
         if copied then
-            HealthCheckInfo.Text = "Hasil berhasil disalin. Tinggal paste ke chat."
+            HealthCheckInfo.Text = tostring(rowCount) .. " hasil yang tampil berhasil disalin."
         elseif type(writefile) == "function" then
             local ok = pcall(writefile, "PluginHealthCheck.txt", reportText)
-            HealthCheckInfo.Text = ok and "Clipboard tidak tersedia. Laporan disimpan ke PluginHealthCheck.txt." or "Gagal menyalin dan menyimpan laporan."
+            HealthCheckInfo.Text = ok and "Clipboard tidak tersedia. Hasil yang tampil disimpan ke PluginHealthCheck.txt." or "Gagal menyalin dan menyimpan hasil."
         else
             HealthCheckInfo.Text = "Clipboard/file export tidak didukung executor ini."
         end
