@@ -355,6 +355,149 @@ return function(speaker)
     end
 
     local loadedModules = {}
+    local loadedModuleFingerprints = {}
+    local stableFixPrompted = {}
+    local stableFixPromptActive = false
+
+    -- Fingerprint is only a lightweight content comparison, not a security hash.
+    local function getPluginSourceFingerprint(source)
+        local fingerprint = 0
+        for index = 1, #source do
+            fingerprint = (fingerprint * 131 + string.byte(source, index)) % 2147483647
+        end
+        return tostring(#source) .. ":" .. tostring(fingerprint)
+    end
+
+    -- Keep the exact source fingerprint used to create each cached module.
+    local function loadPluginModule(rawUrl)
+        local source = game:HttpGet(rawUrl)
+        if type(source) ~= "string" or source == "" then
+            error("Source plugin kosong atau gagal diunduh: " .. tostring(rawUrl))
+        end
+        local compiled, compileError = loadstring(source)
+        if type(compiled) ~= "function" then
+            error("Gagal compile plugin: " .. tostring(compileError))
+        end
+        local module = compiled()
+        loadedModuleFingerprints[rawUrl] = getPluginSourceFingerprint(source)
+        return module
+    end
+
+    local function showStableFixPrompt(pluginName, commandName, sourceUrl, latestSource)
+        if stableFixPromptActive then return end
+        local gui = CoreGui:FindFirstChild("MasterPluginHub")
+        if not gui then return end
+
+        stableFixPromptActive = true
+        local prompt = Instance.new("Frame")
+        prompt.Name = "StableFixAvailablePrompt"
+        prompt.Size = UDim2.new(0, 248, 0, 112)
+        prompt.Position = UDim2.new(0.5, -124, 0.5, -56)
+        prompt.BackgroundColor3 = Color3.fromRGB(25, 33, 45)
+        prompt.BorderSizePixel = 0
+        prompt.ZIndex = 100
+        prompt.Parent = gui
+        Instance.new("UICorner", prompt).CornerRadius = UDim.new(0, 7)
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, -16, 0, 22)
+        title.Position = UDim2.new(0, 8, 0, 6)
+        title.BackgroundTransparency = 1
+        title.Font = Enum.Font.GothamBold
+        title.Text = "PERBAIKAN STABLE TERSEDIA"
+        title.TextColor3 = Color3.fromRGB(100, 230, 150)
+        title.TextSize = 10
+        title.ZIndex = 101
+        title.Parent = prompt
+
+        local detail = Instance.new("TextLabel")
+        detail.Size = UDim2.new(1, -16, 0, 34)
+        detail.Position = UDim2.new(0, 8, 0, 29)
+        detail.BackgroundTransparency = 1
+        detail.Font = Enum.Font.Gotham
+        detail.Text = tostring(pluginName) .. " / " .. tostring(commandName)
+            .. "\nSource stable berubah. Muat ulang Hub untuk memakai versi terbaru."
+        detail.TextColor3 = Color3.fromRGB(205, 215, 228)
+        detail.TextSize = 8
+        detail.TextWrapped = true
+        detail.TextXAlignment = Enum.TextXAlignment.Left
+        detail.ZIndex = 101
+        detail.Parent = prompt
+
+        local reloadButton = Instance.new("TextButton")
+        reloadButton.Size = UDim2.new(0.58, -6, 0, 26)
+        reloadButton.Position = UDim2.new(0, 8, 1, -34)
+        reloadButton.BackgroundColor3 = Color3.fromRGB(0, 145, 95)
+        reloadButton.BorderSizePixel = 0
+        reloadButton.Font = Enum.Font.GothamBold
+        reloadButton.Text = "MUAT ULANG HUB"
+        reloadButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        reloadButton.TextSize = 8
+        reloadButton.ZIndex = 101
+        reloadButton.Parent = prompt
+        Instance.new("UICorner", reloadButton).CornerRadius = UDim.new(0, 4)
+
+        local laterButton = Instance.new("TextButton")
+        laterButton.Size = UDim2.new(0.42, -6, 0, 26)
+        laterButton.Position = UDim2.new(0.58, 2, 1, -34)
+        laterButton.BackgroundColor3 = Color3.fromRGB(65, 76, 92)
+        laterButton.BorderSizePixel = 0
+        laterButton.Font = Enum.Font.GothamBold
+        laterButton.Text = "NANTI"
+        laterButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        laterButton.TextSize = 8
+        laterButton.ZIndex = 101
+        laterButton.Parent = prompt
+        Instance.new("UICorner", laterButton).CornerRadius = UDim.new(0, 4)
+
+        laterButton.MouseButton1Click:Connect(function()
+            prompt:Destroy()
+            stableFixPromptActive = false
+        end)
+
+        reloadButton.MouseButton1Click:Connect(function()
+            reloadButton.Text = "MEMUAT..."
+            reloadButton.Active = false
+            task.spawn(function()
+                local ok, err = pcall(function()
+                    local entryUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Main.lua"
+                    local entrySource = game:HttpGet(entryUrl .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
+                    local entryChunk, compileError = loadstring(entrySource)
+                    if type(entryChunk) ~= "function" then
+                        error("Gagal compile Main.lua: " .. tostring(compileError))
+                    end
+                    entryChunk()
+                end)
+                if not ok then
+                    reloadButton.Text = "GAGAL - COBA LAGI"
+                    reloadButton.Active = true
+                    warn("[Plugin Manager] Gagal memuat ulang Hub: " .. tostring(err))
+                end
+            end)
+        end)
+    end
+
+    local function checkStableFixAvailable(pluginName, commandName, sourceUrl)
+        local normalizedUrl = tostring(sourceUrl or ""):match("^[^?]+") or ""
+        local loadedFingerprint = loadedModuleFingerprints[normalizedUrl]
+        if not loadedFingerprint then return end
+
+        local path = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)$")
+            or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)$")
+        if not path then return end
+
+        local latestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/stable/" .. path
+        local ok, latestSource = pcall(function() return game:HttpGet(latestUrl) end)
+        if not ok or type(latestSource) ~= "string" or latestSource == "" then return end
+
+        local latestFingerprint = getPluginSourceFingerprint(latestSource)
+        if latestFingerprint == loadedFingerprint then return end
+
+        local promptKey = latestUrl .. "|" .. latestFingerprint
+        if stableFixPrompted[promptKey] then return end
+        stableFixPrompted[promptKey] = true
+        showStableFixPrompt(pluginName, commandName, latestUrl, latestSource)
+    end
 
     -- Anonymous, non-blocking runtime reports. Detached plugin tasks may not be attributable.
     local runtimeErrorLastSent = {}
@@ -387,6 +530,12 @@ return function(speaker)
                     Body = body
                 })
             end)
+        end)
+
+        -- Only offer a fix when the published stable source differs from the
+        -- exact source currently cached in this session.
+        task.spawn(function()
+            pcall(checkStableFixAvailable, plugin, command, source)
         end)
     end
 
@@ -3098,7 +3247,7 @@ return function(speaker)
                         local commandOk, commandErr = xpcall(function()
                             local targetRaw = subRawUrl
                             if not loadedModules[targetRaw] then
-                                loadedModules[targetRaw] = loadstring(game:HttpGet(targetRaw))()
+                                loadedModules[targetRaw] = loadPluginModule(targetRaw)
                             end
                             local pluginMod = loadedModules[targetRaw]
                             if pluginMod and pluginMod.Commands then
@@ -3380,7 +3529,7 @@ return function(speaker)
                         local function runDirectCommand(customArgs, isUnexec)
                             local commandOk, commandErr = xpcall(function()
                                 if not loadedModules[item.RawUrl] then
-                                    loadedModules[item.RawUrl] = loadstring(game:HttpGet(item.RawUrl))()
+                                    loadedModules[item.RawUrl] = loadPluginModule(item.RawUrl)
                                 end
                                 local pluginMod = loadedModules[item.RawUrl]
                                 if pluginMod and pluginMod.Commands then
