@@ -1105,66 +1105,44 @@ return function(speaker)
                 errors = 1
             end
 
-            -- Satu request Git Trees untuk seluruh source, menghindari 21 request commits API.
-            local treeUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/git/trees/main?recursive=1"
-            UpdateCheckerInfo.Text = "Mengambil daftar source GitHub (1 permintaan)..."
-            local treeOk, treeResponse = pcall(function() return game:HttpGet(treeUrl) end)
-            local treeDecoded
-            local treeError = ""
-            if not treeOk then
-                treeError = "HTTP request ditolak: " .. tostring(treeResponse)
-            elseif type(treeResponse) ~= "string" or treeResponse == "" then
-                treeError = "GitHub mengirim respons kosong."
-            else
-                local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(treeResponse) end)
-                if decodeOk and type(decoded) == "table" and type(decoded.tree) == "table" then
-                    treeDecoded = decoded
-                    if decoded.truncated == true then
-                        treeError = "GitHub Tree terpotong (truncated)."
-                        treeDecoded = nil
-                    end
-                elseif decodeOk and type(decoded) == "table" then
-                    treeError = "Respons GitHub tidak memiliki daftar tree. Pesan: " .. tostring(decoded.message or decoded.error or "format tidak dikenal")
+            -- Periksa isi file langsung dari raw.githubusercontent.com.
+            -- Tidak memakai GitHub API, sehingga tidak terkena HTTP 403/rate limit API.
+            local checked, updated, unchanged, newBaseline, errors = 0, 0, 0, 0, 0
+            for index, fileInfo in ipairs(files) do
+                UpdateCheckerInfo.Text = string.format("Mengunduh source %d/%d • %s", index, #files, fileInfo.name)
+                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/main/" .. fileInfo.path
+                local rawOk, source = pcall(function() return game:HttpGet(rawUrl) end)
+
+                if not rawOk or type(source) ~= "string" or source == "" then
+                    errors = errors + 1
+                    addUpdateCheckerRow(fileInfo.name, "Gagal mengambil isi source: " .. string.sub(tostring(source), 1, 100), "ERROR")
                 else
-                    treeError = "Respons bukan JSON GitHub: " .. string.sub(tostring(treeResponse), 1, 140)
-                end
-            end
-
-            if not treeDecoded then
-                errors = #files
-                addUpdateCheckerRow("GitHub Tree API", treeError ~= "" and treeError or "Gagal membaca daftar source GitHub.", "ERROR")
-            else
-                local shaByPath = {}
-                for _, entry in ipairs(treeDecoded.tree) do
-                    if entry.type == "blob" and type(entry.path) == "string" then
-                        shaByPath[entry.path] = tostring(entry.sha or "")
+                    -- Fingerprint deterministik dari isi file (bukan hash keamanan).
+                    -- Modulo dipilih agar perhitungan tetap presisi di angka Luau.
+                    local fingerprint = 0
+                    for byteIndex = 1, #source do
+                        fingerprint = (fingerprint * 131 + string.byte(source, byteIndex)) % 2147483647
                     end
-                end
+                    local latestFingerprint = "content:" .. tostring(#source) .. ":" .. tostring(fingerprint)
+                    checked = checked + 1
+                    updateScanResults[fileInfo.path] = {
+                        sha = latestFingerprint,
+                        name = fileInfo.name
+                    }
 
-                for index, fileInfo in ipairs(files) do
-                    UpdateCheckerInfo.Text = string.format("Memeriksa %d/%d • %s", index, #files, fileInfo.name)
-                    local latestSha = tostring(shaByPath[fileInfo.path] or "")
-                    if latestSha == "" then
-                        errors = errors + 1
-                        addUpdateCheckerRow(fileInfo.name, "Source tidak ditemukan di GitHub Tree.", "ERROR")
+                    local baselineFingerprint = tostring(updateBaseline[fileInfo.path] or "")
+                    if baselineFingerprint == "" then
+                        newBaseline = newBaseline + 1
+                        addUpdateCheckerRow(fileInfo.name, "Belum ada baseline • " .. tostring(#source) .. " byte", "BARU")
+                    elseif baselineFingerprint ~= latestFingerprint then
+                        updated = updated + 1
+                        addUpdateCheckerRow(fileInfo.name, "Isi file berubah sejak baseline terakhir.", "UPDATE")
                     else
-                        updateScanResults[fileInfo.path] = {
-                            sha = latestSha,
-                            name = fileInfo.name
-                        }
-                        local baselineSha = tostring(updateBaseline[fileInfo.path] or "")
-                        if baselineSha == "" then
-                            newBaseline = newBaseline + 1
-                            addUpdateCheckerRow(fileInfo.name, "Belum ada baseline • " .. latestSha:sub(1, 7), "BARU")
-                        elseif baselineSha ~= latestSha then
-                            updated = updated + 1
-                            addUpdateCheckerRow(fileInfo.name, "Baseline " .. baselineSha:sub(1, 7) .. " → terbaru " .. latestSha:sub(1, 7), "UPDATE")
-                        else
-                            unchanged = unchanged + 1
-                            addUpdateCheckerRow(fileInfo.name, "Versi " .. latestSha:sub(1, 7) .. " masih sama.", "OK")
-                        end
+                        unchanged = unchanged + 1
+                        addUpdateCheckerRow(fileInfo.name, "Isi file masih sama • " .. tostring(#source) .. " byte.", "OK")
                     end
                 end
+                if index < #files then task.wait(0.12) end
             end
 
             UpdateCheckerInfo.Text = string.format(
