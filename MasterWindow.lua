@@ -22,6 +22,8 @@ return function(speaker)
     local lastMetadataSnapshot = nil
     local playerBadgeCache = {}
     local globalLoaderData = nil
+    -- Separate public Loader snapshot for Beta's admin tools. Never overwrite the live Beta menu data.
+    local adminLoaderData = nil
     local refreshBadgeUI = nil
     -- Jangan rebuild seluruh daftar menu saat panel Version History sedang terbuka.
     -- Rebuild di tengah interaksi membuat panel tertutup sendiri.
@@ -55,6 +57,34 @@ return function(speaker)
         remoteMetadata = decoded
         metadataReady = true
         return true, decoded, changed
+    end
+
+    -- Dev Panel in Beta manages the public main branch through an isolated Loader snapshot.
+    -- This data is intentionally separate from globalLoaderData, which continues driving the Beta UI.
+    local function refreshAdminLoaderData()
+        local loaderUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Loader.lua"
+        local requestOk, source = pcall(function()
+            return game:HttpGet(loaderUrl .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
+        end)
+        if not requestOk or type(source) ~= "string" or source == "" then
+            return false, "Tidak dapat mengambil Loader publik dari branch main."
+        end
+
+        local compileOk, loaderChunk = pcall(function()
+            if type(loadstring) ~= "function" then error("loadstring tidak tersedia") end
+            return loadstring(source)
+        end)
+        if not compileOk or type(loaderChunk) ~= "function" then
+            return false, "Loader publik gagal dikompilasi: " .. tostring(loaderChunk)
+        end
+
+        local executeOk, data = pcall(loaderChunk)
+        if not executeOk or type(data) ~= "table" or type(data.Tabs) ~= "table" then
+            return false, "Struktur Loader publik tidak valid: " .. tostring(data)
+        end
+
+        adminLoaderData = data
+        return true, data
     end
 
     task.spawn(function()
@@ -2159,7 +2189,7 @@ return function(speaker)
 
     local function collectUpdateCheckerFiles()
         local files, seen = {}, {}
-        local data = globalLoaderData
+        local data = adminLoaderData
         if type(data) ~= "table" then return files end
         for _, tabInfo in ipairs(data.Tabs or {}) do
             local dataKey = type(tabInfo) == "table" and tabInfo.DataKey or nil
@@ -2179,6 +2209,7 @@ return function(speaker)
                                     seen[path] = true
                                     table.insert(files, {
                                         path = path,
+                                        branch = "main",
                                         name = tostring(feature.Name or item.Name or path)
                                     })
                                 end
@@ -2202,6 +2233,16 @@ return function(speaker)
         clearUpdateCheckerRows()
         updateScanResults = {}
         task.spawn(function()
+            local adminOk, adminError = refreshAdminLoaderData()
+            if not adminOk then
+                UpdateCheckerInfo.Text = tostring(adminError)
+                UpdateCheckerScanBtn.Text = "CEK ULANG"
+                UpdateCheckerScanBtn.Active = true
+                UpdateCheckerBaselineBtn.Active = false
+                updateScanRunning = false
+                return
+            end
+
             -- Ambil baseline terbaru dari Metadata server sebelum membandingkan.
             local metadataOk = fetchRemoteMetadata()
             if metadataOk then
@@ -2234,7 +2275,7 @@ return function(speaker)
 
             local downloadRequest = request or http_request or (syn and syn.request)
             local function checkOneFile(fileInfo)
-                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/" .. fileInfo.path
+                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/" .. fileInfo.path
                 local rawOk, source
                 if type(downloadRequest) == "function" then
                     rawOk, source = pcall(function()
@@ -2458,6 +2499,7 @@ return function(speaker)
         end
 
         task.spawn(function()
+            local adminOk, adminError = refreshAdminLoaderData()
             local errors, checks = 0, 0
             local function report(title, detail, failed)
                 checks = checks + 1
@@ -2466,9 +2508,9 @@ return function(speaker)
                 addHealthCheckResult(title, detail, failed)
             end
 
-            local data = globalLoaderData
+            local data = adminOk and adminLoaderData or nil
             if type(data) ~= "table" then
-                report("Loader tidak tersedia", "Data Loader belum berhasil dimuat.", true)
+                report("Loader publik tidak tersedia", tostring(adminError or "Data Loader main belum berhasil dimuat."), true)
             else
                 local tabs = data.Tabs
                 if type(tabs) ~= "table" or #tabs == 0 then
@@ -2858,6 +2900,20 @@ return function(speaker)
             end
         end
 
+        local adminOk, adminError = refreshAdminLoaderData()
+        if not adminOk then
+            local errorLabel = Instance.new("TextLabel")
+            errorLabel.Size = UDim2.new(1, 0, 0, 40)
+            errorLabel.BackgroundTransparency = 1
+            errorLabel.Font = Enum.Font.GothamBold
+            errorLabel.Text = tostring(adminError)
+            errorLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
+            errorLabel.TextSize = 9
+            errorLabel.TextWrapped = true
+            errorLabel.Parent = BadgeScroll
+            return
+        end
+
         local ResetAllRow = Instance.new("Frame")
         ResetAllRow.Size = UDim2.new(1, 0, 0, 36)
         ResetAllRow.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
@@ -2915,7 +2971,7 @@ return function(speaker)
             end)
         end)
 
-        if not globalLoaderData then
+        if not adminLoaderData then
             local LoadingLbl = Instance.new("TextLabel")
             LoadingLbl.Size = UDim2.new(1, 0, 0, 30)
             LoadingLbl.BackgroundTransparency = 1
@@ -2928,12 +2984,12 @@ return function(speaker)
         end
 
         local activeBadgeCount = 0
-        local detectedTabs = globalLoaderData.Tabs or {}
+        local detectedTabs = adminLoaderData.Tabs or {}
 
         for _, tabInfo in ipairs(detectedTabs) do
             local tabName = tabInfo.Name
             local dataKey = tabInfo.DataKey
-            local items = globalLoaderData[dataKey] or {}
+            local items = adminLoaderData[dataKey] or {}
 
             local tabUniqueKey = "TabAutoBadge_" .. tabName
             local isTabBadgeActive = isFeatureNew(tabUniqueKey, "071120260000, 86400")
@@ -3032,7 +3088,21 @@ return function(speaker)
             if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
         end
 
-        if not globalLoaderData then
+        local adminOk, adminError = refreshAdminLoaderData()
+        if not adminOk then
+            local errorLabel = Instance.new("TextLabel")
+            errorLabel.Size = UDim2.new(1, 0, 0, 40)
+            errorLabel.BackgroundTransparency = 1
+            errorLabel.Font = Enum.Font.GothamBold
+            errorLabel.Text = tostring(adminError)
+            errorLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
+            errorLabel.TextSize = 9
+            errorLabel.TextWrapped = true
+            errorLabel.Parent = MaintenanceScroll
+            return
+        end
+
+        if not adminLoaderData then
             local loading = Instance.new("TextLabel")
             loading.Size = UDim2.new(1, 0, 0, 30)
             loading.BackgroundTransparency = 1
@@ -3045,8 +3115,8 @@ return function(speaker)
         end
 
         local features, seen = {}, {}
-        for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
-            for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+        for _, tabInfo in ipairs(adminLoaderData.Tabs or {}) do
+            for _, item in ipairs(adminLoaderData[tabInfo.DataKey] or {}) do
                 if item.SubFeatures and #item.SubFeatures > 0 then
                     for _, sub in ipairs(item.SubFeatures) do
                         local id = tostring(sub.FeatureId or "")
@@ -3692,15 +3762,22 @@ return function(speaker)
         activeVersionHistoryFile = nil
         selectedVersionCommit = nil
         clearVersionHistoryRows()
-        if not globalLoaderData then
+        local adminOk, adminError = refreshAdminLoaderData()
+        if not adminOk then
+            VersionHistoryInfo.Text = tostring(adminError)
+            addVersionHistoryMessage("Version History publik tidak dapat dimuat dari Loader main.")
+            return
+        end
+
+        if not adminLoaderData then
             VersionHistoryInfo.Text = "Loader belum siap."
             addVersionHistoryMessage("Buka kembali Dev Panel setelah Loader selesai dimuat.")
             return
         end
 
         local files, seen = {}, {}
-        for _, tabInfo in ipairs(globalLoaderData.Tabs or {}) do
-            for _, item in ipairs(globalLoaderData[tabInfo.DataKey] or {}) do
+        for _, tabInfo in ipairs(adminLoaderData.Tabs or {}) do
+            for _, item in ipairs(adminLoaderData[tabInfo.DataKey] or {}) do
                 local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or {item}
                 for _, feature in ipairs(candidates) do
                     local rawUrl = tostring(feature.RawUrl or item.RawUrl or "")
