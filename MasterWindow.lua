@@ -927,7 +927,7 @@ return function(speaker)
                     report("Struktur Tabs", tostring(#tabs) .. " tab ditemukan.", false)
                 end
 
-                local features, seenIds, seenCmds, urls = {}, {}, {}, {}
+                local features, seenObjects = {}, {}
                 for _, tabInfo in ipairs(type(tabs) == "table" and tabs or {}) do
                     if type(tabInfo) ~= "table" or type(tabInfo.Name) ~= "string" or tabInfo.Name == "" then
                         report("Data tab tidak valid", "Ditemukan entri tab tanpa Name yang valid.", true)
@@ -939,9 +939,13 @@ return function(speaker)
                             for _, item in ipairs(list) do
                                 if type(item) == "table" and type(item.SubFeatures) == "table" and #item.SubFeatures > 0 then
                                     for _, sub in ipairs(item.SubFeatures) do
-                                        table.insert(features, { feature = sub, parent = item, tab = tabInfo.Name })
+                                        if type(sub) == "table" and not seenObjects[sub] then
+                                            seenObjects[sub] = true
+                                            table.insert(features, { feature = sub, parent = item, tab = tabInfo.Name })
+                                        end
                                     end
-                                elseif type(item) == "table" then
+                                elseif type(item) == "table" and not seenObjects[item] then
+                                    seenObjects[item] = true
                                     table.insert(features, { feature = item, parent = item, tab = tabInfo.Name })
                                 end
                             end
@@ -949,6 +953,10 @@ return function(speaker)
                     end
                 end
 
+                local seenIds, seenCmds, urls = {}, {}, {}
+                if #features == 0 then
+                    report("Daftar fitur kosong", "Tidak ada fitur yang dapat diperiksa dari tab Loader.", true)
+                end
                 for _, entry in ipairs(features) do
                     local feature, parent = entry.feature, entry.parent
                     local name = tostring(feature.Name or feature.Cmd or "Fitur tanpa nama")
