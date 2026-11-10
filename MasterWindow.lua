@@ -411,8 +411,8 @@ return function(speaker)
 
     local function getPluginSourcePath(rawUrl)
         local url = tostring(rawUrl or "")
-        local stablePath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)")
-            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)")
+        local stablePath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
+            or url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
         if stablePath then return stablePath end
         return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
     end
@@ -549,7 +549,7 @@ return function(speaker)
             else
                 task.spawn(function()
                     local checkUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=stable&per_page=1"
+                        .. path .. "&sha=main&per_page=1"
                     local ok, response = requestGitHubWithRetry(checkUrl, 3)
                     if not ok then return end
                     local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(response) end)
@@ -620,7 +620,7 @@ return function(speaker)
                 while not foundBaseline and not history.complete and history.nextPage <= 10 do
                     local page = history.nextPage
                     local apiUrl = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits?path="
-                        .. path .. "&sha=stable&per_page=100&page=" .. tostring(page)
+                        .. path .. "&sha=main&per_page=100&page=" .. tostring(page)
                     local ok, response = requestGitHubWithRetry(apiUrl, 3)
                     if not ok or type(response) ~= "string" or response == "" then
                         loadWarning = "GitHub belum merespons setelah 3 percobaan. Riwayat yang sudah diterima tetap ditampilkan; tekan panah lagi untuk mencoba ulang."
@@ -963,14 +963,16 @@ return function(speaker)
         local loadedFingerprint = loadedModuleFingerprints[normalizedUrl]
         if not loadedFingerprint then return end
 
-        local path = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)$")
-            or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)$")
+        local path = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/Beta/(.+)$")
+            or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/Beta/(.+)$")
+            or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)$")
+            or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)$")
         if not path then return end
         -- A manually selected historical version is intentional; use its UPDATE! badge
         -- instead of silently offering to replace it with moving stable source.
         if selectedPluginVersions[path] then return end
 
-        local latestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/stable/" .. path
+        local latestUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/" .. path
         local ok, latestSource = pcall(function() return game:HttpGet(latestUrl) end)
         if not ok or type(latestSource) ~= "string" or latestSource == "" then return end
 
@@ -1863,8 +1865,10 @@ return function(speaker)
                         for _, feature in ipairs(candidates) do
                             if type(feature) == "table" then
                                 local rawUrl = tostring((feature.RawUrl and feature.RawUrl ~= "" and feature.RawUrl) or item.RawUrl or "")
-                                local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/(.+)")
-                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/(.+)")
+                                local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/Beta/(.+)")
+                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/Beta/(.+)")
+                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
+                                    or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
                                 if path and not seen[path] then
                                     seen[path] = true
                                     table.insert(files, {
@@ -1924,7 +1928,7 @@ return function(speaker)
 
             local downloadRequest = request or http_request or (syn and syn.request)
             local function checkOneFile(fileInfo)
-                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/stable/" .. fileInfo.path
+                local rawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/" .. fileInfo.path
                 local rawOk, source
                 if type(downloadRequest) == "function" then
                     rawOk, source = pcall(function()
@@ -2315,8 +2319,10 @@ return function(speaker)
         local stableSourceUrl
         for url, fingerprint in pairs(loadedModuleFingerprints) do
             local normalizedUrl = tostring(url):match("^[^?]+") or tostring(url)
-            local isStableSource = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/stable/.+$")
-                or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/stable/.+$")
+            local isStableSource = normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/Beta/.+$")
+                or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/Beta/.+$")
+                or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/.+$")
+                or normalizedUrl:match("^https://raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/.+$")
             if isStableSource and fingerprint and loadedModules[normalizedUrl] then
                 stableSourceUrl = normalizedUrl
                 break
@@ -3337,7 +3343,9 @@ return function(speaker)
                 local candidates = item.SubFeatures and #item.SubFeatures > 0 and item.SubFeatures or {item}
                 for _, feature in ipairs(candidates) do
                     local rawUrl = tostring(feature.RawUrl or item.RawUrl or "")
-                    local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
+                    local path = rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/Beta/(.+)")
+                        or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/Beta/(.+)")
+                        or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/main/(.+)")
                         or rawUrl:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/main/(.+)")
                     if path and not seen[path] then
                         seen[path] = true
@@ -4193,7 +4201,7 @@ return function(speaker)
         if not globalLoaderData then return end
         -- Ambil Loader terbaru agar timestamp fitur yang baru di-push langsung tersedia.
         local ok, newData = pcall(function()
-            local loaderUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Loader.lua"
+            local loaderUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/Loader.lua"
             local source = game:HttpGet(loaderUrl .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
             return loadstring(source)()
         end)
@@ -4235,7 +4243,7 @@ return function(speaker)
     end
 
     local configOk, configErr = xpcall(function()
-        local configUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Loader.lua"
+        local configUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/Beta/Loader.lua"
         local source = game:HttpGet(configUrl .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
         local chunk = loadstring(source)
         local data = chunk()
