@@ -1,0 +1,107 @@
+{
+  "Plugin/Interactable": {
+    "sha": "fce4275585d4547c07d136e93d56ec0b56eac776",
+    "message": "Enable automatic CanvasSize adjustment for tabContainer",
+    "date": "2026-11-07T02:46:09Z"
+  },
+  "Plugin/colorESP": {
+    "sha": "e8ede9f6b9be9b9db8cdd652767a8519c1a9d0e5",
+    "message": "Rename colorESP to Plugin/colorESP",
+    "date": "2026-11-02T17:16:57Z"
+  },
+  "Plugin/Waypoint": {
+    "sha": "502b56c9511d7cef29bc198e1d3415a4a8a19e0d",
+    "message": "Add Waypoint ignore keywords",
+    "date": "2026-11-09T16:14:50Z"
+  },
+  "Plugin/PlayerTeleport": {
+    "sha": "d74ac425926ba70324bc40320f5cd2b6c16ebc8a",
+    "message": "Rename PlayerTeleport to Plugin/PlayerTeleport",
+    "date": "2026-11-02T17:15:04Z"
+  },
+  "Plugin/SoundandView": {
+    "sha": "75f89f5110440e0c9958d8f4cd10c902597c7641",
+    "message": "Improve spectate streaming for distant players",
+    "date": "2026-11-09T17:35:47Z"
+  },
+  "Plugin/MusicTimeML": {
+    "sha": "f16aad35ed0383eb81b88b3e99a7384e103a15ab",
+    "message": "Remove unnecessary blank line in MusicTimeML",
+    "date": "2026-11-09T04:16:19Z"
+  },
+  "Plugin/TPitem": {
+    "sha": "f132f123e65c2b0a546dca769042d29360ee3717",
+    "message": "Remove unnecessary blank line in TPitem",
+    "date": "2026-11-09T03:54:17Z"
+  },
+  "Tools/clickinspector": {
+    "sha": "3e1845a2e48c2f2f272c2ccf223ccd39c1195277",
+    "message": "Rename clickinspector.iy to clickinspector",
+    "date": "2026-11-02T17:17:42Z"
+  },
+  "Tools/AntiAFK": {
+    "sha": "dab262ab6542bbcae55fa2158efae02f81e76f1a",
+    "message": "Rename AntiAFK to Tools/AntiAFK",
+    "date": "2026-10-29T16:45:36Z"
+  },
+  "Plugin/LastRejoin": {
+    "sha": "c279773579cde6d858870f4755d4d58ef6d352c8",
+    "message": "Fix formatting of SavedJobId assignment",
+    "date": "2026-11-08T19:33:45Z"
+  },
+  "Plugin/SmartRejoin": {
+    "sha": "431bf62301241d39ec0245df9150846e0be8c19b",
+    "message": "Rename SmartRejoin to Plugin/SmartRejoin",
+    "date": "2026-11-02T17:15:51Z"
+  },
+  "Plugin/SimpleAimbot": {
+    "sha": "59f0f72f4f409c34c4527fddbcc6316de7513349",
+    "message": "Fix formatting in SimpleAimbot plugin description",
+    "date": "2026-11-08T21:21:37Z"
+  },
+  "Plugin/F1Lock": {
+    "sha": "49453083033b894ec6df776ec5fc7b369498c624",
+    "message": "Rename F1Lock to Plugin/F1Lock",
+    "date": "2026-11-02T17:17:22Z"
+  },
+  "Tools/AntiEffect": {
+    "sha": "fb8b8f928a8a28d11dacd10fd1ea1c86d52c9cd8",
+    "message": "Implement anti-anchor feature and update notifications",
+    "date": "2026-10-30T04:21:09Z"
+  },
+  "Tools/Fullbright": {
+    "sha": "a6c65cc72ac51da8af544b3eaba59b1b193bee86",
+    "message": "Rename Fullbright to Tools/Fullbright",
+    "date": "2026-10-29T16:47:51Z"
+  },
+  "Tools/InstanPrompt": {
+    "sha": "79d1be4f87c503d73342beefbed0c42bff56614f",
+    "message": "Rename InstanPrompt to Tools/InstanPrompt",
+    "date": "2026-10-29T16:49:41Z"
+  },
+  "Tools/WalkSpeed": {
+    "sha": "e48fe3690404492011ae4c803e6c7130d508f71d",
+    "message": "Make WalkSpeed persist with lightweight loop",
+    "date": "2026-11-09T17:14:09Z"
+  },
+  "Tools/InfiniteJump": {
+    "sha": "76721c6781e1571528d177f519b382efe47dd78a",
+    "message": "Rename InfiniteJump to Tools/InfiniteJump",
+    "date": "2026-10-29T16:49:04Z"
+  },
+  "Tools/AdminDetect": {
+    "sha": "c05cd9b7fab156cdbe04bf9fb4b77e3e20ae1994",
+    "message": "Prevent generic Developer role false positives",
+    "date": "2026-11-09T16:46:31Z"
+  },
+  "Tools/Noclip": {
+    "sha": "cdb525f8413b898315c9a9d7ebe56aed19957d03",
+    "message": "Rename Noclip to Tools/Noclip",
+    "date": "2026-10-29T16:50:13Z"
+  },
+  "Tools/CodeFinder": {
+    "sha": "1fbdfc5c06efb2124e5f527542560ada0fc6b8fd",
+    "message": "Rename CodeFinder to Tools/CodeFinder",
+    "date": "2026-10-29T16:47:03Z"
+  }
+}
