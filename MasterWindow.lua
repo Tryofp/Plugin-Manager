@@ -416,6 +416,14 @@ return function(speaker)
             or "main"
     end
 
+    local function getPluginSourcePath(rawUrl)
+        local url = tostring(rawUrl or "")
+        local branchPath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/[^/]+/(.+)")
+        if branchPath then return branchPath end
+        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
+    end
+
+
     local function requestUserVersionProfile(action, branch, path, commitSha)
         local req = request or http_request or (syn and syn.request)
         if not req then return false, "Executor tidak menyediakan HTTP request." end
@@ -450,7 +458,6 @@ return function(speaker)
         if not globalLoaderData then return end
         local branches = { "main", "Beta" }
         local serverVersions = {}
-        local serverHasData = false
 
         for _, branch in ipairs(branches) do
             local url = SHEETS_WEB_APP_URL .. "?action=GetUserVersionProfile&userId="
@@ -465,7 +472,6 @@ return function(speaker)
                     for path, sha in pairs(decoded.versions) do
                         if type(path) == "string" and type(sha) == "string" and #sha == 40 then
                             serverVersions[path] = sha
-                            serverHasData = true
                         end
                     end
                 end
@@ -501,14 +507,6 @@ return function(speaker)
             task.defer(refreshBadgeUI)
         end
     end
-
-    local function getPluginSourcePath(rawUrl)
-        local url = tostring(rawUrl or "")
-        local branchPath = url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/refs/heads/[^/]+/(.+)")
-        if branchPath then return branchPath end
-        return url:match("raw%.githubusercontent%.com/Tryofp/Plugin%-Manager/[^/]+/(.+)")
-    end
-
     -- If a parent card has no RawUrl but all of its subfeatures share one source,
     -- expose one history control on the parent instead of duplicating it per child.
     local function getSharedSubFeatureSourceUrl(subFeatures, fallbackUrl)
@@ -4574,8 +4572,11 @@ return function(speaker)
 
     if not configOk then
         warn("[MasterWindow] GAGAL memuat Loader.lua: " .. tostring(configErr))
-    elseif metadataReady and metadataRefreshPending and refreshBadgeUI then
-        metadataRefreshPending = false
-        task.defer(refreshBadgeUI)
+    else
+        task.spawn(loadServerVersionProfiles)
+        if metadataReady and metadataRefreshPending and refreshBadgeUI then
+            metadataRefreshPending = false
+            task.defer(refreshBadgeUI)
+        end
     end
 end
