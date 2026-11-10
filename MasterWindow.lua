@@ -1140,7 +1140,11 @@ return function(speaker)
             UpdateCheckerInfo.Text = "Jalankan pemeriksaan terlebih dahulu."
             return
         end
+        -- Keep old entries for files that failed this scan; never erase a valid baseline on a network error.
         local nextBaseline = {}
+        for path, sha in pairs(updateBaseline) do
+            nextBaseline[path] = sha
+        end
         for path, result in pairs(updateScanResults) do
             nextBaseline[path] = result.sha
         end
