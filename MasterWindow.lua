@@ -1858,7 +1858,7 @@ return function(speaker)
         end)
 
         local parentSourcePath = getPluginSourcePath(rawUrl)
-            or getPluginSourcePath(getSharedSubFeatureSourceUrl(subFeatures, rawUrl))
+            or getPluginSourcePath(getPrimarySubFeatureSourceUrl(subFeatures, rawUrl))
         local subSourcePaths, subPathSeen = {}, {}
         for _, feature in ipairs(subFeatures) do
             local featureUrl = (feature.RawUrl and feature.RawUrl ~= "") and feature.RawUrl or rawUrl
@@ -1886,6 +1886,7 @@ return function(speaker)
             local subFeat = subEntry.item
             local subRawUrl = (subFeat.RawUrl and subFeat.RawUrl ~= "") and subFeat.RawUrl or rawUrl
             local subSourcePath = getPluginSourcePath(subRawUrl)
+            local hasSubUpdateBadge = subSourcePath and releaseUpdateByPath[subSourcePath] == true or false
             local uniqueKey = tostring(subRawUrl) .. "_" .. tostring(subFeat.Cmd)
             if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
@@ -1953,10 +1954,27 @@ return function(speaker)
             LblDesc.Size = UDim2.new(1, -118, 0, descHeight)
             Item.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
+            local subHasHistory = false
+            if subSourcePath and not allSubFeaturesShareParentSource then
+                local firstSubPath = true
+                for priorIndex = 1, subEntry.index - 1 do
+                    local prior = subFeatures[priorIndex]
+                    local priorUrl = (prior.RawUrl and prior.RawUrl ~= "") and prior.RawUrl or rawUrl
+                    if getPluginSourcePath(priorUrl) == subSourcePath then
+                        firstSubPath = false
+                        break
+                    end
+                end
+                if firstSubPath and subSourcePath ~= parentSourcePath then
+                    subHasHistory = attachPublicVersionHistory(Item, SubScroll, subRawUrl,
+                        tostring(subFeat.Name or subSourcePath), descHeight + 28, LblName, hasSubUpdateBadge) == true
+                end
+            end
+
             local SubFavoriteBtn = Instance.new("TextButton")
             SubFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             SubFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            SubFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            SubFavoriteBtn.Position = UDim2.new(1, subHasHistory and -122 or -108, 0.5, 0)
             SubFavoriteBtn.BackgroundTransparency = 1
             SubFavoriteBtn.BorderSizePixel = 0
             SubFavoriteBtn.Font = Enum.Font.GothamBold
@@ -1971,9 +1989,9 @@ return function(speaker)
             end)
 
             local ExecSub = Instance.new("TextButton")
-            ExecSub.Size = UDim2.new(0, 75, 0, 24)
+            ExecSub.Size = UDim2.new(0, subHasHistory and 58 or 75, 0, 24)
             ExecSub.AnchorPoint = Vector2.new(0, 0.5)
-            ExecSub.Position = UDim2.new(1, -80, 0.5, 0)
+            ExecSub.Position = UDim2.new(1, subHasHistory and -100 or -80, 0.5, 0)
             ExecSub.BorderSizePixel = 0
             ExecSub.Text = featureStates[uniqueKey] and "UNEXECUTE" or "EXECUTE"
             ExecSub.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -2124,8 +2142,10 @@ return function(speaker)
             local uniqueKey = tostring(item.RawUrl or "") .. "_" .. tostring(item.Cmd or item.Name)
             local historyRawUrl = item.RawUrl
             if (not historyRawUrl or historyRawUrl == "") and item.SubFeatures and #item.SubFeatures > 0 then
-                historyRawUrl = getSharedSubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
+                historyRawUrl = getPrimarySubFeatureSourceUrl(item.SubFeatures, item.RawUrl)
             end
+            local itemSourcePath = getPluginSourcePath(historyRawUrl)
+            local hasUpdateBadge = itemSourcePath and releaseUpdateByPath[itemSourcePath] == true or false
             local badgeKey = getFeatureBadgeKey(item, uniqueKey)
             local timestamp = item.UpdateTimestamp or ""
             local activeBadgeText = item.BadgeText or "New!"
@@ -2148,15 +2168,18 @@ return function(speaker)
                     if isFeatureInMaintenance(sub) then
                         hasSubMaintenance = true
                     end
-                    if isFeatureNew(subKey, subTimestamp) and not isLegacyUpdateBadge(sub) then
+                    local subPath = getPluginSourcePath(subRaw)
+                    if subPath and releaseUpdateByPath[subPath] then hasUpdateBadge = true end
+                    local subBadgeText = getUserFacingBadgeText(sub)
+                    if subBadgeText and isFeatureNew(subKey, subTimestamp) then
                         table.insert(badgeFeatureKeys, { key = subKey, timestamp = subTimestamp })
-                        if #badgeFeatureKeys == 1 then
-                            activeBadgeText = sub.BadgeText or activeBadgeText
+                        if #badgeFeatureKeys == 1 or subBadgeText == "UPDATE!" then
+                            activeBadgeText = subBadgeText
                             activeBadgeColorName = sub.BadgeColor or activeBadgeColorName
                         end
                     end
                 end
-            elseif isFeatureNew(badgeKey, timestamp) and not isLegacyUpdateBadge(item) then
+            elseif getUserFacingBadgeText(item) and isFeatureNew(badgeKey, timestamp) then
                 table.insert(badgeFeatureKeys, { key = badgeKey, timestamp = timestamp })
             end
 
@@ -2165,7 +2188,13 @@ return function(speaker)
                 activeBadgeColorName = "red"
             end
 
-            if #badgeFeatureKeys > 0 or isMaintenance or hasSubMaintenance then
+            if #badgeFeatureKeys > 0 or isMaintenance or hasSubMaintenance or hasUpdateBadge then
+                activeBadgeText = hasUpdateBadge and "UPDATE!" or "NEW!"
+                if hasUpdateBadge then activeBadgeColorName = "green" end
+                if isMaintenance or hasSubMaintenance then
+                    activeBadgeText = "MAINTENANCE!"
+                    activeBadgeColorName = "red"
+                end
                 local badgeText = "[" .. activeBadgeText .. "]"
                 local badgeColor = getColorFromName(activeBadgeColorName)
                 local textWidth = TextService:GetTextSize(badgeText, 9, Enum.Font.GothamBold, Vector2.new(200, 20)).X
@@ -2192,12 +2221,12 @@ return function(speaker)
                     local lowerBadgeText = string.lower(tostring(activeBadgeText))
                     if isMaintenance or hasSubMaintenance or string.find(lowerBadgeText, "maintenance", 1, true) then
                         badgeShortText = "MAINT"
-                    elseif string.find(lowerBadgeText, "update", 1, true) then
-                        badgeShortText = "UP"
+                    elseif hasUpdateBadge then
+                        badgeShortText = "UPDATE!"
                     else
-                        badgeShortText = "NEW"
+                        badgeShortText = "NEW!"
                     end
-                    setTabBadge(tabName, badgeShortText, badgeColor, 2, badgeFeatureKeys)
+                    setTabBadge(tabName, badgeShortText, badgeColor, hasUpdateBadge and 3 or 2, badgeFeatureKeys)
                 end
             end
 
@@ -2218,11 +2247,16 @@ return function(speaker)
             DescLabel.Size = UDim2.new(1, -118, 0, descHeight)
             ItemFrame.Size = UDim2.new(1, 0, 0, descHeight + 28)
 
+            local itemHasHistory = false
+            if itemSourcePath then
+                itemHasHistory = attachPublicVersionHistory(ItemFrame, targetParentScroll, historyRawUrl,
+                    tostring(item.Name or itemSourcePath), descHeight + 28, NameLabel, hasUpdateBadge) == true
+            end
 
             local MenuFavoriteBtn = Instance.new("TextButton")
             MenuFavoriteBtn.Size = UDim2.new(0, 22, 0, 22)
             MenuFavoriteBtn.AnchorPoint = Vector2.new(0, 0.5)
-            MenuFavoriteBtn.Position = UDim2.new(1, -108, 0.5, 0)
+            MenuFavoriteBtn.Position = UDim2.new(1, itemHasHistory and -122 or -108, 0.5, 0)
             MenuFavoriteBtn.BackgroundTransparency = 1
             MenuFavoriteBtn.BorderSizePixel = 0
             MenuFavoriteBtn.Font = Enum.Font.GothamBold
@@ -2241,9 +2275,9 @@ return function(speaker)
 
             if item.SubFeatures and #item.SubFeatures > 0 then
                 local OpenBtn = Instance.new("TextButton")
-                OpenBtn.Size = UDim2.new(0, 75, 0, 24)
+                OpenBtn.Size = UDim2.new(0, itemHasHistory and 58 or 75, 0, 24)
                 OpenBtn.AnchorPoint = Vector2.new(0, 0.5)
-                OpenBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                OpenBtn.Position = UDim2.new(1, itemHasHistory and -100 or -80, 0.5, 0)
                 OpenBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
                 OpenBtn.BackgroundTransparency = 0.2
                 OpenBtn.BorderSizePixel = 0
@@ -2261,9 +2295,9 @@ return function(speaker)
                 if featureStates[uniqueKey] == nil then featureStates[uniqueKey] = false end
 
                 local ExecBtn = Instance.new("TextButton")
-                ExecBtn.Size = UDim2.new(0, 75, 0, 24)
+                ExecBtn.Size = UDim2.new(0, itemHasHistory and 58 or 75, 0, 24)
                 ExecBtn.AnchorPoint = Vector2.new(0, 0.5)
-                ExecBtn.Position = UDim2.new(1, -80, 0.5, 0)
+                ExecBtn.Position = UDim2.new(1, itemHasHistory and -100 or -80, 0.5, 0)
                 ExecBtn.BorderSizePixel = 0
                 ExecBtn.BackgroundTransparency = 0.2
                 ExecBtn.Font = Enum.Font.GothamBold
@@ -2357,6 +2391,10 @@ return function(speaker)
     end
 
     refreshBadgeUI = function()
+        if openPublicHistoryPanels > 0 then
+            pendingPublicBadgeRefresh = true
+            return
+        end
         if not globalLoaderData then return end
         -- Ambil Loader terbaru agar timestamp fitur yang baru di-push langsung tersedia.
         local ok, newData = pcall(function()
@@ -2409,6 +2447,7 @@ return function(speaker)
 
         globalLoaderData = data
         migrateLegacyFavorites(data)
+        task.defer(checkStableReleaseUpdates)
 
         local detectedTabs = data.Tabs or {
             { Name = "Main", DataKey = "Main" },
@@ -2484,8 +2523,11 @@ return function(speaker)
 
     if not configOk then
         warn("[MasterWindow] GAGAL memuat Loader.lua: " .. tostring(configErr))
-    elseif metadataReady and metadataRefreshPending and refreshBadgeUI then
-        metadataRefreshPending = false
-        task.defer(refreshBadgeUI)
+    else
+        task.spawn(loadServerVersionProfiles)
+        if metadataReady and metadataRefreshPending and refreshBadgeUI then
+            metadataRefreshPending = false
+            task.defer(refreshBadgeUI)
+        end
     end
 end
