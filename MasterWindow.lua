@@ -455,23 +455,65 @@ return function(speaker)
             stableFixPromptActive = false
         end)
 
+        reloadButton.Text = "MUAT ULANG SOURCE"
         reloadButton.MouseButton1Click:Connect(function()
             reloadButton.Text = "MEMUAT..."
             reloadButton.Active = false
             task.spawn(function()
                 local ok, err = pcall(function()
-                    local entryUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Main.lua"
-                    local entrySource = game:HttpGet(entryUrl .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
-                    local entryChunk, compileError = loadstring(entrySource)
-                    if type(entryChunk) ~= "function" then
-                        error("Gagal compile Main.lua: " .. tostring(compileError))
+                    local chunk, compileError = loadstring(latestSource)
+                    if type(chunk) ~= "function" then
+                        error("Source stable gagal di-compile: " .. tostring(compileError))
                     end
-                    entryChunk()
+                    local updatedModule = chunk()
+                    if type(updatedModule) ~= "table" or type(updatedModule.Commands) ~= "table" then
+                        error("Source terbaru tidak menghasilkan modul Commands yang valid.")
+                    end
+
+                    loadedModules[sourceUrl] = updatedModule
+                    loadedModuleFingerprints[sourceUrl] = getPluginSourceFingerprint(latestSource)
+
+                    -- Reset only the failed feature's toggle state so its next
+                    -- EXECUTE click uses the refreshed command, not stale UNEXECUTE.
+                    local data = globalLoaderData
+                    if type(data) == "table" then
+                        for _, tabInfo in ipairs(data.Tabs or {}) do
+                            local list = type(tabInfo) == "table" and data[tabInfo.DataKey] or nil
+                            if type(list) == "table" then
+                                for _, item in ipairs(list) do
+                                    if type(item) == "table" then
+                                        local candidates = type(item.SubFeatures) == "table" and #item.SubFeatures > 0
+                                            and item.SubFeatures or {item}
+                                        for _, feature in ipairs(candidates) do
+                                            if type(feature) == "table" then
+                                                local featureUrl = tostring((feature.RawUrl and feature.RawUrl ~= "")
+                                                    and feature.RawUrl or item.RawUrl or "")
+                                                if featureUrl == sourceUrl
+                                                    and (tostring(feature.Cmd or "") == tostring(commandName)
+                                                        or tostring(feature.UnCmd or "") == tostring(commandName)) then
+                                                    local featureKey = featureUrl .. "_" .. tostring(feature.Cmd or "")
+                                                    featureStates[featureKey] = false
+                                                    for _, button in ipairs(activeButtons[featureKey] or {}) do
+                                                        if button and button.Parent then
+                                                            button.Text = "EXECUTE"
+                                                            button.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    prompt:Destroy()
+                    stableFixPromptActive = false
                 end)
                 if not ok then
                     reloadButton.Text = "GAGAL - COBA LAGI"
                     reloadButton.Active = true
-                    warn("[Plugin Manager] Gagal memuat ulang Hub: " .. tostring(err))
+                    warn("[Plugin Manager] Gagal memuat source stable terbaru: " .. tostring(err))
                 end
             end)
         end)
