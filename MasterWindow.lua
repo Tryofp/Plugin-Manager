@@ -1996,29 +1996,58 @@ return function(speaker)
             Status.TextColor3 = Color3.fromRGB(170, 190, 205)
 
             task.spawn(function()
+                local payload = HttpService:JSONEncode({
+                    Type = "Feedback",
+                    Username = LocalPlayer.Name,
+                    UserId = tostring(LocalPlayer.UserId),
+                    Category = feedbackCategories[categoryIndex],
+                    Rating = rating,
+                    Message = message,
+                    Device = getDeviceType(),
+                    PlaceId = tostring(game.PlaceId),
+                    PlaceName = tostring(game.Name or "Unknown Game")
+                })
+
+                -- Apps Script ContentService responds through a 302 redirect.
+                -- Keep the POST intact, then fetch the redirected JSON URL with GET.
                 local requestOk, response = pcall(function()
                     return req({
                         Url = SHEETS_WEB_APP_URL,
                         Method = "POST",
                         Headers = { ["Content-Type"] = "application/json" },
-                        FollowRedirects = true,
-                        Body = HttpService:JSONEncode({
-                            Type = "Feedback",
-                            Username = LocalPlayer.Name,
-                            UserId = tostring(LocalPlayer.UserId),
-                            Category = feedbackCategories[categoryIndex],
-                            Rating = rating,
-                            Message = message,
-                            Device = getDeviceType(),
-                            PlaceId = tostring(game.PlaceId),
-                            PlaceName = tostring(game.Name or "Unknown Game")
-                        })
+                        FollowRedirects = false,
+                        Body = payload
                     })
                 end)
 
+                local function getHeader(headers, wanted)
+                    if type(headers) ~= "table" then return nil end
+                    for key, value in pairs(headers) do
+                        if string.lower(tostring(key)) == string.lower(wanted) then
+                            return tostring(value)
+                        end
+                    end
+                    return nil
+                end
+
+                local responseCode = response and (response.StatusCode or response.Status or response.status_code)
+                local responseHeaders = response and (response.Headers or response.headers)
+                local redirectUrl = getHeader(responseHeaders, "Location")
+                if requestOk and response and redirectUrl and
+                    (tonumber(responseCode) == 301 or tonumber(responseCode) == 302 or
+                     tonumber(responseCode) == 303 or tonumber(responseCode) == 307 or
+                     tonumber(responseCode) == 308) then
+                    requestOk, response = pcall(function()
+                        return req({
+                            Url = redirectUrl,
+                            Method = "GET",
+                            FollowRedirects = true
+                        })
+                    end)
+                end
+
                 local decoded
                 local responseBody = ""
-                local responseCode
                 if requestOk and response then
                     responseBody = response.Body or response.body or ""
                     responseCode = response.StatusCode or response.Status or response.status_code
