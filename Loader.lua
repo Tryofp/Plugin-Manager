@@ -324,13 +324,15 @@ local SharedFeatures = {
 
     -- 10. Standalone Tools Lainnya
     Fullbright = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_fullbright",
         Name = "Full Bright",
         Desc = "Membuat game menjadi terang, sudah termasuk anti kabut dan shadow",
         Cmd = "fullbright",
         UnCmd = "fullbright",
         RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/Fullbright",
-        UpdateTimestamp = ""
+        UpdateTimestamp = "121120260114, 86400"
     },
     InstantPrompt = {
         FeatureId = "fid_instantprompt",
