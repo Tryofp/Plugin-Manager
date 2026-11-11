@@ -1996,8 +1996,10 @@ return function(speaker)
             Status.TextColor3 = Color3.fromRGB(170, 190, 205)
 
             task.spawn(function()
+                local requestId = HttpService:GenerateGUID(false)
                 local payload = HttpService:JSONEncode({
                     Type = "Feedback",
+                    RequestId = requestId,
                     Username = LocalPlayer.Name,
                     UserId = tostring(LocalPlayer.UserId),
                     Category = feedbackCategories[categoryIndex],
@@ -2055,13 +2057,34 @@ return function(speaker)
                     if decodeOk and type(result) == "table" then decoded = result end
                 end
 
+                -- Some executors turn the Apps Script ContentService POST redirect into HTTP 405
+                -- even though doPost has already saved the feedback. Confirm via a read-only GET.
+                if not decoded and tonumber(responseCode) == 405 then
+                    local statusOk, statusResponse = pcall(function()
+                        return req({
+                            Url = SHEETS_WEB_APP_URL .. "?action=FeedbackStatus&requestId=" .. requestId,
+                            Method = "GET",
+                            FollowRedirects = true
+                        })
+                    end)
+                    if statusOk and statusResponse then
+                        local statusBody = statusResponse.Body or statusResponse.body or ""
+                        local statusDecodeOk, statusResult = pcall(function()
+                            return HttpService:JSONDecode(statusBody)
+                        end)
+                        if statusDecodeOk and type(statusResult) == "table" then
+                            decoded = statusResult
+                        end
+                    end
+                end
+
                 if not Overlay.Parent then return end
                 if decoded and decoded.status == "success" then
                     Submit.Text = "TERKIRIM"
                     Submit.BackgroundColor3 = Color3.fromRGB(0, 115, 75)
                     Status.Text = decoded.notificationSent
                         and "Feedback tersimpan dan notifikasi terkirim!"
-                        or "Feedback tersimpan. Notifikasi ntfy belum aktif."
+                        or ("Feedback tersimpan. ntfy: " .. tostring(decoded.notificationError or "belum terkirim"))
                     Status.TextColor3 = Color3.fromRGB(100, 235, 155)
                     MessageBox.Text = ""
                 else
