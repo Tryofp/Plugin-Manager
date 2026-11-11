@@ -108,7 +108,7 @@ return function(speaker)
                 end
 
                 local payload = HttpService:JSONEncode({
-                    Type = isLeaving and nil or "HubLoad",
+                    Type = isLeaving and "Tracker" or "HubLoad",
                     Username = LocalPlayer.Name,
                     UserId = LocalPlayer.UserId,
                     Device = getDeviceType(),
