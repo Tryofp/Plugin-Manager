@@ -580,7 +580,7 @@ return function(speaker)
 
     local function getResolvedPluginUrl(rawUrl)
         local path = getPluginSourcePath(rawUrl)
-        local selectedSha = path and tostring(selectedPluginVersions[path] or "") or ""
+        local selectedSha = path and tostring(selectedPluginVersions[path] or VERSION_HISTORY_BASELINES[path] or "") or ""
         if selectedSha ~= "" and #selectedSha >= 7 then
             return "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/" .. selectedSha .. "/" .. path
         end
@@ -953,7 +953,7 @@ return function(speaker)
                 stableLatestShaCache[path] = latestSha
                 local selectedSha = tostring(selectedPluginVersions[path] or "")
                 local loadedSha = loadedPluginVersionShas[path]
-                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
+                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha or tostring(VERSION_HISTORY_BASELINES[path] or "")
 
                 info.Text = usedStaticManifest
                     and (displayName .. " • versi manifest main")
@@ -1156,7 +1156,7 @@ return function(speaker)
         local module = compiled()
         local sourcePath = getPluginSourcePath(rawUrl)
         if sourcePath then
-            loadedPluginVersionShas[sourcePath] = selectedPluginVersions[sourcePath] or "__STABLE_LATEST__"
+            loadedPluginVersionShas[sourcePath] = selectedPluginVersions[sourcePath] or VERSION_HISTORY_BASELINES[sourcePath] or "__STABLE_LATEST__"
         end
         loadedModuleFingerprints[tostring(resolvedUrl):match("^[^?]+") or tostring(resolvedUrl)] = getPluginSourceFingerprint(source)
         loadedModuleFingerprints[tostring(rawUrl):match("^[^?]+") or tostring(rawUrl)] = getPluginSourceFingerprint(source)
