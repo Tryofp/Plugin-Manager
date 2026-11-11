@@ -951,7 +951,7 @@ return function(speaker)
                 local totalVersions = baselineIndex or #commits
                 local latestSha = tostring(commits[1] and commits[1].sha or "")
                 stableLatestShaCache[path] = latestSha
-                local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
+                local selectedSha = tostring(selectedPluginVersions[path] or "")
                 local loadedSha = loadedPluginVersionShas[path]
                 local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
 
