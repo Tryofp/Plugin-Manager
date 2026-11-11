@@ -2001,6 +2001,7 @@ return function(speaker)
                         Url = SHEETS_WEB_APP_URL,
                         Method = "POST",
                         Headers = { ["Content-Type"] = "application/json" },
+                        FollowRedirects = true,
                         Body = HttpService:JSONEncode({
                             Type = "Feedback",
                             Username = LocalPlayer.Name,
@@ -2016,8 +2017,11 @@ return function(speaker)
                 end)
 
                 local decoded
+                local responseBody = ""
+                local responseCode
                 if requestOk and response then
-                    local responseBody = response.Body or response.body or ""
+                    responseBody = response.Body or response.body or ""
+                    responseCode = response.StatusCode or response.Status or response.status_code
                     local decodeOk, result = pcall(function() return HttpService:JSONDecode(responseBody) end)
                     if decodeOk and type(result) == "table" then decoded = result end
                 end
@@ -2035,8 +2039,17 @@ return function(speaker)
                     Submit.Active = true
                     Submit.AutoButtonColor = true
                     Submit.Text = "COBA LAGI"
-                    Status.Text = decoded and tostring(decoded.message or "Server menolak feedback.")
-                        or "Gagal menghubungi server. Coba lagi."
+                    if decoded then
+                        Status.Text = tostring(decoded.message or "Server menolak feedback.")
+                    elseif not requestOk then
+                        Status.Text = "Request gagal: " .. tostring(response):sub(1, 110)
+                    elseif not response then
+                        Status.Text = "Server tidak mengembalikan respons."
+                    elseif responseCode then
+                        Status.Text = "Respons server bukan JSON (HTTP " .. tostring(responseCode) .. ")."
+                    else
+                        Status.Text = "Respons server bukan JSON atau redirect gagal."
+                    end
                     Status.TextColor3 = Color3.fromRGB(255, 130, 120)
                 end
             end)
