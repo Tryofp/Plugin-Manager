@@ -1456,7 +1456,7 @@ return function(speaker)
     end)
 
     local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Size = UDim2.new(1, -70, 1, 0)
+    TitleLabel.Size = UDim2.new(1, -120, 1, 0)
     TitleLabel.Position = UDim2.new(0, 8, 0, 0)
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.Font = Enum.Font.GothamBold
@@ -1479,6 +1479,19 @@ return function(speaker)
     CloseBtn.ZIndex = 11
     CloseBtn.Parent = TopBar
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 4)
+
+    local FeedbackBtn = Instance.new("TextButton")
+    FeedbackBtn.Size = UDim2.new(0, 58, 0, 20)
+    FeedbackBtn.Position = UDim2.new(1, -112, 0, 5)
+    FeedbackBtn.BackgroundColor3 = Color3.fromRGB(0, 125, 155)
+    FeedbackBtn.BorderSizePixel = 0
+    FeedbackBtn.Font = Enum.Font.GothamBold
+    FeedbackBtn.Text = "FEEDBACK"
+    FeedbackBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    FeedbackBtn.TextSize = 8
+    FeedbackBtn.ZIndex = 11
+    FeedbackBtn.Parent = TopBar
+    Instance.new("UICorner", FeedbackBtn).CornerRadius = UDim.new(0, 4)
 
     CloseBtn.MouseButton1Click:Connect(function()
         task.spawn(function() sendTrackerData(true) end)
@@ -1813,6 +1826,224 @@ return function(speaker)
 
         CancelBtn.MouseButton1Click:Connect(function() PromptOverlay:Destroy() end)
     end
+
+
+    local feedbackCategories = { "Bug Report", "Feature Request", "Suggestion", "Other" }
+    local function openFeedbackDialog()
+        local existing = Frame:FindFirstChild("FeedbackOverlay")
+        if existing then existing:Destroy() end
+
+        local Overlay = Instance.new("Frame")
+        Overlay.Name = "FeedbackOverlay"
+        Overlay.Size = UDim2.new(1, 0, 1, 0)
+        Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        Overlay.BackgroundTransparency = 0.35
+        Overlay.BorderSizePixel = 0
+        Overlay.ZIndex = 50
+        Overlay.Parent = Frame
+
+        local Modal = Instance.new("Frame")
+        Modal.Size = UDim2.new(1, -24, 0, 286)
+        Modal.Position = UDim2.new(0, 12, 0.5, -143)
+        Modal.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
+        Modal.BorderSizePixel = 0
+        Modal.ZIndex = 51
+        Modal.Parent = Overlay
+        Instance.new("UICorner", Modal).CornerRadius = UDim.new(0, 7)
+
+        local function makeLabel(name, text, position, size, textSize, color)
+            local label = Instance.new("TextLabel")
+            label.Name = name
+            label.Position = position
+            label.Size = size
+            label.BackgroundTransparency = 1
+            label.Font = Enum.Font.GothamBold
+            label.Text = text
+            label.TextColor3 = color or Color3.fromRGB(225, 235, 245)
+            label.TextSize = textSize or 10
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.ZIndex = 52
+            label.Parent = Modal
+            return label
+        end
+
+        makeLabel("Title", "KIRIM FEEDBACK", UDim2.new(0, 10, 0, 8), UDim2.new(1, -45, 0, 22), 12, Color3.fromRGB(0, 220, 255))
+
+        local Close = Instance.new("TextButton")
+        Close.Size = UDim2.new(0, 22, 0, 22)
+        Close.Position = UDim2.new(1, -31, 0, 7)
+        Close.BackgroundColor3 = Color3.fromRGB(170, 55, 55)
+        Close.BorderSizePixel = 0
+        Close.Font = Enum.Font.GothamBold
+        Close.Text = "X"
+        Close.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Close.TextSize = 10
+        Close.ZIndex = 53
+        Close.Parent = Modal
+        Instance.new("UICorner", Close).CornerRadius = UDim.new(0, 4)
+
+        makeLabel("CategoryLabel", "Kategori", UDim2.new(0, 10, 0, 36), UDim2.new(0.5, -14, 0, 16), 9)
+        local categoryIndex = 1
+        local CategoryBtn = Instance.new("TextButton")
+        CategoryBtn.Size = UDim2.new(0.5, -14, 0, 25)
+        CategoryBtn.Position = UDim2.new(0, 10, 0, 53)
+        CategoryBtn.BackgroundColor3 = Color3.fromRGB(40, 55, 72)
+        CategoryBtn.BorderSizePixel = 0
+        CategoryBtn.Font = Enum.Font.GothamBold
+        CategoryBtn.Text = feedbackCategories[categoryIndex] .. "  ▾"
+        CategoryBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        CategoryBtn.TextSize = 9
+        CategoryBtn.ZIndex = 52
+        CategoryBtn.Parent = Modal
+        Instance.new("UICorner", CategoryBtn).CornerRadius = UDim.new(0, 4)
+
+        makeLabel("RatingLabel", "Rating", UDim2.new(0.5, 4, 0, 36), UDim2.new(0.5, -14, 0, 16), 9)
+        local rating = 5
+        local RatingBtn = Instance.new("TextButton")
+        RatingBtn.Size = UDim2.new(0.5, -14, 0, 25)
+        RatingBtn.Position = UDim2.new(0.5, 4, 0, 53)
+        RatingBtn.BackgroundColor3 = Color3.fromRGB(75, 62, 30)
+        RatingBtn.BorderSizePixel = 0
+        RatingBtn.Font = Enum.Font.GothamBold
+        RatingBtn.Text = "★★★★★  5/5"
+        RatingBtn.TextColor3 = Color3.fromRGB(255, 220, 90)
+        RatingBtn.TextSize = 9
+        RatingBtn.ZIndex = 52
+        RatingBtn.Parent = Modal
+        Instance.new("UICorner", RatingBtn).CornerRadius = UDim.new(0, 4)
+
+        CategoryBtn.MouseButton1Click:Connect(function()
+            categoryIndex = categoryIndex % #feedbackCategories + 1
+            CategoryBtn.Text = feedbackCategories[categoryIndex] .. "  ▾"
+        end)
+        RatingBtn.MouseButton1Click:Connect(function()
+            rating = rating % 5 + 1
+            RatingBtn.Text = string.rep("★", rating) .. string.rep("☆", 5 - rating) .. "  " .. rating .. "/5"
+        end)
+
+        makeLabel("MessageLabel", "Pesan (8–1.500 karakter)", UDim2.new(0, 10, 0, 86), UDim2.new(1, -20, 0, 16), 9)
+        local MessageBox = Instance.new("TextBox")
+        MessageBox.Size = UDim2.new(1, -20, 0, 104)
+        MessageBox.Position = UDim2.new(0, 10, 0, 104)
+        MessageBox.BackgroundColor3 = Color3.fromRGB(13, 18, 25)
+        MessageBox.BorderSizePixel = 0
+        MessageBox.ClearTextOnFocus = false
+        MessageBox.MultiLine = true
+        MessageBox.TextWrapped = true
+        MessageBox.TextXAlignment = Enum.TextXAlignment.Left
+        MessageBox.TextYAlignment = Enum.TextYAlignment.Top
+        MessageBox.Font = Enum.Font.Gotham
+        MessageBox.Text = ""
+        MessageBox.PlaceholderText = "Tulis bug, saran, atau ide lu di sini..."
+        MessageBox.PlaceholderColor3 = Color3.fromRGB(115, 130, 148)
+        MessageBox.TextColor3 = Color3.fromRGB(240, 245, 250)
+        MessageBox.TextSize = 10
+        MessageBox.ZIndex = 52
+        MessageBox.Parent = Modal
+        Instance.new("UICorner", MessageBox).CornerRadius = UDim.new(0, 4)
+
+        local Status = makeLabel("Status", "", UDim2.new(0, 10, 0, 212), UDim2.new(1, -20, 0, 25), 8, Color3.fromRGB(170, 190, 205))
+        Status.TextWrapped = true
+
+        local Submit = Instance.new("TextButton")
+        Submit.Size = UDim2.new(0.5, -15, 0, 25)
+        Submit.Position = UDim2.new(0, 10, 0, 250)
+        Submit.BackgroundColor3 = Color3.fromRGB(0, 145, 90)
+        Submit.BorderSizePixel = 0
+        Submit.Font = Enum.Font.GothamBold
+        Submit.Text = "SUBMIT"
+        Submit.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Submit.TextSize = 9
+        Submit.ZIndex = 52
+        Submit.Parent = Modal
+        Instance.new("UICorner", Submit).CornerRadius = UDim.new(0, 4)
+
+        local Cancel = Instance.new("TextButton")
+        Cancel.Size = UDim2.new(0.5, -15, 0, 25)
+        Cancel.Position = UDim2.new(0.5, 5, 0, 250)
+        Cancel.BackgroundColor3 = Color3.fromRGB(65, 75, 90)
+        Cancel.BorderSizePixel = 0
+        Cancel.Font = Enum.Font.GothamBold
+        Cancel.Text = "TUTUP"
+        Cancel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Cancel.TextSize = 9
+        Cancel.ZIndex = 52
+        Cancel.Parent = Modal
+        Instance.new("UICorner", Cancel).CornerRadius = UDim.new(0, 4)
+
+        Close.MouseButton1Click:Connect(function() Overlay:Destroy() end)
+        Cancel.MouseButton1Click:Connect(function() Overlay:Destroy() end)
+
+        Submit.MouseButton1Click:Connect(function()
+            local message = tostring(MessageBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if #message < 8 or #message > 1500 then
+                Status.Text = "Pesan harus 8–1.500 karakter."
+                Status.TextColor3 = Color3.fromRGB(255, 175, 100)
+                return
+            end
+
+            local req = request or http_request or (syn and syn.request)
+            if type(req) ~= "function" then
+                Status.Text = "Executor tidak menyediakan HTTP request."
+                Status.TextColor3 = Color3.fromRGB(255, 120, 120)
+                return
+            end
+
+            Submit.Active = false
+            Submit.AutoButtonColor = false
+            Submit.Text = "MENGIRIM..."
+            Status.Text = "Mengirim feedback..."
+            Status.TextColor3 = Color3.fromRGB(170, 190, 205)
+
+            task.spawn(function()
+                local requestOk, response = pcall(function()
+                    return req({
+                        Url = SHEETS_WEB_APP_URL,
+                        Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        Body = HttpService:JSONEncode({
+                            Type = "Feedback",
+                            Username = LocalPlayer.Name,
+                            UserId = tostring(LocalPlayer.UserId),
+                            Category = feedbackCategories[categoryIndex],
+                            Rating = rating,
+                            Message = message,
+                            Device = getDeviceType(),
+                            PlaceId = tostring(game.PlaceId),
+                            PlaceName = tostring(game.Name or "Unknown Game")
+                        })
+                    })
+                end)
+
+                local decoded
+                if requestOk and response then
+                    local responseBody = response.Body or response.body or ""
+                    local decodeOk, result = pcall(function() return HttpService:JSONDecode(responseBody) end)
+                    if decodeOk and type(result) == "table" then decoded = result end
+                end
+
+                if not Overlay.Parent then return end
+                if decoded and decoded.status == "success" then
+                    Submit.Text = "TERKIRIM"
+                    Submit.BackgroundColor3 = Color3.fromRGB(0, 115, 75)
+                    Status.Text = decoded.notificationSent
+                        and "Feedback tersimpan dan notifikasi terkirim!"
+                        or "Feedback tersimpan. Notifikasi ntfy belum aktif."
+                    Status.TextColor3 = Color3.fromRGB(100, 235, 155)
+                    MessageBox.Text = ""
+                else
+                    Submit.Active = true
+                    Submit.AutoButtonColor = true
+                    Submit.Text = "COBA LAGI"
+                    Status.Text = decoded and tostring(decoded.message or "Server menolak feedback.")
+                        or "Gagal menghubungi server. Coba lagi."
+                    Status.TextColor3 = Color3.fromRGB(255, 130, 120)
+                end
+            end)
+        end)
+    end
+
+    FeedbackBtn.MouseButton1Click:Connect(openFeedbackDialog)
 
     local function updateAllButtonStates(uniqueKey, isActive)
         if not activeButtons[uniqueKey] then return end
