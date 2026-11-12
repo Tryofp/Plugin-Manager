@@ -1577,9 +1577,10 @@ return function(speaker)
     ResizeHandle.Parent = Frame
     Instance.new("UICorner", ResizeHandle).CornerRadius = UDim.new(0, 4)
 
-    local resizing, resizeInput, resizeStart, resizeInitialScale
+    local resizing, resizeStart, resizeInitialScale
     local resizeInputChangedConnection = UserInputService.InputChanged:Connect(function(input)
-        if resizing and input == resizeInput then
+        if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - resizeStart
             local scaleDelta = ((delta.X / 280) + (delta.Y / 340)) * 0.5
             FrameScale.Scale = math.clamp(
@@ -1604,13 +1605,6 @@ return function(speaker)
                     saveUISettings()
                 end
             end)
-        end
-    end)
-
-    ResizeHandle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            resizeInput = input
         end
     end)
 
