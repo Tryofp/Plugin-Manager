@@ -1,3 +1,4 @@
+-- Release pipeline verification: harmless comment-only change; runtime behavior unchanged.
 local plugin = {
     ["PluginName"] = "FullBright & NoFog";
     ["PluginDescription"] = "Menerangkan game dan menghapus kabut total ala Infinite Yield.";

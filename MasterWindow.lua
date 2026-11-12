@@ -21,6 +21,7 @@ return function(speaker)
     local metadataRefreshPending = false
     local lastMetadataSnapshot = nil
     local playerBadgeCache = {}
+    local serverVersionProfilesLoadStarted = false
     local globalLoaderData = nil
     local refreshBadgeUI = nil
     local openPublicHistoryPanels = 0
@@ -80,7 +81,16 @@ return function(speaker)
         end
     end
 
+    local trackerExitSent = false
+
     local function sendTrackerData(isLeaving)
+        -- Closing the hub and leaving the game can fire both paths in one session.
+        -- Count only the first exit event to avoid duplicate Tracker writes.
+        if isLeaving then
+            if trackerExitSent then return end
+            trackerExitSent = true
+        end
+
         pcall(function()
             if request or http_request or (syn and syn.request) then
                 local req = request or http_request or (syn and syn.request)
@@ -108,6 +118,7 @@ return function(speaker)
                 end
 
                 local payload = HttpService:JSONEncode({
+                    Type = isLeaving and "Tracker" or "HubLoad",
                     Username = LocalPlayer.Name,
                     UserId = LocalPlayer.UserId,
                     Device = getDeviceType(),
@@ -131,8 +142,37 @@ return function(speaker)
         sendTrackerData(false)
     end)
 
-    Players.PlayerRemoving:Connect(function(plr)
+    -- Replace the previous exit hook when the hub UI is reopened.
+    -- Otherwise every MasterWindow invocation adds another Tracker POST on exit.
+    local previousTrackerConnection = _G.MasterPluginHub_TrackerRemovingConnection
+    if previousTrackerConnection then
+        pcall(function() previousTrackerConnection:Disconnect() end)
+    end
+    _G.MasterPluginHub_TrackerRemovingConnection = Players.PlayerRemoving:Connect(function(plr)
         if plr == LocalPlayer then
+            sendTrackerData(true)
+        end
+    end)
+
+    -- Fallbacks for client shutdown/teleport paths where PlayerRemoving may not fire.
+    -- The shared exit guard ensures these signals cannot create duplicate Tracker rows.
+    local previousTrackerAncestryConnection = _G.MasterPluginHub_TrackerAncestryConnection
+    if previousTrackerAncestryConnection then
+        pcall(function() previousTrackerAncestryConnection:Disconnect() end)
+    end
+    _G.MasterPluginHub_TrackerAncestryConnection = LocalPlayer.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then
+            sendTrackerData(true)
+        end
+    end)
+
+    local previousTrackerTeleportConnection = _G.MasterPluginHub_TrackerTeleportConnection
+    if previousTrackerTeleportConnection then
+        pcall(function() previousTrackerTeleportConnection:Disconnect() end)
+    end
+    _G.MasterPluginHub_TrackerTeleportConnection = LocalPlayer.OnTeleport:Connect(function(teleportState)
+        if teleportState == Enum.TeleportState.Started
+            or teleportState == Enum.TeleportState.RequestedFromServer then
             sendTrackerData(true)
         end
     end)
@@ -579,7 +619,7 @@ return function(speaker)
 
     local function getResolvedPluginUrl(rawUrl)
         local path = getPluginSourcePath(rawUrl)
-        local selectedSha = path and tostring(selectedPluginVersions[path] or "") or ""
+        local selectedSha = path and tostring(selectedPluginVersions[path] or VERSION_HISTORY_BASELINES[path] or "") or ""
         if selectedSha ~= "" and #selectedSha >= 7 then
             return "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/" .. selectedSha .. "/" .. path
         end
@@ -632,34 +672,46 @@ return function(speaker)
                 if b == "Tools/AntiEffect" then return false end
                 return a < b
             end)
+            -- Scan beberapa source secara paralel agar badge tidak menunggu
+            -- antrean panjang. Batasi worker agar Apps Script/GitHub tidak dibanjiri.
+            local nextPath = 0
             local changed = false
-            for _, sourcePath in ipairs(paths) do
-                -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
-                -- Hindari REST API publik langsung dari client Roblox (rate limit 60/jam).
-                local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
-                    .. HttpService:UrlEncode(sourcePath)
-                local ok, response = requestGitHubWithRetry(historyUrl, 3)
-                if ok then
-                    local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
-                    local commits = decodeOk and type(payload) == "table" and payload.status == "success"
-                        and payload.commits or nil
-                    local latest = type(commits) == "table" and commits[1] or nil
-                    local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
-                    if #latestSha == 40 then
-                        stableLatestShaCache[sourcePath] = latestSha
-                        if selectedPluginVersions[sourcePath] == latestSha and acknowledgedReleaseShas[sourcePath] ~= latestSha then
-                            acknowledgedReleaseShas[sourcePath] = latestSha
-                            saveAcknowledgedReleases()
+            local function scanWorker()
+                while true do
+                    nextPath = nextPath + 1
+                    local sourcePath = paths[nextPath]
+                    if not sourcePath then break end
+
+                    -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
+                    -- Hindari REST API publik langsung dari client Roblox (rate limit 60/jam).
+                    local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                        .. HttpService:UrlEncode(sourcePath)
+                    local ok, response = requestGitHubWithRetry(historyUrl, 3)
+                    if ok then
+                        local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                        local commits = decodeOk and type(payload) == "table" and payload.status == "success"
+                            and payload.commits or nil
+                        local latest = type(commits) == "table" and commits[1] or nil
+                        local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
+                        if #latestSha == 40 then
+                            stableLatestShaCache[sourcePath] = latestSha
+                            if selectedPluginVersions[sourcePath] == latestSha and acknowledgedReleaseShas[sourcePath] ~= latestSha then
+                                acknowledgedReleaseShas[sourcePath] = latestSha
+                                saveAcknowledgedReleases()
+                            end
+                            releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
+                                and acknowledgedReleaseShas[sourcePath] ~= latestSha
+                            changed = true
+                            -- Badge diperbarui segera setelah hasil tiap source tersedia.
+                            if refreshBadgeUI then task.defer(refreshBadgeUI) end
                         end
-                        releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
-                            and acknowledgedReleaseShas[sourcePath] ~= latestSha
-                        changed = true
-                        -- Perbarui badge segera setelah satu file selesai dicek,
-                        -- jangan menunggu semua request path selesai.
-                        if refreshBadgeUI then task.defer(refreshBadgeUI) end
                     end
                 end
-                task.wait(0.05)
+            end
+
+            local workerCount = math.min(4, #paths)
+            for worker = 1, workerCount do
+                task.spawn(scanWorker)
             end
             if changed and refreshBadgeUI then task.defer(refreshBadgeUI) end
         end)
@@ -950,9 +1002,9 @@ return function(speaker)
                 local totalVersions = baselineIndex or #commits
                 local latestSha = tostring(commits[1] and commits[1].sha or "")
                 stableLatestShaCache[path] = latestSha
-                local selectedSha = tostring(selectedPluginVersions[path] or latestSha)
+                local selectedSha = tostring(selectedPluginVersions[path] or "")
                 local loadedSha = loadedPluginVersionShas[path]
-                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha
+                local currentSha = loadedSha == "__STABLE_LATEST__" and latestSha or loadedSha or selectedSha or tostring(VERSION_HISTORY_BASELINES[path] or "")
 
                 info.Text = usedStaticManifest
                     and (displayName .. " • versi manifest main")
@@ -1109,6 +1161,11 @@ return function(speaker)
             if expanded then
                 openPublicHistoryPanels = openPublicHistoryPanels + 1
                 arrow.Text = "▲"
+                -- User version profiles are only needed when this feature is opened.
+                if not serverVersionProfilesLoadStarted then
+                    serverVersionProfilesLoadStarted = true
+                    task.spawn(loadServerVersionProfiles)
+                end
                 refreshPanel()
                 card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
             else
@@ -1155,7 +1212,7 @@ return function(speaker)
         local module = compiled()
         local sourcePath = getPluginSourcePath(rawUrl)
         if sourcePath then
-            loadedPluginVersionShas[sourcePath] = selectedPluginVersions[sourcePath] or "__STABLE_LATEST__"
+            loadedPluginVersionShas[sourcePath] = selectedPluginVersions[sourcePath] or VERSION_HISTORY_BASELINES[sourcePath] or "__STABLE_LATEST__"
         end
         loadedModuleFingerprints[tostring(resolvedUrl):match("^[^?]+") or tostring(resolvedUrl)] = getPluginSourceFingerprint(source)
         loadedModuleFingerprints[tostring(rawUrl):match("^[^?]+") or tostring(rawUrl)] = getPluginSourceFingerprint(source)
@@ -1330,7 +1387,13 @@ return function(speaker)
     end
 
     -- Anonymous, non-blocking runtime reports. Detached plugin tasks may not be attributable.
-    local runtimeErrorLastSent = {}
+    -- Keep the 60-second duplicate-report cooldown across MasterWindow reopens.
+    -- Recreating the UI must not reset the same runtime error's reporting window.
+    local runtimeErrorLastSent = _G.MasterPluginHub_RuntimeErrorLastSent
+    if type(runtimeErrorLastSent) ~= "table" then
+        runtimeErrorLastSent = {}
+        _G.MasterPluginHub_RuntimeErrorLastSent = runtimeErrorLastSent
+    end
     local function reportPluginRuntimeError(pluginName, commandName, sourceUrl, errorMessage)
         local plugin = tostring(pluginName or "Unknown Plugin"):sub(1, 120)
         local command = tostring(commandName or "Unknown Command"):sub(1, 100)
@@ -1388,15 +1451,92 @@ return function(speaker)
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = CoreGui
 
+    -- Per-user UI layout preferences. File persistence is optional; _G is a session fallback.
+    local UI_SETTINGS_FILE = "TryoPluginManager_UISettings.json"
+    local function getViewportSize()
+        local camera = workspace.CurrentCamera
+        if camera then return camera.ViewportSize end
+        return Vector2.new(800, 600)
+    end
+
+    local function loadUISettings()
+        local saved = _G.MasterPluginHub_UISettings
+        if type(readfile) == "function" then
+            local ok, raw = pcall(readfile, UI_SETTINGS_FILE)
+            if ok and type(raw) == "string" and raw ~= "" then
+                local decodeOk, decoded = pcall(function()
+                    return HttpService:JSONDecode(raw)
+                end)
+                if decodeOk and type(decoded) == "table" then
+                    saved = decoded
+                    _G.MasterPluginHub_UISettings = decoded
+                end
+            end
+        end
+        if type(saved) ~= "table" then saved = {} end
+        return saved
+    end
+
+    local uiSettings = loadUISettings()
+    local minUIScale = 0.65
+    local function getMaxUIScale()
+        local viewport = getViewportSize()
+        return math.max(minUIScale, math.min(1.5, (viewport.X - 24) / 280, (viewport.Y - 60) / 340))
+    end
+    local savedScale = math.clamp(tonumber(uiSettings.scale) or 1, minUIScale, getMaxUIScale())
+
     local Frame = Instance.new("Frame")
     Frame.Size = UDim2.new(0, 280, 0, 340)
-    Frame.Position = UDim2.new(0.5, -140, 0.5, -170)
+    if type(uiSettings.x) == "number" and type(uiSettings.y) == "number" then
+        local viewport = getViewportSize()
+        Frame.Position = UDim2.fromOffset(
+            math.clamp(uiSettings.x, 0, 1) * viewport.X,
+            math.clamp(uiSettings.y, 0, 1) * viewport.Y
+        )
+    else
+        Frame.Position = UDim2.new(0.5, -140, 0.5, -170)
+    end
     Frame.BackgroundColor3 = Color3.fromRGB(20, 25, 32)
     Frame.BackgroundTransparency = 0.25
     Frame.BorderSizePixel = 0
     Frame.Active = true
     Frame.Draggable = false
     Frame.Parent = ScreenGui
+
+    local FrameScale = Instance.new("UIScale")
+    FrameScale.Scale = savedScale
+    FrameScale.Parent = Frame
+
+    local function clampFramePosition()
+        local viewport = getViewportSize()
+        local absoluteSize = Frame.AbsoluteSize
+        local currentPosition = Frame.AbsolutePosition
+        local maxX = math.max(0, viewport.X - absoluteSize.X)
+        local maxY = math.max(0, viewport.Y - absoluteSize.Y)
+        Frame.Position = UDim2.fromOffset(
+            math.clamp(currentPosition.X, 0, maxX),
+            math.clamp(currentPosition.Y, 0, maxY)
+        )
+    end
+
+    local function saveUISettings()
+        local viewport = getViewportSize()
+        local absolutePosition = Frame.AbsolutePosition
+        local data = {
+            version = 1,
+            scale = FrameScale.Scale,
+            x = math.clamp(absolutePosition.X / math.max(1, viewport.X), 0, 1),
+            y = math.clamp(absolutePosition.Y / math.max(1, viewport.Y), 0, 1)
+        }
+        _G.MasterPluginHub_UISettings = data
+        if type(writefile) == "function" then
+            pcall(function()
+                writefile(UI_SETTINGS_FILE, HttpService:JSONEncode(data))
+            end)
+        end
+    end
+
+    task.defer(clampFramePosition)
 
     Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 6)
 
@@ -1421,6 +1561,61 @@ return function(speaker)
     TopBar.Parent = Frame
     Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 6)
 
+    -- Drag the bottom-right grip to scale the complete MasterWindow proportionally.
+    local ResizeHandle = Instance.new("TextButton")
+    ResizeHandle.Name = "ResizeHandle"
+    ResizeHandle.Size = UDim2.new(0, 20, 0, 20)
+    ResizeHandle.Position = UDim2.new(1, -21, 1, -21)
+    ResizeHandle.BackgroundColor3 = Color3.fromRGB(0, 150, 110)
+    ResizeHandle.BackgroundTransparency = 0.12
+    ResizeHandle.BorderSizePixel = 0
+    ResizeHandle.Font = Enum.Font.GothamBold
+    ResizeHandle.Text = "↘"
+    ResizeHandle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ResizeHandle.TextSize = 13
+    ResizeHandle.ZIndex = 25
+    ResizeHandle.Parent = Frame
+    Instance.new("UICorner", ResizeHandle).CornerRadius = UDim.new(0, 4)
+
+    local resizing, resizeStart, resizeInitialScale
+    local resizeInputChangedConnection = UserInputService.InputChanged:Connect(function(input)
+        if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - resizeStart
+            local scaleDelta = ((delta.X / 280) + (delta.Y / 340)) * 0.5
+            FrameScale.Scale = math.clamp(
+                resizeInitialScale + scaleDelta,
+                minUIScale,
+                getMaxUIScale()
+            )
+            clampFramePosition()
+        end
+    end)
+
+    ResizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = true
+            resizeStart = input.Position
+            resizeInitialScale = FrameScale.Scale
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    resizing = false
+                    clampFramePosition()
+                    saveUISettings()
+                end
+            end)
+        end
+    end)
+
+    ScreenGui.Destroying:Connect(function()
+        if resizeInputChangedConnection then
+            resizeInputChangedConnection:Disconnect()
+            resizeInputChangedConnection = nil
+        end
+        pcall(saveUISettings)
+    end)
+
     local dragging, dragInput, dragStart, startPos
 
     TopBar.InputBegan:Connect(function(input)
@@ -1432,6 +1627,8 @@ return function(speaker)
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
+                    clampFramePosition()
+                    saveUISettings()
                 end
             end)
         end
@@ -1456,7 +1653,7 @@ return function(speaker)
     end)
 
     local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Size = UDim2.new(1, -70, 1, 0)
+    TitleLabel.Size = UDim2.new(1, -120, 1, 0)
     TitleLabel.Position = UDim2.new(0, 8, 0, 0)
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.Font = Enum.Font.GothamBold
@@ -1480,7 +1677,21 @@ return function(speaker)
     CloseBtn.Parent = TopBar
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 4)
 
+    local FeedbackBtn = Instance.new("TextButton")
+    FeedbackBtn.Size = UDim2.new(0, 58, 0, 20)
+    FeedbackBtn.Position = UDim2.new(1, -112, 0, 5)
+    FeedbackBtn.BackgroundColor3 = Color3.fromRGB(0, 125, 155)
+    FeedbackBtn.BorderSizePixel = 0
+    FeedbackBtn.Font = Enum.Font.GothamBold
+    FeedbackBtn.Text = "FEEDBACK"
+    FeedbackBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    FeedbackBtn.TextSize = 8
+    FeedbackBtn.ZIndex = 11
+    FeedbackBtn.Parent = TopBar
+    Instance.new("UICorner", FeedbackBtn).CornerRadius = UDim.new(0, 4)
+
     CloseBtn.MouseButton1Click:Connect(function()
+        saveUISettings()
         task.spawn(function() sendTrackerData(true) end)
         ScreenGui:Destroy()
     end)
@@ -1710,7 +1921,9 @@ return function(speaker)
     -- hanya memperbarui UI jika metadata benar-benar berubah.
     task.spawn(function()
         while ScreenGui and ScreenGui.Parent do
-            task.wait(15)
+            -- Metadata snapshot is shared-cached server-side; polling once per minute
+            -- keeps badge changes responsive without hammering Firestore.
+            task.wait(60)
 
             local ok, decoded, metadataChanged = fetchRemoteMetadata()
             if ok and decoded then
@@ -1740,8 +1953,41 @@ return function(speaker)
         end
     end)
 
-    local function showInputDialog(titleText, onSubmit)
+    local function showInputDialog(titleText, onSubmit, feature)
+        local command = string.lower(tostring(feature and feature.Cmd or ""))
+        local fields
+
+        if command == "playmusic" then
+            fields = {
+                { label = "Audio ID", placeholder = "Contoh: 1843529634", kind = "id", required = true },
+                { label = "Pitch", placeholder = "Default: 1", kind = "number", default = "1", required = true },
+                { label = "Volume", placeholder = "Default: 1", kind = "number", default = "1", required = true }
+            }
+        elseif command == "setradius" then
+            fields = {
+                { label = "Radius Aimbot", placeholder = "Contoh: 250", kind = "positiveNumber", required = true }
+            }
+        elseif command == "ws" then
+            fields = {
+                { label = "Walk Speed", placeholder = "Contoh: 30", kind = "positiveNumber", required = true }
+            }
+        elseif command == "proximityesp" or command == "clickdetectoresp"
+            or command == "dooresp" or command == "itemtouchesp" or command == "loot" then
+            fields = {
+                { label = "Filter nama objek", placeholder = "Kosongkan untuk mendeteksi semua", kind = "text", required = false }
+            }
+        else
+            fields = {
+                { label = "Nilai input", placeholder = "Masukkan nilai sesuai kebutuhan fitur", kind = "text", required = true }
+            }
+        end
+
+        local fieldHeight = 44
+        local boxHeight = 38 + (#fields * fieldHeight) + 54
+        local boxWidth = 248
+
         local PromptOverlay = Instance.new("Frame")
+        PromptOverlay.Name = "InputDialogOverlay"
         PromptOverlay.Size = UDim2.new(1, 0, 1, 0)
         PromptOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
         PromptOverlay.BackgroundTransparency = 0.5
@@ -1749,8 +1995,8 @@ return function(speaker)
         PromptOverlay.Parent = Frame
 
         local PromptBox = Instance.new("Frame")
-        PromptBox.Size = UDim2.new(0, 220, 0, 110)
-        PromptBox.Position = UDim2.new(0.5, -110, 0.5, -55)
+        PromptBox.Size = UDim2.new(0, boxWidth, 0, boxHeight)
+        PromptBox.Position = UDim2.new(0.5, -boxWidth / 2, 0.5, -boxHeight / 2)
         PromptBox.BackgroundColor3 = Color3.fromRGB(30, 38, 50)
         PromptBox.BorderSizePixel = 0
         PromptBox.ZIndex = 51
@@ -1758,61 +2004,411 @@ return function(speaker)
         Instance.new("UICorner", PromptBox).CornerRadius = UDim.new(0, 6)
 
         local PromptTitle = Instance.new("TextLabel")
-        PromptTitle.Size = UDim2.new(1, 0, 0, 25)
-        PromptTitle.Position = UDim2.new(0, 0, 0, 5)
+        PromptTitle.Size = UDim2.new(1, -16, 0, 25)
+        PromptTitle.Position = UDim2.new(0, 8, 0, 5)
         PromptTitle.BackgroundTransparency = 1
         PromptTitle.Font = Enum.Font.GothamBold
-        PromptTitle.Text = "INPUT: " .. titleText
+        PromptTitle.Text = "INPUT: " .. tostring(titleText)
         PromptTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
         PromptTitle.TextSize = 11
+        PromptTitle.TextXAlignment = Enum.TextXAlignment.Left
+        PromptTitle.TextTruncate = Enum.TextTruncate.AtEnd
         PromptTitle.ZIndex = 52
         PromptTitle.Parent = PromptBox
 
-        local TextBox = Instance.new("TextBox")
-        TextBox.Size = UDim2.new(1, -20, 0, 30)
-        TextBox.Position = UDim2.new(0, 10, 0, 35)
-        TextBox.BackgroundColor3 = Color3.fromRGB(15, 20, 28)
-        TextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-        TextBox.PlaceholderText = "Baca Deskripsi..."
-        TextBox.Text = ""
-        TextBox.Font = Enum.Font.Gotham
-        TextBox.TextSize = 11
-        TextBox.ZIndex = 52
-        TextBox.Parent = PromptBox
-        Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 4)
+        local inputBoxes = {}
+        for index, field in ipairs(fields) do
+            local y = 34 + ((index - 1) * fieldHeight)
+
+            local FieldLabel = Instance.new("TextLabel")
+            FieldLabel.Size = UDim2.new(1, -20, 0, 13)
+            FieldLabel.Position = UDim2.new(0, 10, 0, y)
+            FieldLabel.BackgroundTransparency = 1
+            FieldLabel.Font = Enum.Font.GothamSemibold
+            FieldLabel.Text = field.label
+            FieldLabel.TextColor3 = Color3.fromRGB(205, 218, 232)
+            FieldLabel.TextSize = 9
+            FieldLabel.TextXAlignment = Enum.TextXAlignment.Left
+            FieldLabel.ZIndex = 52
+            FieldLabel.Parent = PromptBox
+
+            local FieldBox = Instance.new("TextBox")
+            FieldBox.Size = UDim2.new(1, -20, 0, 27)
+            FieldBox.Position = UDim2.new(0, 10, 0, y + 14)
+            FieldBox.BackgroundColor3 = Color3.fromRGB(15, 20, 28)
+            FieldBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+            FieldBox.PlaceholderColor3 = Color3.fromRGB(125, 140, 158)
+            FieldBox.PlaceholderText = field.placeholder or ""
+            FieldBox.Text = tostring(field.default or "")
+            FieldBox.Font = Enum.Font.Gotham
+            FieldBox.TextSize = 10
+            FieldBox.ClearTextOnFocus = false
+            FieldBox.TextXAlignment = Enum.TextXAlignment.Left
+            FieldBox.ZIndex = 52
+            if field.kind == "number" or field.kind == "positiveNumber" or field.kind == "id" then
+                FieldBox.TextInputType = Enum.TextInputType.Number
+            else
+                FieldBox.TextInputType = Enum.TextInputType.Default
+            end
+            FieldBox.Parent = PromptBox
+            Instance.new("UICorner", FieldBox).CornerRadius = UDim.new(0, 4)
+            inputBoxes[index] = FieldBox
+        end
+
+        local ErrorLabel = Instance.new("TextLabel")
+        ErrorLabel.Size = UDim2.new(1, -20, 0, 15)
+        ErrorLabel.Position = UDim2.new(0, 10, 1, -53)
+        ErrorLabel.BackgroundTransparency = 1
+        ErrorLabel.Font = Enum.Font.Gotham
+        ErrorLabel.Text = ""
+        ErrorLabel.TextColor3 = Color3.fromRGB(255, 115, 105)
+        ErrorLabel.TextSize = 8
+        ErrorLabel.TextXAlignment = Enum.TextXAlignment.Left
+        ErrorLabel.ZIndex = 52
+        ErrorLabel.Parent = PromptBox
 
         local SubmitBtn = Instance.new("TextButton")
-        SubmitBtn.Size = UDim2.new(0, 95, 0, 24)
-        SubmitBtn.Position = UDim2.new(0, 10, 0, 75)
+        SubmitBtn.Size = UDim2.new(0.5, -15, 0, 25)
+        SubmitBtn.Position = UDim2.new(0, 10, 1, -32)
         SubmitBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
         SubmitBtn.Text = "SUBMIT"
         SubmitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         SubmitBtn.Font = Enum.Font.GothamBold
-        SubmitBtn.TextSize = 10
+        SubmitBtn.TextSize = 9
         SubmitBtn.ZIndex = 52
         SubmitBtn.Parent = PromptBox
         Instance.new("UICorner", SubmitBtn).CornerRadius = UDim.new(0, 4)
 
         local CancelBtn = Instance.new("TextButton")
-        CancelBtn.Size = UDim2.new(0, 95, 0, 24)
-        CancelBtn.Position = UDim2.new(1, -105, 0, 75)
+        CancelBtn.Size = UDim2.new(0.5, -15, 0, 25)
+        CancelBtn.Position = UDim2.new(0.5, 5, 1, -32)
         CancelBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         CancelBtn.Text = "CANCEL"
         CancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         CancelBtn.Font = Enum.Font.GothamBold
-        CancelBtn.TextSize = 10
+        CancelBtn.TextSize = 9
         CancelBtn.ZIndex = 52
         CancelBtn.Parent = PromptBox
         Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 4)
 
         SubmitBtn.MouseButton1Click:Connect(function()
-            local inputVal = TextBox.Text
+            local values = {}
+            for index, field in ipairs(fields) do
+                local value = string.match(inputBoxes[index].Text or "", "^%s*(.-)%s*$") or ""
+                if field.required and value == "" then
+                    ErrorLabel.Text = "Kolom " .. field.label .. " wajib diisi."
+                    return
+                end
+                if value ~= "" and field.kind == "id" and not string.match(value, "^%d+$") then
+                    ErrorLabel.Text = "Audio ID harus berupa angka."
+                    return
+                end
+                if value ~= "" and (field.kind == "number" or field.kind == "positiveNumber") then
+                    local numericValue = tonumber(value)
+                    if not numericValue or (field.kind == "positiveNumber" and numericValue <= 0) then
+                        ErrorLabel.Text = field.kind == "positiveNumber"
+                            and (field.label .. " harus berupa angka lebih dari 0.")
+                            or (field.label .. " harus berupa angka yang valid.")
+                        return
+                    end
+                end
+                if value == "" and field.default ~= nil then
+                    value = tostring(field.default)
+                end
+                values[index] = value
+            end
+
             PromptOverlay:Destroy()
-            if onSubmit then onSubmit(inputVal) end
+            if onSubmit then onSubmit(values) end
         end)
 
-        CancelBtn.MouseButton1Click:Connect(function() PromptOverlay:Destroy() end)
+        CancelBtn.MouseButton1Click:Connect(function()
+            PromptOverlay:Destroy()
+        end)
     end
+
+
+    local feedbackCategories = { "Bug Report", "Feature Request", "Suggestion", "Other" }
+    local function openFeedbackDialog()
+        local existing = Frame:FindFirstChild("FeedbackOverlay")
+        if existing then existing:Destroy() end
+
+        local Overlay = Instance.new("Frame")
+        Overlay.Name = "FeedbackOverlay"
+        Overlay.Size = UDim2.new(1, 0, 1, 0)
+        Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        Overlay.BackgroundTransparency = 0.35
+        Overlay.BorderSizePixel = 0
+        Overlay.ZIndex = 50
+        Overlay.Parent = Frame
+
+        local Modal = Instance.new("Frame")
+        Modal.Size = UDim2.new(1, -24, 0, 286)
+        Modal.Position = UDim2.new(0, 12, 0.5, -143)
+        Modal.BackgroundColor3 = Color3.fromRGB(25, 32, 42)
+        Modal.BorderSizePixel = 0
+        Modal.ZIndex = 51
+        Modal.Parent = Overlay
+        Instance.new("UICorner", Modal).CornerRadius = UDim.new(0, 7)
+
+        local function makeLabel(name, text, position, size, textSize, color)
+            local label = Instance.new("TextLabel")
+            label.Name = name
+            label.Position = position
+            label.Size = size
+            label.BackgroundTransparency = 1
+            label.Font = Enum.Font.GothamBold
+            label.Text = text
+            label.TextColor3 = color or Color3.fromRGB(225, 235, 245)
+            label.TextSize = textSize or 10
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.ZIndex = 52
+            label.Parent = Modal
+            return label
+        end
+
+        makeLabel("Title", "KIRIM FEEDBACK", UDim2.new(0, 10, 0, 8), UDim2.new(1, -45, 0, 22), 12, Color3.fromRGB(0, 220, 255))
+
+        local Close = Instance.new("TextButton")
+        Close.Size = UDim2.new(0, 22, 0, 22)
+        Close.Position = UDim2.new(1, -31, 0, 7)
+        Close.BackgroundColor3 = Color3.fromRGB(170, 55, 55)
+        Close.BorderSizePixel = 0
+        Close.Font = Enum.Font.GothamBold
+        Close.Text = "X"
+        Close.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Close.TextSize = 10
+        Close.ZIndex = 53
+        Close.Parent = Modal
+        Instance.new("UICorner", Close).CornerRadius = UDim.new(0, 4)
+
+        makeLabel("CategoryLabel", "Kategori", UDim2.new(0, 10, 0, 36), UDim2.new(0.5, -14, 0, 16), 9)
+        local categoryIndex = 1
+        local CategoryBtn = Instance.new("TextButton")
+        CategoryBtn.Size = UDim2.new(0.5, -14, 0, 25)
+        CategoryBtn.Position = UDim2.new(0, 10, 0, 53)
+        CategoryBtn.BackgroundColor3 = Color3.fromRGB(40, 55, 72)
+        CategoryBtn.BorderSizePixel = 0
+        CategoryBtn.Font = Enum.Font.GothamBold
+        CategoryBtn.Text = feedbackCategories[categoryIndex] .. "  ▾"
+        CategoryBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        CategoryBtn.TextSize = 9
+        CategoryBtn.ZIndex = 52
+        CategoryBtn.Parent = Modal
+        Instance.new("UICorner", CategoryBtn).CornerRadius = UDim.new(0, 4)
+
+        makeLabel("RatingLabel", "Rating", UDim2.new(0.5, 4, 0, 36), UDim2.new(0.5, -14, 0, 16), 9)
+        local rating = 5
+        local RatingBtn = Instance.new("TextButton")
+        RatingBtn.Size = UDim2.new(0.5, -14, 0, 25)
+        RatingBtn.Position = UDim2.new(0.5, 4, 0, 53)
+        RatingBtn.BackgroundColor3 = Color3.fromRGB(75, 62, 30)
+        RatingBtn.BorderSizePixel = 0
+        RatingBtn.Font = Enum.Font.GothamBold
+        RatingBtn.Text = "★★★★★  5/5"
+        RatingBtn.TextColor3 = Color3.fromRGB(255, 220, 90)
+        RatingBtn.TextSize = 9
+        RatingBtn.ZIndex = 52
+        RatingBtn.Parent = Modal
+        Instance.new("UICorner", RatingBtn).CornerRadius = UDim.new(0, 4)
+
+        CategoryBtn.MouseButton1Click:Connect(function()
+            categoryIndex = categoryIndex % #feedbackCategories + 1
+            CategoryBtn.Text = feedbackCategories[categoryIndex] .. "  ▾"
+        end)
+        RatingBtn.MouseButton1Click:Connect(function()
+            rating = rating % 5 + 1
+            RatingBtn.Text = string.rep("★", rating) .. string.rep("☆", 5 - rating) .. "  " .. rating .. "/5"
+        end)
+
+        makeLabel("MessageLabel", "Pesan (8–1.500 karakter)", UDim2.new(0, 10, 0, 86), UDim2.new(1, -20, 0, 16), 9)
+        local MessageBox = Instance.new("TextBox")
+        MessageBox.Size = UDim2.new(1, -20, 0, 104)
+        MessageBox.Position = UDim2.new(0, 10, 0, 104)
+        MessageBox.BackgroundColor3 = Color3.fromRGB(13, 18, 25)
+        MessageBox.BorderSizePixel = 0
+        MessageBox.ClearTextOnFocus = false
+        MessageBox.MultiLine = true
+        MessageBox.TextWrapped = true
+        MessageBox.TextXAlignment = Enum.TextXAlignment.Left
+        MessageBox.TextYAlignment = Enum.TextYAlignment.Top
+        MessageBox.Font = Enum.Font.Gotham
+        MessageBox.Text = ""
+        MessageBox.PlaceholderText = "Tulis bug, saran, atau ide lu di sini..."
+        MessageBox.PlaceholderColor3 = Color3.fromRGB(115, 130, 148)
+        MessageBox.TextColor3 = Color3.fromRGB(240, 245, 250)
+        MessageBox.TextSize = 10
+        MessageBox.ZIndex = 52
+        MessageBox.Parent = Modal
+        Instance.new("UICorner", MessageBox).CornerRadius = UDim.new(0, 4)
+
+        local Status = makeLabel("Status", "", UDim2.new(0, 10, 0, 212), UDim2.new(1, -20, 0, 25), 8, Color3.fromRGB(170, 190, 205))
+        Status.TextWrapped = true
+
+        local Submit = Instance.new("TextButton")
+        Submit.Size = UDim2.new(0.5, -15, 0, 25)
+        Submit.Position = UDim2.new(0, 10, 0, 250)
+        Submit.BackgroundColor3 = Color3.fromRGB(0, 145, 90)
+        Submit.BorderSizePixel = 0
+        Submit.Font = Enum.Font.GothamBold
+        Submit.Text = "SUBMIT"
+        Submit.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Submit.TextSize = 9
+        Submit.ZIndex = 52
+        Submit.Parent = Modal
+        Instance.new("UICorner", Submit).CornerRadius = UDim.new(0, 4)
+
+        local Cancel = Instance.new("TextButton")
+        Cancel.Size = UDim2.new(0.5, -15, 0, 25)
+        Cancel.Position = UDim2.new(0.5, 5, 0, 250)
+        Cancel.BackgroundColor3 = Color3.fromRGB(65, 75, 90)
+        Cancel.BorderSizePixel = 0
+        Cancel.Font = Enum.Font.GothamBold
+        Cancel.Text = "TUTUP"
+        Cancel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Cancel.TextSize = 9
+        Cancel.ZIndex = 52
+        Cancel.Parent = Modal
+        Instance.new("UICorner", Cancel).CornerRadius = UDim.new(0, 4)
+
+        Close.MouseButton1Click:Connect(function() Overlay:Destroy() end)
+        Cancel.MouseButton1Click:Connect(function() Overlay:Destroy() end)
+
+        Submit.MouseButton1Click:Connect(function()
+            local message = tostring(MessageBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if #message < 8 or #message > 1500 then
+                Status.Text = "Pesan harus 8–1.500 karakter."
+                Status.TextColor3 = Color3.fromRGB(255, 175, 100)
+                return
+            end
+
+            local req = request or http_request or (syn and syn.request)
+            if type(req) ~= "function" then
+                Status.Text = "Executor tidak menyediakan HTTP request."
+                Status.TextColor3 = Color3.fromRGB(255, 120, 120)
+                return
+            end
+
+            Submit.Active = false
+            Submit.AutoButtonColor = false
+            Submit.Text = "MENGIRIM..."
+            Status.Text = "Mengirim feedback..."
+            Status.TextColor3 = Color3.fromRGB(170, 190, 205)
+
+            task.spawn(function()
+                local requestId = HttpService:GenerateGUID(false)
+                local payload = HttpService:JSONEncode({
+                    Type = "Feedback",
+                    RequestId = requestId,
+                    Username = LocalPlayer.Name,
+                    UserId = tostring(LocalPlayer.UserId),
+                    Category = feedbackCategories[categoryIndex],
+                    Rating = rating,
+                    Message = message,
+                    Device = getDeviceType(),
+                    PlaceId = tostring(game.PlaceId),
+                    PlaceName = tostring(game.Name or "Unknown Game")
+                })
+
+                -- Apps Script ContentService responds through a 302 redirect.
+                -- Keep the POST intact, then fetch the redirected JSON URL with GET.
+                local requestOk, response = pcall(function()
+                    return req({
+                        Url = SHEETS_WEB_APP_URL,
+                        Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        FollowRedirects = false,
+                        Body = payload
+                    })
+                end)
+
+                local function getHeader(headers, wanted)
+                    if type(headers) ~= "table" then return nil end
+                    for key, value in pairs(headers) do
+                        if string.lower(tostring(key)) == string.lower(wanted) then
+                            return tostring(value)
+                        end
+                    end
+                    return nil
+                end
+
+                local responseCode = response and (response.StatusCode or response.Status or response.status_code)
+                local responseHeaders = response and (response.Headers or response.headers)
+                local redirectUrl = getHeader(responseHeaders, "Location")
+                if requestOk and response and redirectUrl and
+                    (tonumber(responseCode) == 301 or tonumber(responseCode) == 302 or
+                     tonumber(responseCode) == 303 or tonumber(responseCode) == 307 or
+                     tonumber(responseCode) == 308) then
+                    requestOk, response = pcall(function()
+                        return req({
+                            Url = redirectUrl,
+                            Method = "GET",
+                            FollowRedirects = true
+                        })
+                    end)
+                end
+
+                local decoded
+                local responseBody = ""
+                if requestOk and response then
+                    responseBody = response.Body or response.body or ""
+                    responseCode = response.StatusCode or response.Status or response.status_code
+                    local decodeOk, result = pcall(function() return HttpService:JSONDecode(responseBody) end)
+                    if decodeOk and type(result) == "table" then decoded = result end
+                end
+
+                -- Some executors turn the Apps Script ContentService POST redirect into HTTP 405
+                -- even though doPost has already saved the feedback. Confirm via a read-only GET.
+                if not decoded and tonumber(responseCode) == 405 then
+                    local statusOk, statusResponse = pcall(function()
+                        return req({
+                            Url = SHEETS_WEB_APP_URL .. "?action=FeedbackStatus&requestId=" .. requestId,
+                            Method = "GET",
+                            FollowRedirects = true
+                        })
+                    end)
+                    if statusOk and statusResponse then
+                        local statusBody = statusResponse.Body or statusResponse.body or ""
+                        local statusDecodeOk, statusResult = pcall(function()
+                            return HttpService:JSONDecode(statusBody)
+                        end)
+                        if statusDecodeOk and type(statusResult) == "table" then
+                            decoded = statusResult
+                        end
+                    end
+                end
+
+                if not Overlay.Parent then return end
+                if decoded and decoded.status == "success" then
+                    Submit.Text = "TERKIRIM"
+                    Submit.BackgroundColor3 = Color3.fromRGB(0, 115, 75)
+                    Status.Text = decoded.notificationSent
+                        and "Feedback tersimpan dan notifikasi terkirim!"
+                        or ("Feedback tersimpan. ntfy: " .. tostring(decoded.notificationError or "belum terkirim"))
+                    Status.TextColor3 = Color3.fromRGB(100, 235, 155)
+                    MessageBox.Text = ""
+                else
+                    Submit.Active = true
+                    Submit.AutoButtonColor = true
+                    Submit.Text = "COBA LAGI"
+                    if decoded then
+                        Status.Text = tostring(decoded.message or "Server menolak feedback.")
+                    elseif not requestOk then
+                        Status.Text = "Request gagal: " .. tostring(response):sub(1, 110)
+                    elseif not response then
+                        Status.Text = "Server tidak mengembalikan respons."
+                    elseif responseCode then
+                        Status.Text = "Respons server bukan JSON (HTTP " .. tostring(responseCode) .. ")."
+                    else
+                        Status.Text = "Respons server bukan JSON atau redirect gagal."
+                    end
+                    Status.TextColor3 = Color3.fromRGB(255, 130, 120)
+                end
+            end)
+        end)
+    end
+
+    FeedbackBtn.MouseButton1Click:Connect(openFeedbackDialog)
 
     local function updateAllButtonStates(uniqueKey, isActive)
         if not activeButtons[uniqueKey] then return end
@@ -1834,16 +2430,19 @@ return function(speaker)
         minimized = not minimized
         if minimized then
             Frame.Size = UDim2.new(0, 280, 0, 30)
+            ResizeHandle.Visible = false
             MinBtn.Text = "+"
             TabBar.Visible = false
             HeaderContainer.Visible = false
             ContentArea.Visible = false
         else
             Frame.Size = UDim2.new(0, 280, 0, 340)
+            ResizeHandle.Visible = true
             MinBtn.Text = "-"
             TabBar.Visible = true
             HeaderContainer.Visible = true
             ContentArea.Visible = true
+            clampFramePosition()
         end
     end)
 
@@ -2102,11 +2701,9 @@ return function(speaker)
                         runCommand({}, true)
                     else
                         if subFeat.NeedInput then
-                            showInputDialog(subFeat.Name, function(typedText)
-                                local argsTable = {}
-                                for word in string.gmatch(typedText, "%S+") do table.init(argsTable, word) end
+                            showInputDialog(subFeat.Name, function(argsTable)
                                 runCommand(argsTable, false)
-                            end)
+                            end, subFeat)
                         else
                             runCommand({}, false)
                         end
@@ -2400,11 +2997,9 @@ return function(speaker)
                             runDirectCommand({}, true)
                         else
                             if item.NeedInput then
-                                showInputDialog(item.Name, function(typedText)
-                                    local argsTable = {}
-                                    for word in string.gmatch(typedText, "%S+") do table.insert(argsTable, word) end
+                                showInputDialog(item.Name, function(argsTable)
                                     runDirectCommand(argsTable, false)
-                                end)
+                                end, item)
                             else
                                 runDirectCommand({}, false)
                             end
@@ -2557,7 +3152,6 @@ return function(speaker)
     if not configOk then
         warn("[MasterWindow] GAGAL memuat Loader.lua: " .. tostring(configErr))
     else
-        task.spawn(loadServerVersionProfiles)
         if metadataReady and metadataRefreshPending and refreshBadgeUI then
             metadataRefreshPending = false
             task.defer(refreshBadgeUI)

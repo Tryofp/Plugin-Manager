@@ -14,7 +14,7 @@ local SharedFeatures = {
         Desc = "Memunculkan window berisikan list objek yang bisa diteleport",
         Cmd = "itp",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         UpdateTimestamp = "091120260333, 86400"
     },
     PPESP = {
@@ -24,7 +24,7 @@ local SharedFeatures = {
         Cmd = "proximityesp",
         UnCmd = "unproximityesp",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         UpdateTimestamp = ""
     },
     CDESP = {
@@ -34,7 +34,7 @@ local SharedFeatures = {
         Cmd = "clickdetectoresp",
         UnCmd = "unclickdetectoresp",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         UpdateTimestamp = ""
     },
     DESP = {
@@ -44,7 +44,7 @@ local SharedFeatures = {
         Cmd = "dooresp",
         UnCmd = "undooresp",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable", -- ⚠️ Koma yang tadinya kurang udah ditambahin di sini
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable", -- ⚠️ Koma yang tadinya kurang udah ditambahin di sini
         UpdateTimestamp = ""
     },
     ITESP = {
@@ -54,7 +54,7 @@ local SharedFeatures = {
         Cmd = "itemtouchesp",
         UnCmd = "untouchinterestesp",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         UpdateTimestamp = ""
     },
     LOOT = {
@@ -64,7 +64,7 @@ local SharedFeatures = {
         Cmd = "loot",
         UnCmd = "unloot",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         UpdateTimestamp = ""
     },
     TESP = {
@@ -73,7 +73,7 @@ local SharedFeatures = {
         Desc = "Memunculkan ESP Trigger / Scene Event",
         Cmd = "touchinterestesp",
         UnCmd = "untouchinterestesp",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         UpdateTimestamp = ""
     },
 
@@ -84,7 +84,7 @@ local SharedFeatures = {
         Desc = "Menampilkan ESP Body dan mama Player",
         Cmd = "pesp",
         UnCmd = "unloadColorESP",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/colorESP",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/colorESP",
         UpdateTimestamp = ""
     },
     EESP = {
@@ -93,7 +93,7 @@ local SharedFeatures = {
         Desc = "Menampilkan ESP Musuh dan NPC",
         Cmd = "eesp",
         UnCmd = "unloadColorESP",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/colorESP",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/colorESP",
         UpdateTimestamp = ""
     },
 
@@ -104,7 +104,7 @@ local SharedFeatures = {
         Desc = "Menampilkan Checkpoint yang belum di sentuh",
         Cmd = "scp",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Waypoint",
         UpdateTimestamp = "091120262315, 86400",
         BadgeColor = "green",
         BadgeText = "Update!"
@@ -117,7 +117,7 @@ local SharedFeatures = {
         Desc = "Menampilkan Checkpoint atau Waypoint",
         Cmd = "cpn",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Waypoint",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Waypoint",
         UpdateTimestamp = "091120262315, 86400"
     },
     PlayerTeleport = {
@@ -126,7 +126,7 @@ local SharedFeatures = {
         Desc = "Teleport ke player dengan cepat ( Jika dalam Jangkauan )",
         Cmd = "tp",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/PlayerTeleport",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/PlayerTeleport",
         UpdateTimestamp = "091120260255, 86400"
     },
 
@@ -139,7 +139,7 @@ local SharedFeatures = {
         Desc = "Menonton dan menguping target dari jauh ( Jika dalam Jangkauan )",
         Cmd = "spectate",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SoundandView",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/SoundandView",
         UpdateTimestamp = "101120260036, 86400"
     },
     MuteSound = {
@@ -150,7 +150,7 @@ local SharedFeatures = {
         Desc = "Membisukan suara Latar Belakang Map",
         Cmd = "mutesound",
         UnCmd = "unmutesound",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SoundandView",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/SoundandView",
         UpdateTimestamp = "101120260036, 86400"
     },
     PlayMusic = {
@@ -162,7 +162,7 @@ local SharedFeatures = {
         Cmd = "playmusic",
         UnCmd = "stopmusic",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/MusicTimeML",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/MusicTimeML",
         UpdateTimestamp = "091120261116, 86400"
     },
 
@@ -174,7 +174,7 @@ local SharedFeatures = {
         Cmd = "rgrab",
         UnCmd = "",
         ExecutionMode = "standalone",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/TPitem",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/TPitem",
         UpdateTimestamp = "091120261054, 86400",
         BadgeText = "Update!",
         BadgeColor = "green"
@@ -185,7 +185,7 @@ local SharedFeatures = {
         Desc = "Menemukan sebuah jalur path parent-child sebuah Part",
         Cmd = "mobileinspector",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/clickinspector",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/clickinspector",
         UpdateTimestamp = "091120260314, 86400"
     },
     AntiAFK = {
@@ -194,7 +194,7 @@ local SharedFeatures = {
         Desc = "Membuat karakter tidak terpental saat Afk 20 menit di Map",
         Cmd = "antiafk",
         UnCmd = "unantiafk",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiAFK",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/AntiAFK",
         UpdateTimestamp = ""
     },
 
@@ -205,7 +205,7 @@ local SharedFeatures = {
         Desc = "Auto save Place ID dan Job ID ketika berpindah tempat",
         Cmd = "autosaveserver",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/LastRejoin",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/LastRejoin",
         UpdateTimestamp = "081120262105, 86400",
         BadgeText = "Update!",
         BadgeColor = "green"
@@ -216,7 +216,7 @@ local SharedFeatures = {
         Desc = "Menyimpan Place ID dan Job ID secara manual",
         Cmd = "saveserver",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/LastRejoin",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/LastRejoin",
         UpdateTimestamp = "081120262105, 86400",
         BadgeText = "Update!",
         BadgeColor = "green"
@@ -227,7 +227,7 @@ local SharedFeatures = {
         Desc = "Aktifkan untik Rejoin di server terakhir",
         Cmd = "rejoinlast",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/LastRejoin",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/LastRejoin",
         UpdateTimestamp = "081120262105, 86400"
     },
     SmartRejoin = {
@@ -236,7 +236,7 @@ local SharedFeatures = {
         Desc = "Aktifkan untuk Rejoin ketika diconnect secara Real Time",
         Cmd = "smartrj",
         UnCmd = "smartrj",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SmartRejoin",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/SmartRejoin",
         UpdateTimestamp = ""
     },
 
@@ -249,7 +249,7 @@ local SharedFeatures = {
         Desc = "Mengaktifkan/Menonaktifkan Aimbot",
         Cmd = "startaimbot",
         UnCmd = "stopaimbot",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SimpleAimbot",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/SimpleAimbot",
         UpdateTimestamp = "091120260421, 86400"
     },
     SetRadius = {
@@ -261,7 +261,7 @@ local SharedFeatures = {
         Cmd = "setradius",
         UnCmd = "",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SimpleAimbot",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/SimpleAimbot",
         UpdateTimestamp = "091120260421, 86400"
     },
 
@@ -272,7 +272,7 @@ local SharedFeatures = {
         Desc = "Bind Shift Lock to F1",
         Cmd = "f1lock",
         UnCmd = "unlockedcam",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/F1Lock",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/F1Lock",
         UpdateTimestamp = ""
     },
 
@@ -285,8 +285,8 @@ local SharedFeatures = {
         Desc = "Untuk menghentikan Part yang bergoyang",
         Cmd = "anchor",
         UnCmd = "unanchor",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/AntiEffect",
+        UpdateTimestamp = "111120260227, 86400"
     },
     AntiShake = {
         BadgeColor = "green",
@@ -296,8 +296,8 @@ local SharedFeatures = {
         Desc = "Untuk menghentikan Kamera yang bergoyang",
         Cmd = "antishake",
         UnCmd = "unshake",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/AntiEffect",
+        UpdateTimestamp = "111120260227, 86400"
     },
     AntiWind = {
         BadgeColor = "green",
@@ -307,8 +307,8 @@ local SharedFeatures = {
         Desc = "Untuk menghentikan Angin yang menggeser karakter",
         Cmd = "antiwind",
         UnCmd = "unwind",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/AntiEffect",
+        UpdateTimestamp = "111120260227, 86400"
     },
     AntiTrigger = {
         BadgeColor = "green",
@@ -318,19 +318,21 @@ local SharedFeatures = {
         Desc = "Untuk mematikan Trigger dalam map",
         Cmd = "antitrigger",
         UnCmd = "untrigger",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AntiEffect",
-        UpdateTimestamp = "101120262234, 86400"
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/AntiEffect",
+        UpdateTimestamp = "111120260227, 86400"
     },
 
     -- 10. Standalone Tools Lainnya
     Fullbright = {
+        BadgeColor = "green",
+        BadgeText = "Update!",
         FeatureId = "fid_fullbright",
         Name = "Full Bright",
         Desc = "Membuat game menjadi terang, sudah termasuk anti kabut dan shadow",
         Cmd = "fullbright",
         UnCmd = "fullbright",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/Fullbright",
-        UpdateTimestamp = ""
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/Fullbright",
+        UpdateTimestamp = "121120260114, 86400"
     },
     InstantPrompt = {
         FeatureId = "fid_instantprompt",
@@ -338,7 +340,7 @@ local SharedFeatures = {
         Desc = "Always instant interaction",
         Cmd = "instantprompts",
         UnCmd = "uninstantprompts",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/InstanPrompt",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/InstanPrompt",
         UpdateTimestamp = ""
     },
     WalkSpeed = {
@@ -350,7 +352,7 @@ local SharedFeatures = {
         Cmd = "ws",
         UnCmd = "unws",
         NeedInput = true,
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/WalkSpeed",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/WalkSpeed",
         UpdateTimestamp = "101120260014, 86400"
     },
     InfiniteJump = {
@@ -359,7 +361,7 @@ local SharedFeatures = {
         Desc = "Melompat tanpa batas dan Melampauinyaaaa...",
         Cmd = "infjump",
         UnCmd = "uninfjump",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/InfiniteJump",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/InfiniteJump",
         UpdateTimestamp = ""
     },
     AdminDetect = {
@@ -370,7 +372,7 @@ local SharedFeatures = {
         Desc = "Mendeteksi Owner dan Admin, tunggu beberapa detik setelah Execute",
         Cmd = "cad",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/AdminDetect",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/AdminDetect",
         UpdateTimestamp = "091120262346, 86400"
     },
     Noclip = {
@@ -379,7 +381,7 @@ local SharedFeatures = {
         Desc = "Menembus Objek yang ada di depan, tapi agak lebih pinter dikit",
         Cmd = "noclip",
         UnCmd = "unnoclip",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/Noclip",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/Noclip",
         UpdateTimestamp = ""
     },
     CodeFinder = {
@@ -388,7 +390,7 @@ local SharedFeatures = {
         Desc = "Menemukan Code angka dan Huruf",
         Cmd = "code",
         UnCmd = "",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Tools/CodeFinder",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Tools/CodeFinder",
         UpdateTimestamp = ""
     }
 }
@@ -455,7 +457,7 @@ LoaderData.Main = {
             UpdateTimestamp = "091120260421, 86400",
         Name = "Simple Aimbot",
         Desc = "Aimbot Untuk Map yang mempunyai fitur Shooter",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/SimpleAimbot",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/SimpleAimbot",
         SubFeatures = {
             SharedFeatures.Aimbot,
             SharedFeatures.SetRadius
@@ -464,7 +466,7 @@ LoaderData.Main = {
     {
         Name = "F1Lock ( Khusus Keyboard )",
         Desc = "Mengubah Shift Lock ke F1",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/F1Lock",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/F1Lock",
         SubFeatures = {
             SharedFeatures.F1Lock
         }
@@ -488,7 +490,7 @@ LoaderData.Gunung = {
     {
         Name = "Interactable / ITP",
         Desc = "Memunculkan ESP Objek berdasarkan Promot, Touch, Click, Pintu atau Trigger",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         SubFeatures = {
             SharedFeatures.ITP,
             SharedFeatures.PPESP,
@@ -515,7 +517,7 @@ LoaderData.Horor = {
     {
         Name = "Interactable / ITP",
         Desc = "Memunculkan ESP Objek berdasarkan Promot, Touch, Click, Pintu atau Trigger",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/Interactable",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/Interactable",
         SubFeatures = {
             SharedFeatures.ITP,
             SharedFeatures.PPESP,
@@ -528,7 +530,7 @@ LoaderData.Horor = {
     {
         Name = "Color ESP",
         Desc = "Player & Enemy ESP",
-        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Plugin/colorESP",
+        RawUrl = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Plugin/colorESP",
         SubFeatures = {
             SharedFeatures.PESP,
             SharedFeatures.EESP

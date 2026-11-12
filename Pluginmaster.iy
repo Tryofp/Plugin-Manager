@@ -3,11 +3,11 @@
 -- The hub itself is launched directly from Main.lua on the public main branch.
 
 local MAIN_URL =
-    "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Main.lua"
+    "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Main.lua"
 
 local Plugin = {
     ["PluginName"] = "Plugin Manager",
-    ["PluginDescription"] = "Membuka Plugin Manager Hub dari Main.lua branch main.",
+    ["PluginDescription"] = "Membuka Plugin Manager Hub dari Main.lua branch beta.",
     ["Commands"] = {
         ["hub"] = {
             ["ListName"] = "hub / masterhub",

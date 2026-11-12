@@ -1,4 +1,5 @@
 -- TEST RELEASE: harmless comment added only to verify the Plugin Manager UPDATE! badge.
+-- BADGE CHECK 2: harmless release marker; no runtime behavior changed.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")

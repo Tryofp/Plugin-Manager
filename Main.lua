@@ -7,7 +7,7 @@ local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
-local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/"
+local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/"
 local MASTER_WINDOW_URL = BASE_URL .. "MasterWindow.lua"
 local LOADER_URL = BASE_URL .. "Loader.lua"
 
