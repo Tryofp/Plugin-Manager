@@ -1349,7 +1349,13 @@ return function(speaker)
     end
 
     -- Anonymous, non-blocking runtime reports. Detached plugin tasks may not be attributable.
-    local runtimeErrorLastSent = {}
+    -- Keep the 60-second duplicate-report cooldown across MasterWindow reopens.
+    -- Recreating the UI must not reset the same runtime error's reporting window.
+    local runtimeErrorLastSent = _G.MasterPluginHub_RuntimeErrorLastSent
+    if type(runtimeErrorLastSent) ~= "table" then
+        runtimeErrorLastSent = {}
+        _G.MasterPluginHub_RuntimeErrorLastSent = runtimeErrorLastSent
+    end
     local function reportPluginRuntimeError(pluginName, commandName, sourceUrl, errorMessage)
         local plugin = tostring(pluginName or "Unknown Plugin"):sub(1, 120)
         local command = tostring(commandName or "Unknown Command"):sub(1, 100)
