@@ -81,7 +81,16 @@ return function(speaker)
         end
     end
 
+    local trackerExitSent = false
+
     local function sendTrackerData(isLeaving)
+        -- Closing the hub and leaving the game can fire both paths in one session.
+        -- Count only the first exit event to avoid duplicate Tracker writes.
+        if isLeaving then
+            if trackerExitSent then return end
+            trackerExitSent = true
+        end
+
         pcall(function()
             if request or http_request or (syn and syn.request) then
                 local req = request or http_request or (syn and syn.request)
