@@ -154,6 +154,29 @@ return function(speaker)
         end
     end)
 
+    -- Fallbacks for client shutdown/teleport paths where PlayerRemoving may not fire.
+    -- The shared exit guard ensures these signals cannot create duplicate Tracker rows.
+    local previousTrackerAncestryConnection = _G.MasterPluginHub_TrackerAncestryConnection
+    if previousTrackerAncestryConnection then
+        pcall(function() previousTrackerAncestryConnection:Disconnect() end)
+    end
+    _G.MasterPluginHub_TrackerAncestryConnection = LocalPlayer.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then
+            sendTrackerData(true)
+        end
+    end)
+
+    local previousTrackerTeleportConnection = _G.MasterPluginHub_TrackerTeleportConnection
+    if previousTrackerTeleportConnection then
+        pcall(function() previousTrackerTeleportConnection:Disconnect() end)
+    end
+    _G.MasterPluginHub_TrackerTeleportConnection = LocalPlayer.OnTeleport:Connect(function(teleportState)
+        if teleportState == Enum.TeleportState.Started
+            or teleportState == Enum.TeleportState.RequestedFromServer then
+            sendTrackerData(true)
+        end
+    end)
+
     local CUSTOM_TEXT = "🔥 Selamat datang di Plugin Manager By Tryo! Enjoy the script! 🚀"
     local CUSTOM_TEXT_COLOR = Color3.fromRGB(0, 220, 255)
     local SCROLL_SPEED = 18
