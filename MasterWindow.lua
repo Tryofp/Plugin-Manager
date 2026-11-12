@@ -21,6 +21,7 @@ return function(speaker)
     local metadataRefreshPending = false
     local lastMetadataSnapshot = nil
     local playerBadgeCache = {}
+    local serverVersionProfilesLoadStarted = false
     local globalLoaderData = nil
     local refreshBadgeUI = nil
     local openPublicHistoryPanels = 0
@@ -1122,6 +1123,11 @@ return function(speaker)
             if expanded then
                 openPublicHistoryPanels = openPublicHistoryPanels + 1
                 arrow.Text = "▲"
+                -- User version profiles are only needed when this feature is opened.
+                if not serverVersionProfilesLoadStarted then
+                    serverVersionProfilesLoadStarted = true
+                    task.spawn(loadServerVersionProfiles)
+                end
                 refreshPanel()
                 card.Size = UDim2.new(1, 0, 0, baseHeight + 152)
             else
@@ -1736,7 +1742,9 @@ return function(speaker)
     -- hanya memperbarui UI jika metadata benar-benar berubah.
     task.spawn(function()
         while ScreenGui and ScreenGui.Parent do
-            task.wait(15)
+            -- Metadata snapshot is shared-cached server-side; polling once per minute
+            -- keeps badge changes responsive without hammering Firestore.
+            task.wait(60)
 
             local ok, decoded, metadataChanged = fetchRemoteMetadata()
             if ok and decoded then
@@ -2866,7 +2874,6 @@ return function(speaker)
     if not configOk then
         warn("[MasterWindow] GAGAL memuat Loader.lua: " .. tostring(configErr))
     else
-        task.spawn(loadServerVersionProfiles)
         if metadataReady and metadataRefreshPending and refreshBadgeUI then
             metadataRefreshPending = false
             task.defer(refreshBadgeUI)
