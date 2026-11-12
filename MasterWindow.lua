@@ -865,7 +865,7 @@ return function()
     confirmNo.Size = UDim2.new(0.5,-13,0,28)
     confirmNo.Position = UDim2.new(0.5,5,1,-36)
 
-    function loadHealthPage()
+    local function loadHealthPage()
         clearRows(HealthScroll)
         resultLines = {}
         local ok, err = refreshMainLoader()
@@ -916,7 +916,7 @@ return function()
         end
     end
 
-    function runUpdateCheck()
+    local function runUpdateCheck()
         clearRows(UpdateScroll)
         scanResults = {}
         local ok, err = refreshMainLoader()
