@@ -633,34 +633,46 @@ return function(speaker)
                 if b == "Tools/AntiEffect" then return false end
                 return a < b
             end)
+            -- Scan beberapa source secara paralel agar badge tidak menunggu
+            -- antrean panjang. Batasi worker agar Apps Script/GitHub tidak dibanjiri.
+            local nextPath = 0
             local changed = false
-            for _, sourcePath in ipairs(paths) do
-                -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
-                -- Hindari REST API publik langsung dari client Roblox (rate limit 60/jam).
-                local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
-                    .. HttpService:UrlEncode(sourcePath)
-                local ok, response = requestGitHubWithRetry(historyUrl, 3)
-                if ok then
-                    local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
-                    local commits = decodeOk and type(payload) == "table" and payload.status == "success"
-                        and payload.commits or nil
-                    local latest = type(commits) == "table" and commits[1] or nil
-                    local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
-                    if #latestSha == 40 then
-                        stableLatestShaCache[sourcePath] = latestSha
-                        if selectedPluginVersions[sourcePath] == latestSha and acknowledgedReleaseShas[sourcePath] ~= latestSha then
-                            acknowledgedReleaseShas[sourcePath] = latestSha
-                            saveAcknowledgedReleases()
+            local function scanWorker()
+                while true do
+                    nextPath = nextPath + 1
+                    local sourcePath = paths[nextPath]
+                    if not sourcePath then break end
+
+                    -- Gunakan Apps Script sebagai proxy GitHub terautentikasi.
+                    -- Hindari REST API publik langsung dari client Roblox (rate limit 60/jam).
+                    local historyUrl = SHEETS_WEB_APP_URL .. "?action=VersionHistory&branch=main&path="
+                        .. HttpService:UrlEncode(sourcePath)
+                    local ok, response = requestGitHubWithRetry(historyUrl, 3)
+                    if ok then
+                        local decodeOk, payload = pcall(function() return HttpService:JSONDecode(response) end)
+                        local commits = decodeOk and type(payload) == "table" and payload.status == "success"
+                            and payload.commits or nil
+                        local latest = type(commits) == "table" and commits[1] or nil
+                        local latestSha = type(latest) == "table" and tostring(latest.sha or "") or ""
+                        if #latestSha == 40 then
+                            stableLatestShaCache[sourcePath] = latestSha
+                            if selectedPluginVersions[sourcePath] == latestSha and acknowledgedReleaseShas[sourcePath] ~= latestSha then
+                                acknowledgedReleaseShas[sourcePath] = latestSha
+                                saveAcknowledgedReleases()
+                            end
+                            releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
+                                and acknowledgedReleaseShas[sourcePath] ~= latestSha
+                            changed = true
+                            -- Badge diperbarui segera setelah hasil tiap source tersedia.
+                            if refreshBadgeUI then task.defer(refreshBadgeUI) end
                         end
-                        releaseUpdateByPath[sourcePath] = latestSha ~= VERSION_HISTORY_BASELINES[sourcePath]
-                            and acknowledgedReleaseShas[sourcePath] ~= latestSha
-                        changed = true
-                        -- Perbarui badge segera setelah satu file selesai dicek,
-                        -- jangan menunggu semua request path selesai.
-                        if refreshBadgeUI then task.defer(refreshBadgeUI) end
                     end
                 end
-                task.wait(0.05)
+            end
+
+            local workerCount = math.min(4, #paths)
+            for worker = 1, workerCount do
+                task.spawn(scanWorker)
             end
             if changed and refreshBadgeUI then task.defer(refreshBadgeUI) end
         end)
