@@ -1989,7 +1989,7 @@ return function(speaker)
         end
 
         local fieldHeight = 44
-        local boxHeight = 38 + (#fields * fieldHeight) + 44
+        local boxHeight = 38 + (#fields * fieldHeight) + 54
         local boxWidth = 248
 
         local PromptOverlay = Instance.new("Frame")
