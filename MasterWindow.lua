@@ -133,7 +133,13 @@ return function(speaker)
         sendTrackerData(false)
     end)
 
-    Players.PlayerRemoving:Connect(function(plr)
+    -- Replace the previous exit hook when the hub UI is reopened.
+    -- Otherwise every MasterWindow invocation adds another Tracker POST on exit.
+    local previousTrackerConnection = _G.MasterPluginHub_TrackerRemovingConnection
+    if previousTrackerConnection then
+        pcall(function() previousTrackerConnection:Disconnect() end)
+    end
+    _G.MasterPluginHub_TrackerRemovingConnection = Players.PlayerRemoving:Connect(function(plr)
         if plr == LocalPlayer then
             sendTrackerData(true)
         end
