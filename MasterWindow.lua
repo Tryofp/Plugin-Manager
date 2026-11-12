@@ -2,7 +2,6 @@ return function()
     local Players = game:GetService("Players")
     local HttpService = game:GetService("HttpService")
     local UserInputService = game:GetService("UserInputService")
-    local TweenService = game:GetService("TweenService")
     local LocalPlayer = Players.LocalPlayer
     local SHEETS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
     local MAIN_RAW = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/"
@@ -203,6 +202,17 @@ return function()
     }, ScreenGui)
     create("UICorner", { CornerRadius = UDim.new(0, 10) }, Frame)
     create("UIStroke", { Color = COLORS.line, Transparency = 0.25, Thickness = 1 }, Frame)
+    local frameScale = create("UIScale", { Scale = 1 }, Frame)
+    local function fitWindow()
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        local viewport = camera.ViewportSize
+        frameScale.Scale = math.max(0.72, math.min(1, (viewport.X - 16) / 360, (viewport.Y - 24) / 440))
+    end
+    fitWindow()
+    if workspace.CurrentCamera then
+        workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fitWindow)
+    end
 
     local Header = create("Frame", {
         Size = UDim2.new(1, 0, 0, 43),
@@ -569,15 +579,18 @@ return function()
         create("UICorner", { CornerRadius = UDim.new(0,4) }, deleteSelected)
         button(BadgeScroll, "RESET SEMUA BADGE PUBLIK", COLORS.red, 30, function()
             task.spawn(function()
+                local before = tostring(metadata.BadgeClearBefore or "")
                 local sent = post({ Type = "ClearAllBadges" })
-                task.wait(0.4)
-                refreshMetadata()
-                if sent then
-                    BadgeInfo.Text = "Permintaan reset global dikirim. Metadata diperbarui."
+                task.wait(0.35)
+                local refreshed = refreshMetadata()
+                local verified = sent and refreshed and tostring(metadata.BadgeClearBefore or "") ~= before
+                if verified then
+                    BadgeInfo.Text = "Reset global terverifikasi dari metadata online."
                     loadBadgePage()
-                    setStatus("Reset badge global selesai dikirim", COLORS.green)
+                    setStatus("Reset badge global selesai", COLORS.green)
                 else
-                    BadgeInfo.Text = "Gagal mengirim reset global."
+                    BadgeInfo.Text = "Reset global belum terverifikasi. Coba refresh metadata."
+                    setStatus("Reset badge global gagal diverifikasi", COLORS.red)
                 end
             end)
         end)
@@ -1003,9 +1016,37 @@ return function()
     homeCard("05  •  UPDATE CHECKER", "Bandingkan source main dengan baseline online.", COLORS.text, openUpdates)
     homeCard("06  •  RUNTIME ERROR", "Baca laporan error plugin dari Apps Script.", COLORS.text, openRuntime)
 
-    button(HealthPage, "JALANKAN HEALTH CHECK", COLORS.green, 29, loadHealthPage).Position = UDim2.new(0,0,1,-33)
+    local healthRunButton = button(HealthPage, "JALANKAN PEMERIKSAAN", COLORS.green, 28, loadHealthPage)
+    healthRunButton.Size = UDim2.new(0.49, -3, 0, 28)
+    healthRunButton.Position = UDim2.new(0, 0, 1, -33)
+    local healthExportButton = button(HealthPage, "EXPORT HASIL", COLORS.card, 28, function()
+        if #resultLines == 0 then HealthInfo.Text = "Jalankan pemeriksaan sebelum export." return end
+        local report = "TRYOPANEL HEALTH CHECK\n" .. table.concat(resultLines, "\n")
+        if type(setclipboard) == "function" then
+            local ok = pcall(setclipboard, report)
+            HealthInfo.Text = ok and "Hasil pemeriksaan disalin ke clipboard." or "Clipboard gagal. Coba executor lain."
+        elseif type(writefile) == "function" then
+            local ok = pcall(writefile, "TryoDeveloperHealthCheck.txt", report)
+            HealthInfo.Text = ok and "Hasil disimpan ke TryoDeveloperHealthCheck.txt." or "Gagal menyimpan file export."
+        else
+            HealthInfo.Text = "Executor tidak mendukung clipboard atau writefile."
+        end
+    end)
+    healthExportButton.Size = UDim2.new(0.49, -3, 0, 28)
+    healthExportButton.Position = UDim2.new(0.51, 3, 1, -33)
     button(UpdatePage, "SCAN SOURCE MAIN", COLORS.green, 28, runUpdateCheck).Position = UDim2.new(0,0,1,-66)
     button(UpdatePage, "SIMPAN BASELINE ONLINE", COLORS.amber, 28, saveUpdateBaseline).Position = UDim2.new(0,0,1,-33)
+    button(RuntimePage, "KIRIM TEST REPORT", COLORS.amber, 28, function()
+        local sent, response = post({
+            Type = "PluginRuntimeError",
+            Plugin = "Developer Panel Test",
+            Command = "runtime-report-test",
+            Source = "internal://developer-panel-test",
+            Error = "Simulasi jalur laporan runtime error dari Developer Panel.",
+            PlaceId = tostring(game.PlaceId)
+        })
+        RuntimeInfo.Text = sent and "Test report dikirim. Muat ulang riwayat untuk melihat hasilnya." or ("Test report gagal: " .. tostring(response))
+    end).Position = UDim2.new(0,0,1,-66)
     button(RuntimePage, "MUAT ULANG RIWAYAT", COLORS.green, 28, loadRuntimeHistory).Position = UDim2.new(0,0,1,-33)
 
     -- Drag window, mobile-safe and independent of the page content.
