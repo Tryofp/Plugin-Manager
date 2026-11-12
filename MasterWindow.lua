@@ -2054,7 +2054,7 @@ return function(speaker)
             if field.kind == "number" or field.kind == "positiveNumber" or field.kind == "id" then
                 FieldBox.TextInputType = Enum.TextInputType.Number
             else
-                FieldBox.TextInputType = Enum.TextInputType.Standard
+                FieldBox.TextInputType = Enum.TextInputType.Default
             end
             FieldBox.Parent = PromptBox
             Instance.new("UICorner", FieldBox).CornerRadius = UDim.new(0, 4)
