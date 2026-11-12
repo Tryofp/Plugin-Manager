@@ -1451,15 +1451,92 @@ return function(speaker)
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = CoreGui
 
+    -- Per-user UI layout preferences. File persistence is optional; _G is a session fallback.
+    local UI_SETTINGS_FILE = "TryoPluginManager_UISettings.json"
+    local function getViewportSize()
+        local camera = workspace.CurrentCamera
+        if camera then return camera.ViewportSize end
+        return Vector2.new(800, 600)
+    end
+
+    local function loadUISettings()
+        local saved = _G.MasterPluginHub_UISettings
+        if type(readfile) == "function" then
+            local ok, raw = pcall(readfile, UI_SETTINGS_FILE)
+            if ok and type(raw) == "string" and raw ~= "" then
+                local decodeOk, decoded = pcall(function()
+                    return HttpService:JSONDecode(raw)
+                end)
+                if decodeOk and type(decoded) == "table" then
+                    saved = decoded
+                    _G.MasterPluginHub_UISettings = decoded
+                end
+            end
+        end
+        if type(saved) ~= "table" then saved = {} end
+        return saved
+    end
+
+    local uiSettings = loadUISettings()
+    local minUIScale = 0.65
+    local function getMaxUIScale()
+        local viewport = getViewportSize()
+        return math.max(minUIScale, math.min(1.5, (viewport.X - 24) / 280, (viewport.Y - 60) / 340))
+    end
+    local savedScale = math.clamp(tonumber(uiSettings.scale) or 1, minUIScale, getMaxUIScale())
+
     local Frame = Instance.new("Frame")
     Frame.Size = UDim2.new(0, 280, 0, 340)
-    Frame.Position = UDim2.new(0.5, -140, 0.5, -170)
+    if type(uiSettings.x) == "number" and type(uiSettings.y) == "number" then
+        local viewport = getViewportSize()
+        Frame.Position = UDim2.fromOffset(
+            math.clamp(uiSettings.x, 0, 1) * viewport.X,
+            math.clamp(uiSettings.y, 0, 1) * viewport.Y
+        )
+    else
+        Frame.Position = UDim2.new(0.5, -140, 0.5, -170)
+    end
     Frame.BackgroundColor3 = Color3.fromRGB(20, 25, 32)
     Frame.BackgroundTransparency = 0.25
     Frame.BorderSizePixel = 0
     Frame.Active = true
     Frame.Draggable = false
     Frame.Parent = ScreenGui
+
+    local FrameScale = Instance.new("UIScale")
+    FrameScale.Scale = savedScale
+    FrameScale.Parent = Frame
+
+    local function clampFramePosition()
+        local viewport = getViewportSize()
+        local absoluteSize = Frame.AbsoluteSize
+        local currentPosition = Frame.AbsolutePosition
+        local maxX = math.max(0, viewport.X - absoluteSize.X)
+        local maxY = math.max(0, viewport.Y - absoluteSize.Y)
+        Frame.Position = UDim2.fromOffset(
+            math.clamp(currentPosition.X, 0, maxX),
+            math.clamp(currentPosition.Y, 0, maxY)
+        )
+    end
+
+    local function saveUISettings()
+        local viewport = getViewportSize()
+        local absolutePosition = Frame.AbsolutePosition
+        local data = {
+            version = 1,
+            scale = FrameScale.Scale,
+            x = math.clamp(absolutePosition.X / math.max(1, viewport.X), 0, 1),
+            y = math.clamp(absolutePosition.Y / math.max(1, viewport.Y), 0, 1)
+        }
+        _G.MasterPluginHub_UISettings = data
+        if type(writefile) == "function" then
+            pcall(function()
+                writefile(UI_SETTINGS_FILE, HttpService:JSONEncode(data))
+            end)
+        end
+    end
+
+    task.defer(clampFramePosition)
 
     Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 6)
 
@@ -1484,6 +1561,67 @@ return function(speaker)
     TopBar.Parent = Frame
     Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 6)
 
+    -- Drag the bottom-right grip to scale the complete MasterWindow proportionally.
+    local ResizeHandle = Instance.new("TextButton")
+    ResizeHandle.Name = "ResizeHandle"
+    ResizeHandle.Size = UDim2.new(0, 20, 0, 20)
+    ResizeHandle.Position = UDim2.new(1, -21, 1, -21)
+    ResizeHandle.BackgroundColor3 = Color3.fromRGB(0, 150, 110)
+    ResizeHandle.BackgroundTransparency = 0.12
+    ResizeHandle.BorderSizePixel = 0
+    ResizeHandle.Font = Enum.Font.GothamBold
+    ResizeHandle.Text = "↘"
+    ResizeHandle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ResizeHandle.TextSize = 13
+    ResizeHandle.ZIndex = 25
+    ResizeHandle.Parent = Frame
+    Instance.new("UICorner", ResizeHandle).CornerRadius = UDim.new(0, 4)
+
+    local resizing, resizeInput, resizeStart, resizeInitialScale
+    local resizeInputChangedConnection = UserInputService.InputChanged:Connect(function(input)
+        if resizing and input == resizeInput then
+            local delta = input.Position - resizeStart
+            local scaleDelta = ((delta.X / 280) + (delta.Y / 340)) * 0.5
+            FrameScale.Scale = math.clamp(
+                resizeInitialScale + scaleDelta,
+                minUIScale,
+                getMaxUIScale()
+            )
+            clampFramePosition()
+        end
+    end)
+
+    ResizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = true
+            resizeStart = input.Position
+            resizeInitialScale = FrameScale.Scale
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    resizing = false
+                    clampFramePosition()
+                    saveUISettings()
+                end
+            end)
+        end
+    end)
+
+    ResizeHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            resizeInput = input
+        end
+    end)
+
+    ScreenGui.Destroying:Connect(function()
+        if resizeInputChangedConnection then
+            resizeInputChangedConnection:Disconnect()
+            resizeInputChangedConnection = nil
+        end
+        pcall(saveUISettings)
+    end)
+
     local dragging, dragInput, dragStart, startPos
 
     TopBar.InputBegan:Connect(function(input)
@@ -1495,6 +1633,8 @@ return function(speaker)
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
+                    clampFramePosition()
+                    saveUISettings()
                 end
             end)
         end
@@ -1557,6 +1697,7 @@ return function(speaker)
     Instance.new("UICorner", FeedbackBtn).CornerRadius = UDim.new(0, 4)
 
     CloseBtn.MouseButton1Click:Connect(function()
+        saveUISettings()
         task.spawn(function() sendTrackerData(true) end)
         ScreenGui:Destroy()
     end)
@@ -1818,8 +1959,41 @@ return function(speaker)
         end
     end)
 
-    local function showInputDialog(titleText, onSubmit)
+    local function showInputDialog(titleText, onSubmit, feature)
+        local command = string.lower(tostring(feature and feature.Cmd or ""))
+        local fields
+
+        if command == "playmusic" then
+            fields = {
+                { label = "Audio ID", placeholder = "Contoh: 1843529634", kind = "id", required = true },
+                { label = "Pitch", placeholder = "Default: 1", kind = "number", default = "1", required = true },
+                { label = "Volume", placeholder = "Default: 1", kind = "number", default = "1", required = true }
+            }
+        elseif command == "setradius" then
+            fields = {
+                { label = "Radius Aimbot", placeholder = "Contoh: 250", kind = "positiveNumber", required = true }
+            }
+        elseif command == "ws" then
+            fields = {
+                { label = "Walk Speed", placeholder = "Contoh: 30", kind = "positiveNumber", required = true }
+            }
+        elseif command == "proximityesp" or command == "clickdetectoresp"
+            or command == "dooresp" or command == "itemtouchesp" or command == "loot" then
+            fields = {
+                { label = "Filter nama objek", placeholder = "Kosongkan untuk mendeteksi semua", kind = "text", required = false }
+            }
+        else
+            fields = {
+                { label = "Nilai input", placeholder = "Masukkan nilai sesuai kebutuhan fitur", kind = "text", required = true }
+            }
+        end
+
+        local fieldHeight = 44
+        local boxHeight = 38 + (#fields * fieldHeight) + 44
+        local boxWidth = 248
+
         local PromptOverlay = Instance.new("Frame")
+        PromptOverlay.Name = "InputDialogOverlay"
         PromptOverlay.Size = UDim2.new(1, 0, 1, 0)
         PromptOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
         PromptOverlay.BackgroundTransparency = 0.5
@@ -1827,8 +2001,8 @@ return function(speaker)
         PromptOverlay.Parent = Frame
 
         local PromptBox = Instance.new("Frame")
-        PromptBox.Size = UDim2.new(0, 220, 0, 110)
-        PromptBox.Position = UDim2.new(0.5, -110, 0.5, -55)
+        PromptBox.Size = UDim2.new(0, boxWidth, 0, boxHeight)
+        PromptBox.Position = UDim2.new(0.5, -boxWidth / 2, 0.5, -boxHeight / 2)
         PromptBox.BackgroundColor3 = Color3.fromRGB(30, 38, 50)
         PromptBox.BorderSizePixel = 0
         PromptBox.ZIndex = 51
@@ -1836,60 +2010,127 @@ return function(speaker)
         Instance.new("UICorner", PromptBox).CornerRadius = UDim.new(0, 6)
 
         local PromptTitle = Instance.new("TextLabel")
-        PromptTitle.Size = UDim2.new(1, 0, 0, 25)
-        PromptTitle.Position = UDim2.new(0, 0, 0, 5)
+        PromptTitle.Size = UDim2.new(1, -16, 0, 25)
+        PromptTitle.Position = UDim2.new(0, 8, 0, 5)
         PromptTitle.BackgroundTransparency = 1
         PromptTitle.Font = Enum.Font.GothamBold
-        PromptTitle.Text = "INPUT: " .. titleText
+        PromptTitle.Text = "INPUT: " .. tostring(titleText)
         PromptTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
         PromptTitle.TextSize = 11
+        PromptTitle.TextXAlignment = Enum.TextXAlignment.Left
+        PromptTitle.TextTruncate = Enum.TextTruncate.AtEnd
         PromptTitle.ZIndex = 52
         PromptTitle.Parent = PromptBox
 
-        local TextBox = Instance.new("TextBox")
-        TextBox.Size = UDim2.new(1, -20, 0, 30)
-        TextBox.Position = UDim2.new(0, 10, 0, 35)
-        TextBox.BackgroundColor3 = Color3.fromRGB(15, 20, 28)
-        TextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-        TextBox.PlaceholderText = "Baca Deskripsi..."
-        TextBox.Text = ""
-        TextBox.Font = Enum.Font.Gotham
-        TextBox.TextSize = 11
-        TextBox.ZIndex = 52
-        TextBox.Parent = PromptBox
-        Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 4)
+        local inputBoxes = {}
+        for index, field in ipairs(fields) do
+            local y = 34 + ((index - 1) * fieldHeight)
+
+            local FieldLabel = Instance.new("TextLabel")
+            FieldLabel.Size = UDim2.new(1, -20, 0, 13)
+            FieldLabel.Position = UDim2.new(0, 10, 0, y)
+            FieldLabel.BackgroundTransparency = 1
+            FieldLabel.Font = Enum.Font.GothamSemibold
+            FieldLabel.Text = field.label
+            FieldLabel.TextColor3 = Color3.fromRGB(205, 218, 232)
+            FieldLabel.TextSize = 9
+            FieldLabel.TextXAlignment = Enum.TextXAlignment.Left
+            FieldLabel.ZIndex = 52
+            FieldLabel.Parent = PromptBox
+
+            local FieldBox = Instance.new("TextBox")
+            FieldBox.Size = UDim2.new(1, -20, 0, 27)
+            FieldBox.Position = UDim2.new(0, 10, 0, y + 14)
+            FieldBox.BackgroundColor3 = Color3.fromRGB(15, 20, 28)
+            FieldBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+            FieldBox.PlaceholderColor3 = Color3.fromRGB(125, 140, 158)
+            FieldBox.PlaceholderText = field.placeholder or ""
+            FieldBox.Text = tostring(field.default or "")
+            FieldBox.Font = Enum.Font.Gotham
+            FieldBox.TextSize = 10
+            FieldBox.ClearTextOnFocus = false
+            FieldBox.TextXAlignment = Enum.TextXAlignment.Left
+            FieldBox.ZIndex = 52
+            if field.kind == "number" or field.kind == "positiveNumber" or field.kind == "id" then
+                FieldBox.TextInputType = Enum.TextInputType.Number
+            else
+                FieldBox.TextInputType = Enum.TextInputType.Standard
+            end
+            FieldBox.Parent = PromptBox
+            Instance.new("UICorner", FieldBox).CornerRadius = UDim.new(0, 4)
+            inputBoxes[index] = FieldBox
+        end
+
+        local ErrorLabel = Instance.new("TextLabel")
+        ErrorLabel.Size = UDim2.new(1, -20, 0, 15)
+        ErrorLabel.Position = UDim2.new(0, 10, 1, -53)
+        ErrorLabel.BackgroundTransparency = 1
+        ErrorLabel.Font = Enum.Font.Gotham
+        ErrorLabel.Text = ""
+        ErrorLabel.TextColor3 = Color3.fromRGB(255, 115, 105)
+        ErrorLabel.TextSize = 8
+        ErrorLabel.TextXAlignment = Enum.TextXAlignment.Left
+        ErrorLabel.ZIndex = 52
+        ErrorLabel.Parent = PromptBox
 
         local SubmitBtn = Instance.new("TextButton")
-        SubmitBtn.Size = UDim2.new(0, 95, 0, 24)
-        SubmitBtn.Position = UDim2.new(0, 10, 0, 75)
+        SubmitBtn.Size = UDim2.new(0.5, -15, 0, 25)
+        SubmitBtn.Position = UDim2.new(0, 10, 1, -32)
         SubmitBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
         SubmitBtn.Text = "SUBMIT"
         SubmitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         SubmitBtn.Font = Enum.Font.GothamBold
-        SubmitBtn.TextSize = 10
+        SubmitBtn.TextSize = 9
         SubmitBtn.ZIndex = 52
         SubmitBtn.Parent = PromptBox
         Instance.new("UICorner", SubmitBtn).CornerRadius = UDim.new(0, 4)
 
         local CancelBtn = Instance.new("TextButton")
-        CancelBtn.Size = UDim2.new(0, 95, 0, 24)
-        CancelBtn.Position = UDim2.new(1, -105, 0, 75)
+        CancelBtn.Size = UDim2.new(0.5, -15, 0, 25)
+        CancelBtn.Position = UDim2.new(0.5, 5, 1, -32)
         CancelBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         CancelBtn.Text = "CANCEL"
         CancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         CancelBtn.Font = Enum.Font.GothamBold
-        CancelBtn.TextSize = 10
+        CancelBtn.TextSize = 9
         CancelBtn.ZIndex = 52
         CancelBtn.Parent = PromptBox
         Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 4)
 
         SubmitBtn.MouseButton1Click:Connect(function()
-            local inputVal = TextBox.Text
+            local values = {}
+            for index, field in ipairs(fields) do
+                local value = string.match(inputBoxes[index].Text or "", "^%s*(.-)%s*$") or ""
+                if field.required and value == "" then
+                    ErrorLabel.Text = "Kolom " .. field.label .. " wajib diisi."
+                    return
+                end
+                if value ~= "" and field.kind == "id" and not string.match(value, "^%d+$") then
+                    ErrorLabel.Text = "Audio ID harus berupa angka."
+                    return
+                end
+                if value ~= "" and (field.kind == "number" or field.kind == "positiveNumber") then
+                    local numericValue = tonumber(value)
+                    if not numericValue or (field.kind == "positiveNumber" and numericValue <= 0) then
+                        ErrorLabel.Text = field.kind == "positiveNumber"
+                            and (field.label .. " harus berupa angka lebih dari 0.")
+                            or (field.label .. " harus berupa angka yang valid.")
+                        return
+                    end
+                end
+                if value == "" and field.default ~= nil then
+                    value = tostring(field.default)
+                end
+                values[index] = value
+            end
+
             PromptOverlay:Destroy()
-            if onSubmit then onSubmit(inputVal) end
+            if onSubmit then onSubmit(values) end
         end)
 
-        CancelBtn.MouseButton1Click:Connect(function() PromptOverlay:Destroy() end)
+        CancelBtn.MouseButton1Click:Connect(function()
+            PromptOverlay:Destroy()
+        end)
     end
 
 
@@ -2195,16 +2436,19 @@ return function(speaker)
         minimized = not minimized
         if minimized then
             Frame.Size = UDim2.new(0, 280, 0, 30)
+            ResizeHandle.Visible = false
             MinBtn.Text = "+"
             TabBar.Visible = false
             HeaderContainer.Visible = false
             ContentArea.Visible = false
         else
             Frame.Size = UDim2.new(0, 280, 0, 340)
+            ResizeHandle.Visible = true
             MinBtn.Text = "-"
             TabBar.Visible = true
             HeaderContainer.Visible = true
             ContentArea.Visible = true
+            clampFramePosition()
         end
     end)
 
@@ -2463,11 +2707,9 @@ return function(speaker)
                         runCommand({}, true)
                     else
                         if subFeat.NeedInput then
-                            showInputDialog(subFeat.Name, function(typedText)
-                                local argsTable = {}
-                                for word in string.gmatch(typedText, "%S+") do table.init(argsTable, word) end
+                            showInputDialog(subFeat.Name, function(argsTable)
                                 runCommand(argsTable, false)
-                            end)
+                            end, subFeat)
                         else
                             runCommand({}, false)
                         end
@@ -2761,11 +3003,9 @@ return function(speaker)
                             runDirectCommand({}, true)
                         else
                             if item.NeedInput then
-                                showInputDialog(item.Name, function(typedText)
-                                    local argsTable = {}
-                                    for word in string.gmatch(typedText, "%S+") do table.insert(argsTable, word) end
+                                showInputDialog(item.Name, function(argsTable)
                                     runDirectCommand(argsTable, false)
-                                end)
+                                end, item)
                             else
                                 runDirectCommand({}, false)
                             end
