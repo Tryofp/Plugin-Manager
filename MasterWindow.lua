@@ -202,16 +202,64 @@ return function()
     }, ScreenGui)
     create("UICorner", { CornerRadius = UDim.new(0, 10) }, Frame)
     create("UIStroke", { Color = COLORS.line, Transparency = 0.25, Thickness = 1 }, Frame)
-    local frameScale = create("UIScale", { Scale = 1 }, Frame)
-    local function fitWindow()
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        local viewport = camera.ViewportSize
-        frameScale.Scale = math.max(0.72, math.min(1, (viewport.X - 16) / 360, (viewport.Y - 24) / 440))
+    local UI_SETTINGS_FILE = "TryoDeveloperPanel_UISettings.json"
+    local minUIScale, maxUIScale = 0.65, 1.5
+    local uiSettings = _G.TryoDeveloperPanel_UISettings
+    if type(uiSettings) ~= "table" and type(readfile) == "function" then
+        pcall(function()
+            if type(isfile) ~= "function" or isfile(UI_SETTINGS_FILE) then
+                uiSettings = HttpService:JSONDecode(readfile(UI_SETTINGS_FILE))
+            end
+        end)
     end
-    fitWindow()
+    if type(uiSettings) ~= "table" then uiSettings = {} end
+    local frameScale = create("UIScale", { Scale = 1 }, Frame)
+    local function getViewport()
+        local camera = workspace.CurrentCamera
+        return camera and camera.ViewportSize or Vector2.new(800, 600)
+    end
+    local function getMaxUIScale()
+        local viewport = getViewport()
+        return math.max(minUIScale, math.min(maxUIScale, (viewport.X - 16) / 360, (viewport.Y - 24) / 440))
+    end
+    frameScale.Scale = math.clamp(tonumber(uiSettings.scale) or 1, minUIScale, getMaxUIScale())
+    local function clampFramePosition()
+        local viewport = getViewport()
+        local size = Frame.AbsoluteSize
+        local pos = Frame.AbsolutePosition
+        Frame.Position = UDim2.fromOffset(
+            math.clamp(pos.X, 0, math.max(0, viewport.X - size.X)),
+            math.clamp(pos.Y, 0, math.max(0, viewport.Y - size.Y))
+        )
+    end
+    local function saveUISettings()
+        local viewport = getViewport()
+        local pos = Frame.AbsolutePosition
+        local data = {
+            version = 1,
+            scale = frameScale.Scale,
+            x = math.clamp(pos.X / math.max(1, viewport.X), 0, 1),
+            y = math.clamp(pos.Y / math.max(1, viewport.Y), 0, 1)
+        }
+        _G.TryoDeveloperPanel_UISettings = data
+        if type(writefile) == "function" then
+            pcall(function() writefile(UI_SETTINGS_FILE, HttpService:JSONEncode(data)) end)
+        end
+    end
+    if type(uiSettings.x) == "number" and type(uiSettings.y) == "number" then
+        local viewport = getViewport()
+        Frame.Position = UDim2.fromOffset(
+            math.clamp(uiSettings.x, 0, 1) * viewport.X,
+            math.clamp(uiSettings.y, 0, 1) * viewport.Y
+        )
+    end
+    task.defer(clampFramePosition)
     if workspace.CurrentCamera then
-        workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fitWindow)
+        workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+            frameScale.Scale = math.min(frameScale.Scale, getMaxUIScale())
+            clampFramePosition()
+            saveUISettings()
+        end)
     end
 
     local Header = create("Frame", {
@@ -579,19 +627,43 @@ return function()
         create("UICorner", { CornerRadius = UDim.new(0,4) }, deleteSelected)
         button(BadgeScroll, "RESET SEMUA BADGE PUBLIK", COLORS.red, 30, function()
             task.spawn(function()
-                local before = tostring(metadata.BadgeClearBefore or "")
-                local sent = post({ Type = "ClearAllBadges" })
-                task.wait(0.35)
-                local refreshed = refreshMetadata()
-                local verified = sent and refreshed and tostring(metadata.BadgeClearBefore or "") ~= before
-                if verified then
-                    BadgeInfo.Text = "Reset global terverifikasi dari metadata online."
-                    loadBadgePage()
-                    setStatus("Reset badge global selesai", COLORS.green)
-                else
-                    BadgeInfo.Text = "Reset global belum terverifikasi. Coba refresh metadata."
-                    setStatus("Reset badge global gagal diverifikasi", COLORS.red)
+                local keys = {}
+                for _, feature in ipairs(featureRows) do
+                    table.insert(keys, featureBadgeKey(feature.id))
                 end
+                if #keys == 0 then
+                    BadgeInfo.Text = "Tidak ada Feature ID dari Loader main."
+                    return
+                end
+                local sentKeys, failed = {}, 0
+                BadgeInfo.Text = "Mengirim reset untuk " .. tostring(#keys) .. " badge..."
+                setStatus("Reset semua badge sedang diproses", COLORS.amber)
+                for _, key in ipairs(keys) do
+                    local sent = post({ Type = "FeatureUpdate", Key = key, Timestamp = "" })
+                    if sent then
+                        table.insert(sentKeys, key)
+                    else
+                        failed = failed + 1
+                    end
+                    task.wait(0.2)
+                end
+                local refreshed = refreshMetadata()
+                if not refreshed then
+                    BadgeInfo.Text = "Reset dikirim, tetapi metadata gagal dimuat untuk verifikasi."
+                    setStatus("Reset badge belum terverifikasi", COLORS.amber)
+                    return
+                end
+                local done = 0
+                for _, key in ipairs(sentKeys) do
+                    if tostring(metadata[key] or "") == "CLEARED" then
+                        done = done + 1
+                    else
+                        failed = failed + 1
+                    end
+                end
+                BadgeInfo.Text = tostring(done) .. " dari " .. tostring(#keys) .. " badge terverifikasi dihapus • " .. tostring(failed) .. " gagal."
+                setStatus(failed == 0 and "Semua badge fitur berhasil direset" or "Reset badge selesai dengan kegagalan", failed == 0 and COLORS.green or COLORS.amber)
+                loadBadgePage()
             end)
         end)
         local active = 0
@@ -1049,6 +1121,37 @@ return function()
     end).Position = UDim2.new(0,0,1,-66)
     button(RuntimePage, "MUAT ULANG RIWAYAT", COLORS.green, 28, loadRuntimeHistory).Position = UDim2.new(0,0,1,-33)
 
+    -- Resize grip: scales the full window and persists the user's preference.
+    local ResizeHandle = create("TextButton", {
+        Name = "ResizeHandle",
+        Size = UDim2.new(0, 20, 0, 20),
+        Position = UDim2.new(1, -22, 1, -22),
+        BackgroundColor3 = COLORS.green,
+        BorderSizePixel = 0,
+        Font = Enum.Font.GothamBold,
+        Text = "↘",
+        TextColor3 = COLORS.text,
+        TextSize = 12,
+        ZIndex = 10
+    }, Frame)
+    create("UICorner", { CornerRadius = UDim.new(0, 4) }, ResizeHandle)
+
+    local resizing, resizeStart, resizeInitialScale
+    ResizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = true
+            resizeStart = input.Position
+            resizeInitialScale = frameScale.Scale
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    resizing = false
+                    clampFramePosition()
+                    saveUISettings()
+                end
+            end)
+        end
+    end)
+
     -- Drag window, mobile-safe and independent of the page content.
     local dragging, dragStart, startPos
     Header.InputBegan:Connect(function(input)
@@ -1057,15 +1160,29 @@ return function()
             dragStart = input.Position
             startPos = Frame.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    clampFramePosition()
+                    saveUISettings()
+                end
             end)
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+    local inputChangedConnection = UserInputService.InputChanged:Connect(function(input)
+        if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - resizeStart
+            local scaleDelta = ((delta.X / 360) + (delta.Y / 440)) * 0.5
+            frameScale.Scale = math.clamp(resizeInitialScale + scaleDelta, minUIScale, getMaxUIScale())
+            clampFramePosition()
+        elseif dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
             Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            clampFramePosition()
         end
+    end)
+    ScreenGui.Destroying:Connect(function()
+        if inputChangedConnection then inputChangedConnection:Disconnect() end
+        pcall(saveUISettings)
     end)
 
     local minimized = false
@@ -1073,7 +1190,10 @@ return function()
         minimized = not minimized
         Body.Visible = not minimized
         Frame.Size = minimized and UDim2.new(0,360,0,43) or UDim2.new(0,360,0,440)
+        ResizeHandle.Visible = not minimized
         Minimize.Text = minimized and "+" or "—"
+        clampFramePosition()
+        saveUISettings()
     end)
     Close.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
