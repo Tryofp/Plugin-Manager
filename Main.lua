@@ -17,6 +17,12 @@ local ok, result = pcall(function()
     local TryoUI = fetchModule(LIBRARY_URL, "TryoUI/Library.lua")
     assert(type(TryoUI) == "table" and type(TryoUI.new) == "function", "Invalid Tryo UI Library")
 
+    local FeatureManager = fetchModule(BASE_URL .. "Runtime/FeatureManager.lua", "FeatureManager.lua")
+    assert(type(FeatureManager) == "table" and type(FeatureManager.new) == "function", "Invalid FeatureManager")
+    local toolFeatures = fetchModule(BASE_URL .. "Features/Tools.lua", "Features/Tools.lua")
+    assert(type(toolFeatures) == "table", "Invalid standalone Tools module")
+    local featureManager = FeatureManager.new()
+
     local window = TryoUI.new({
         Title = "Tryo Plugin Manager",
         Subtitle = "Standalone • beta2",
@@ -45,14 +51,24 @@ local ok, result = pcall(function()
     visualTab:CreateButton({ Name = "Visual features will be migrated here" })
 
     local toolsTab = window:CreateTab("Tools", "⚒")
-    toolsTab:CreateSection("TOOLS")
-    toolsTab:CreateToggle({
-        Name = "Example toggle",
-        Default = false,
-        Callback = function(enabled)
-            print("[Tryo Plugin Manager] Example toggle:", enabled)
+    toolsTab:CreateSection("STANDALONE TOOLS")
+    local toolOrder = {"AntiAFK", "Fullbright", "InfiniteJump", "Noclip"}
+    for _, featureId in ipairs(toolOrder) do
+        local definition = toolFeatures[featureId]
+        if definition then
+            featureManager:Register(featureId, definition)
+            toolsTab:CreateToggle({
+                Name = definition.Name or featureId,
+                Default = false,
+                Callback = function(enabled)
+                    local ok, err = featureManager:SetEnabled(featureId, enabled)
+                    if not ok then
+                        warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
+                    end
+                end
+            })
         end
-    })
+    end
 
     local settingsTab = window:CreateTab("Settings", "⚙")
     settingsTab:CreateSection("APPEARANCE")
@@ -63,6 +79,12 @@ local ok, result = pcall(function()
         Name = "Close Plugin Manager",
         Callback = function() window:Destroy() end
     })
+
+    if window.Gui then
+        window.Gui.Destroying:Connect(function()
+            featureManager:Destroy()
+        end)
+    end
 
     return window
 end)
