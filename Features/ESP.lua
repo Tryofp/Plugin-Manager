@@ -20,18 +20,19 @@ local function rootOf(model)
     return root and root:IsA("BasePart") and root or nil
 end
 
-local function makeVisual(model,tag,color,label)
+local function makeVisual(model,tag,color,label,depthMode)
     if not model or not model.Parent then return end
     local highlight=model:FindFirstChild(tag)
     if not highlight then
         highlight=Instance.new("Highlight")
         highlight.Name=tag
-        highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.DepthMode=depthMode or Enum.HighlightDepthMode.AlwaysOnTop
         highlight.FillTransparency=0.72
         highlight.OutlineTransparency=0.08
         highlight.Parent=model
     end
     highlight.Adornee=model
+    highlight.DepthMode=depthMode or Enum.HighlightDepthMode.AlwaysOnTop
     highlight.FillColor=color
     highlight.OutlineColor=color
 
@@ -134,6 +135,53 @@ Features.PlayerESP={
 local enemyRunning=false
 local enemyConnection
 local enemyModels={}
+local confirmedEnemies={}
+local damageConnection
+local characterConnection
+
+local NPC_COLOR=Color3.fromRGB(255,170,0)
+local ENEMY_COLOR=Color3.fromRGB(255,0,0)
+local DAMAGE_SEARCH_RADIUS=100
+
+local function findNearestEnemy(origin,radius)
+    if not origin then return nil end
+    local nearest,nearestDistanceSquared=nil,radius*radius
+    for model in pairs(enemyModels) do
+        if model and model.Parent and isEnemyCandidate(model) then
+            local root=rootOf(model)
+            if root then
+                local offset=root.Position-origin
+                local distanceSquared=offset:Dot(offset)
+                if distanceSquared<=nearestDistanceSquared then
+                    nearest=model
+                    nearestDistanceSquared=distanceSquared
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function confirmNearestEnemy()
+    local localRoot=rootOf(LocalPlayer.Character)
+    if not localRoot then return end
+    local enemy=findNearestEnemy(localRoot.Position,DAMAGE_SEARCH_RADIUS)
+    if enemy then confirmedEnemies[enemy]=true end
+end
+
+local function watchLocalCharacter(character)
+    if damageConnection then damageConnection:Disconnect(); damageConnection=nil end
+    task.spawn(function()
+        local humanoid=character and character:WaitForChild("Humanoid",5)
+        if not humanoid or not enemyRunning then return end
+        local previousHealth=humanoid.Health
+        damageConnection=humanoid.HealthChanged:Connect(function(newHealth)
+            if not enemyRunning then return end
+            if newHealth<previousHealth then confirmNearestEnemy() end
+            previousHealth=newHealth
+        end)
+    end)
+end
 local enemyDescendantConnection
 
 local function registerEnemyModel(model)
@@ -168,7 +216,10 @@ local function scanEnemies()
     for i=1,math.min(#candidates,12) do
         local model=candidates[i].model
         active[model]=true
-        makeVisual(model,ENEMY_TAG,Color3.fromRGB(255,75,75),model.Name)
+        local confirmed=confirmedEnemies[model]==true
+        local color=confirmed and ENEMY_COLOR or NPC_COLOR
+        local depthMode=confirmed and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+        makeVisual(model,ENEMY_TAG,color,(confirmed and "HOSTILE | " or "NPC | ")..model.Name,depthMode)
     end
     for model in pairs(enemyModels) do
         if not active[model] then removeVisual(model,ENEMY_TAG) end
@@ -180,6 +231,10 @@ Features.EnemyESP={
     Start=function()
         if enemyRunning then return true end
         enemyRunning=true
+        if LocalPlayer.Character then watchLocalCharacter(LocalPlayer.Character) end
+        characterConnection=LocalPlayer.CharacterAdded:Connect(function(character)
+            if enemyRunning then watchLocalCharacter(character) end
+        end)
         for _,object in ipairs(Workspace:GetDescendants()) do
             if object:IsA("Model") and isEnemyCandidate(object) then
                 enemyModels[object]=true
@@ -202,10 +257,13 @@ Features.EnemyESP={
     end,
     Stop=function()
         enemyRunning=false
+        if damageConnection then damageConnection:Disconnect(); damageConnection=nil end
+        if characterConnection then characterConnection:Disconnect(); characterConnection=nil end
         if enemyConnection then enemyConnection:Disconnect(); enemyConnection=nil end
         if enemyDescendantConnection then enemyDescendantConnection:Disconnect(); enemyDescendantConnection=nil end
         for model in pairs(enemyModels) do removeVisual(model,ENEMY_TAG) end
         table.clear(enemyModels)
+        table.clear(confirmedEnemies)
     end
 }
 return Features
