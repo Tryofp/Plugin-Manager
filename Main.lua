@@ -34,6 +34,8 @@ local ok, result = pcall(function()
     assert(type(codeFinder) == "table" and type(codeFinder.Start) == "function", "Invalid Code Finder module")
     local instantPrompt = fetchModule(BASE_URL .. "Features/InstantPrompt.lua", "Features/InstantPrompt.lua")
     assert(type(instantPrompt) == "table" and type(instantPrompt.Start) == "function", "Invalid Instant Prompt module")
+    local lastServer = fetchModule(BASE_URL .. "Features/LastServer.lua", "Features/LastServer.lua")
+    assert(type(lastServer) == "table" and type(lastServer.Start) == "function", "Invalid Last Server module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -117,6 +119,12 @@ local ok, result = pcall(function()
     end
     toolsTab:CreateSection("INTERACTION")
     addFeatureToggle(toolsTab, "InstantPrompt", instantPrompt)
+    toolsTab:CreateSection("SERVER SESSION")
+    featureManager:Register("LastServer", lastServer)
+    local lastServerStarted, lastServerError = featureManager:SetEnabled("LastServer", true)
+    if not lastServerStarted then warn("[Tryo Plugin Manager] LastServer: " .. tostring(lastServerError)) end
+    toolsTab:CreateButton({ Name = "Save Current Server", Callback = function() lastServer.SaveCurrent() end })
+    toolsTab:CreateButton({ Name = "Rejoin Saved Server", Callback = function() lastServer.RejoinSaved() end })
     toolsTab:CreateSection("PUZZLE TOOLS")
     addFeatureToggle(toolsTab, "CodeFinder", codeFinder)
 
