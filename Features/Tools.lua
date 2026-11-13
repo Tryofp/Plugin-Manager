@@ -117,4 +117,63 @@ Features.Noclip={
         notify("Noclip","Noclip dinonaktifkan.")
     end
 }
+
+local walkSpeedConnection
+local walkSpeedCharacterConnection
+local walkSpeedOriginals = {}
+local walkSpeedContext
+local function restoreWalkSpeeds()
+    if walkSpeedConnection then walkSpeedConnection:Disconnect(); walkSpeedConnection=nil end
+    if walkSpeedCharacterConnection then walkSpeedCharacterConnection:Disconnect(); walkSpeedCharacterConnection=nil end
+    for humanoid, speed in pairs(walkSpeedOriginals) do
+        if humanoid and humanoid.Parent then
+            pcall(function() humanoid.WalkSpeed = speed end)
+        end
+    end
+    table.clear(walkSpeedOriginals)
+    walkSpeedContext = nil
+end
+
+Features.WalkSpeed = {
+    Name = "WalkSpeed",
+    Description = "Atur kecepatan jalan lokal; nilai awal dipulihkan saat dimatikan.",
+    Start = function(context)
+        if walkSpeedConnection then return true end
+        walkSpeedContext = context
+        context.WalkSpeedTarget = math.clamp(tonumber(context.WalkSpeedTarget) or 32, 16, 100)
+
+        local function applyToCharacter(character)
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if not humanoid then return end
+            if walkSpeedOriginals[humanoid] == nil then
+                walkSpeedOriginals[humanoid] = humanoid.WalkSpeed
+            end
+            humanoid.WalkSpeed = context.WalkSpeedTarget
+        end
+
+        applyToCharacter(LocalPlayer.Character)
+        walkSpeedCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
+            task.wait(0.25)
+            applyToCharacter(character)
+        end)
+        walkSpeedConnection = RunService.Heartbeat:Connect(function()
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                if walkSpeedOriginals[humanoid] == nil then
+                    walkSpeedOriginals[humanoid] = humanoid.WalkSpeed
+                end
+                local target = math.clamp(tonumber(context.WalkSpeedTarget) or 32, 16, 100)
+                if humanoid.WalkSpeed ~= target then humanoid.WalkSpeed = target end
+            end
+        end)
+        notify("WalkSpeed", "Aktif: " .. tostring(context.WalkSpeedTarget))
+        return true
+    end,
+    Stop = function()
+        restoreWalkSpeeds()
+        notify("WalkSpeed", "Kecepatan karakter dipulihkan.")
+    end
+}
+
 return Features
