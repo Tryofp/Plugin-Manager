@@ -23,6 +23,8 @@ local ok, result = pcall(function()
     assert(type(toolFeatures) == "table", "Invalid standalone Tools module")
     local espFeatures = fetchModule(BASE_URL .. "Features/ESP.lua", "Features/ESP.lua")
     assert(type(espFeatures) == "table", "Invalid standalone ESP module")
+    local teleportFeatures = fetchModule(BASE_URL .. "Features/Teleport.lua", "Features/Teleport.lua")
+    assert(type(teleportFeatures) == "table", "Invalid standalone Teleport module")
     local featureManager = FeatureManager.new()
 
     local window = TryoUI.new({
@@ -49,6 +51,21 @@ local ok, result = pcall(function()
                 end
             })
         end
+    end
+    mainTab:CreateSection("TELEPORT")
+    local teleportDefinition = teleportFeatures.PlayerTeleport
+    if teleportDefinition then
+        featureManager:Register("PlayerTeleport", teleportDefinition)
+        mainTab:CreateToggle({
+            Name = teleportDefinition.Name or "Teleport to Player",
+            Default = false,
+            Callback = function(enabled)
+                local ok, err = featureManager:SetEnabled("PlayerTeleport", enabled)
+                if not ok then
+                    warn("[Tryo Plugin Manager] PlayerTeleport: " .. tostring(err))
+                end
+            end
+        })
     end
     mainTab:CreateSection("STATUS")
     mainTab:CreateButton({
