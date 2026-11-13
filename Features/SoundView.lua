@@ -166,27 +166,18 @@ local function buildSpectateGui()
 
     local panel = Instance.new("Frame")
     panel.Name = "Panel"
-    panel.Size = UDim2.fromOffset(310, 138)
+    -- Minimal HUD strip, not a floating window.
+    panel.Size = UDim2.fromOffset(330, 68)
     panel.AnchorPoint = Vector2.new(0.5, 1)
-    panel.Position = UDim2.new(0.5, 0, 1, -92)
-    panel.BackgroundColor3 = Color3.fromRGB(24, 31, 47)
-    panel.BackgroundTransparency = 0.16
+    panel.Position = UDim2.new(0.5, 0, 1, -24)
+    panel.BackgroundTransparency = 1
     panel.BorderSizePixel = 0
     panel.Parent = gui
-    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
-    local outline = Instance.new("UIStroke")
-    outline.Color = Color3.fromRGB(100, 155, 190)
-    outline.Transparency = 0.45
-    outline.Parent = panel
-    local gradient = Instance.new("UIGradient")
-    gradient.Color = ColorSequence.new(Color3.fromRGB(35, 85, 110), Color3.fromRGB(75, 48, 105))
-    gradient.Rotation = 20
-    gradient.Parent = panel
 
     local target = Instance.new("TextLabel")
     target.Name = "TargetName"
-    target.Size = UDim2.new(1, -20, 0, 26)
-    target.Position = UDim2.fromOffset(10, 7)
+    target.Size = UDim2.new(1, -8, 0, 24)
+    target.Position = UDim2.fromOffset(4, 0)
     target.BackgroundTransparency = 1
     target.Font = Enum.Font.GothamBold
     target.Text = "Pilih player..."
@@ -195,23 +186,17 @@ local function buildSpectateGui()
     target.TextTruncate = Enum.TextTruncate.AtEnd
     target.Parent = panel
 
-    makeSpectateButton(panel, "‹", UDim2.fromOffset(10, 39), UDim2.fromOffset(38, 27), Color3.fromRGB(42, 67, 92), function()
+    makeSpectateButton(panel, "‹", UDim2.fromOffset(0, 30), UDim2.fromOffset(34, 27), Color3.fromRGB(42, 67, 92), function()
         cycleSpectate(-1)
     end)
-    makeSpectateButton(panel, "PLAYER LIST", UDim2.fromOffset(53, 39), UDim2.fromOffset(104, 27), Color3.fromRGB(39, 94, 87), function()
-        local list = panel:FindFirstChild("PlayerList")
+    makeSpectateButton(panel, "PLAYERS", UDim2.fromOffset(38, 30), UDim2.fromOffset(88, 27), Color3.fromRGB(39, 94, 87), function()
+        local list = gui:FindFirstChild("PlayerList")
         if list then list.Visible = not list.Visible end
     end)
-    makeSpectateButton(panel, "›", UDim2.fromOffset(164, 39), UDim2.fromOffset(38, 27), Color3.fromRGB(42, 67, 92), function()
+    makeSpectateButton(panel, "›", UDim2.fromOffset(130, 30), UDim2.fromOffset(34, 27), Color3.fromRGB(42, 67, 92), function()
         cycleSpectate(1)
     end)
-    makeSpectateButton(panel, "EXIT", UDim2.new(1, -94, 0, 39), UDim2.fromOffset(84, 27), Color3.fromRGB(115, 48, 58), function()
-        if spectate.Enabled then
-            local managerStop = spectate.StopCallback
-            if managerStop then managerStop() end
-        end
-    end)
-    makeSpectateButton(panel, "TELEPORT TO TARGET", UDim2.fromOffset(10, 74), UDim2.new(1, -20, 0, 27), Color3.fromRGB(106, 83, 42), function()
+    makeSpectateButton(panel, "TELEPORT", UDim2.fromOffset(168, 30), UDim2.fromOffset(105, 27), Color3.fromRGB(106, 83, 42), function()
         local target = spectate.Target
         local targetRoot = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
         local character = LocalPlayer.Character
@@ -223,18 +208,22 @@ local function buildSpectateGui()
             notify("Spectate Player", "Target atau karakter belum siap.")
         end
     end)
+    makeSpectateButton(panel, "EXIT", UDim2.fromOffset(277, 30), UDim2.fromOffset(53, 27), Color3.fromRGB(115, 48, 58), function()
+        if spectate.Enabled and spectate.StopCallback then spectate.StopCallback() end
+    end)
 
     local list = Instance.new("ScrollingFrame")
     list.Name = "PlayerList"
     list.Size = UDim2.fromOffset(170, 190)
-    list.Position = UDim2.new(0, 8, 0, -196)
+    list.AnchorPoint = Vector2.new(0, 1)
+    list.Position = UDim2.new(0, 12, 1, -76)
     list.BackgroundColor3 = Color3.fromRGB(25, 35, 48)
     list.BackgroundTransparency = 0.12
     list.BorderSizePixel = 0
     list.ScrollBarThickness = 3
     list.Visible = false
     list.CanvasSize = UDim2.new()
-    list.Parent = panel
+    list.Parent = gui
     Instance.new("UICorner", list).CornerRadius = UDim.new(0, 8)
     local layout = Instance.new("UIListLayout")
     layout.Padding = UDim.new(0, 4)
