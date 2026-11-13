@@ -96,7 +96,9 @@ local ok, result = pcall(function()
             if not success then warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err)) end
         end
     })
-    toolsTab:CreateSection("SOUND & VIEW")
+    toolsTab:CreateSection("INSPECTOR")
+    addFeatureToggle(toolsTab, "MobileInspector", toolFeatures.MobileInspector)
+        toolsTab:CreateSection("SOUND & VIEW")
     addFeatureToggle(toolsTab, "MuteMapSounds", soundViewFeatures.MuteMapSounds)
     addFeatureToggle(toolsTab, "Spectate", soundViewFeatures.Spectate)
 
