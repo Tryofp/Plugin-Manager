@@ -26,6 +26,8 @@ local ok, result = pcall(function()
     assert(type(teleportFeatures) == "table", "Invalid standalone Teleport module")
     local soundViewFeatures = fetchModule(BASE_URL .. "Features/SoundView.lua", "Features/SoundView.lua")
     assert(type(soundViewFeatures) == "table", "Invalid Sound & View module")
+    local adminDetector = fetchModule(BASE_URL .. "Features/AdminDetector.lua", "Features/AdminDetector.lua")
+    assert(type(adminDetector) == "table" and type(adminDetector.Start) == "function", "Invalid Admin Detector module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -101,6 +103,8 @@ local ok, result = pcall(function()
         toolsTab:CreateSection("SOUND & VIEW")
     addFeatureToggle(toolsTab, "MuteMapSounds", soundViewFeatures.MuteMapSounds)
     addFeatureToggle(toolsTab, "Spectate", soundViewFeatures.Spectate)
+    toolsTab:CreateSection("SECURITY")
+    addFeatureToggle(toolsTab, "AdminDetector", adminDetector)
 
     local settingsTab = window:CreateTab("Settings", "⚙")
     settingsTab:CreateSection("APPEARANCE")
