@@ -45,7 +45,7 @@ local ok, result = pcall(function()
     local aimAssist = fetchModule(BASE_URL .. "Features/AimAssist.lua", "AimAssist.lua")
     assert(type(aimAssist) == "table" and type(aimAssist.Start) == "function", "Invalid Aim Assist module")
     local interactable = fetchModule(BASE_URL .. "Features/Interactable.lua", "Interactable.lua")
-    assert(type(interactable) == "table" and type(interactable.Start) == "function", "Invalid Interactable Scanner module")
+    assert(type(interactable) == "table" and type(interactable.OpenMenu) == "function", "Invalid Interactable Hub module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -134,7 +134,13 @@ local ok, result = pcall(function()
     end
     toolsTab:CreateSection("INTERACTION")
     addFeatureToggle(toolsTab, "InstantPrompt", instantPrompt)
-    addFeatureToggle(toolsTab, "InteractableScanner", interactable)
+    toolsTab:CreateButton({
+        Name = "Interactable",
+        Callback = function()
+            local success, err = pcall(function() interactable:OpenMenu() end)
+            if not success then warn("[Tryo Plugin Manager] Interactable: " .. tostring(err)) end
+        end
+    })
     toolsTab:CreateSection("SERVER SESSION")
     featureManager:Register("LastServer", lastServer)
     local lastServerStarted, lastServerError = featureManager:SetEnabled("LastServer", true)
@@ -159,6 +165,7 @@ local ok, result = pcall(function()
     if window.Gui then
         window.Gui.Destroying:Connect(function()
             featureManager:Destroy()
+            interactable:Stop()
         end)
     end
 
