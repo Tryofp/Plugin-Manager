@@ -176,7 +176,6 @@ local function start()
             dragging=true
             dragStart=input.Position
             startPosition=panel.Position
-            UserInputService.InputBegan:Connect(function() end)
             input.Changed:Connect(function()
                 if input.UserInputState==Enum.UserInputState.End then
                     dragging=false
