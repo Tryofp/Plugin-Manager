@@ -177,273 +177,165 @@ Features.WalkSpeed = {
 }
 
 
-Features.MobileInspector = local controller
-local function make(className, props, parent)
+local InspectorPlayers = game:GetService("Players")
+local InspectorWorkspace = game:GetService("Workspace")
+local InspectorInput = game:GetService("UserInputService")
+local InspectorHttp = game:GetService("HttpService")
+local InspectorMarketplace = game:GetService("MarketplaceService")
+local InspectorPlayer = InspectorPlayers.LocalPlayer
+local inspectorController
+
+local function inspectorMake(className, props, parent)
     local object = Instance.new(className)
     for key, value in pairs(props or {}) do object[key] = value end
     object.Parent = parent
     return object
 end
-local function round(parent, radius)
-    make("UICorner", {CornerRadius = UDim.new(0, radius or 8)}, parent)
+local function inspectorCorner(parent, radius)
+    inspectorMake("UICorner", {CornerRadius = UDim.new(0, radius or 8)}, parent)
 end
-local function getPath(instance)
+local function inspectorPath(instance)
     local ok, path = pcall(function() return instance:GetFullName() end)
-    return ok and path or (instance and instance.Name or "Unknown")
+    return ok and path or instance.Name
 end
-local function safeClipboard(value)
-    if type(setclipboard) ~= "function" then return false end
-    return pcall(setclipboard, value)
-end
-local function getMapName()
-    local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
+local function inspectorMapName()
+    local ok, info = pcall(function() return InspectorMarketplace:GetProductInfo(game.PlaceId) end)
     local name = ok and info and info.Name or ("Place_" .. tostring(game.PlaceId))
     return tostring(name):gsub('[%z\1-\31<>:"/\\|?*]', "_")
 end
-local function serialize(instance)
-    local data = {
-        Name = instance.Name,
-        ClassName = instance.ClassName,
-        Path = getPath(instance),
-        Properties = {},
-        Children = {}
-    }
+local function inspectorSerialize(instance)
+    local data = {Name=instance.Name, ClassName=instance.ClassName, Path=inspectorPath(instance), Properties={}, Children={}}
     pcall(function()
         if instance:IsA("BasePart") then
-            data.Properties.Position = {instance.Position.X, instance.Position.Y, instance.Position.Z}
-            data.Properties.Size = {instance.Size.X, instance.Size.Y, instance.Size.Z}
-            data.Properties.Anchored = instance.Anchored
-            data.Properties.CanCollide = instance.CanCollide
+            data.Properties.Position={instance.Position.X,instance.Position.Y,instance.Position.Z}
+            data.Properties.Size={instance.Size.X,instance.Size.Y,instance.Size.Z}
+            data.Properties.Anchored=instance.Anchored
+            data.Properties.CanCollide=instance.CanCollide
         elseif instance:IsA("Model") then
-            data.Properties.PrimaryPart = instance.PrimaryPart and instance.PrimaryPart.Name or nil
+            data.Properties.PrimaryPart=instance.PrimaryPart and instance.PrimaryPart.Name or nil
         end
     end)
-    for _, child in ipairs(instance:GetChildren()) do
-        table.insert(data.Children, {Name = child.Name, ClassName = child.ClassName})
+    for _,child in ipairs(instance:GetChildren()) do
+        table.insert(data.Children,{Name=child.Name,ClassName=child.ClassName})
     end
     return data
 end
 
-function Feature.Start()
-    if controller then return true end
-    local self = {Connections = {}, Selected = nil, Active = true}
-    controller = self
+Features.MobileInspector = {
+    Name = "Mobile Click Inspector",
+    Description = "Tap objek di map untuk melihat nama, class, children, dan full path.",
+    Start = function()
+        if inspectorController then return true end
+        local self={Connections={},Selected=nil,Active=true}
+        inspectorController=self
+        local gui=inspectorMake("ScreenGui",{Name="TryoMobileInspector",ResetOnSpawn=false,DisplayOrder=999990,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
+        local parent
+        pcall(function() parent=game:GetService("CoreGui") end)
+        local parentOK=false
+        if parent then parentOK=pcall(function() gui.Parent=parent end) end
+        if not parentOK then gui.Parent=InspectorPlayer:WaitForChild("PlayerGui") end
+        self.Gui=gui
 
-    local gui = make("ScreenGui", {
-        Name = "TryoMobileInspector",
-        ResetOnSpawn = false,
-        DisplayOrder = 999990,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    })
-    local parent
-    pcall(function() parent = game:GetService("CoreGui") end)
-    if parent then
-        local ok = pcall(function() gui.Parent = parent end)
-        if not ok then parent = nil end
-    end
-    if not parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
-    self.Gui = gui
+        local frame=inspectorMake("Frame",{Name="Panel",Size=UDim2.fromOffset(286,210),Position=UDim2.new(1,-298,0.5,-105),BackgroundColor3=Color3.fromRGB(30,39,58),BackgroundTransparency=0.16,BorderSizePixel=0,Active=true},gui)
+        inspectorCorner(frame,10)
+        inspectorMake("UIStroke",{Color=Color3.fromRGB(110,145,190),Transparency=0.45},frame)
+        inspectorMake("UIGradient",{Color=ColorSequence.new(Color3.fromRGB(48,77,111),Color3.fromRGB(79,53,112)),Rotation=25},frame)
+        local top=inspectorMake("Frame",{Size=UDim2.new(1,0,0,34),BackgroundColor3=Color3.fromRGB(53,90,128),BackgroundTransparency=0.12,BorderSizePixel=0,Active=true},frame)
+        inspectorCorner(top,9)
+        inspectorMake("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(10,0),Size=UDim2.new(1,-74,1,0),Text="MOBILE INSPECTOR",TextColor3=Color3.fromRGB(245,248,255),Font=Enum.Font.GothamBold,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left},top)
+        local close=inspectorMake("TextButton",{Size=UDim2.fromOffset(26,25),Position=UDim2.new(1,-31,0,4),Text="×",TextSize=18,Font=Enum.Font.GothamBold,TextColor3=Color3.new(1,1,1),BackgroundColor3=Color3.fromRGB(160,70,90),BorderSizePixel=0},top)
+        inspectorCorner(close,6)
+        local status=inspectorMake("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(10,39),Size=UDim2.new(1,-20,0,18),Text="Tap objek di map untuk memilih",TextColor3=Color3.fromRGB(110,220,240),Font=Enum.Font.GothamMedium,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left},frame)
+        local info=inspectorMake("TextLabel",{BackgroundColor3=Color3.fromRGB(18,24,37),BackgroundTransparency=0.18,Position=UDim2.fromOffset(9,61),Size=UDim2.new(1,-18,0,65),Text="Belum ada objek dipilih.",TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.Gotham,TextSize=10,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top},frame)
+        inspectorCorner(info,6)
+        inspectorMake("UIPadding",{PaddingLeft=UDim.new(0,7),PaddingTop=UDim.new(0,6),PaddingRight=UDim.new(0,5)},info)
+        local path=inspectorMake("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(10,130),Size=UDim2.new(1,-20,0,32),Text="Path: -",TextColor3=Color3.fromRGB(125,240,190),Font=Enum.Font.Gotham,TextSize=9,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top},frame)
 
-    local frame = make("Frame", {
-        Name = "Panel",
-        Size = UDim2.fromOffset(286, 210),
-        Position = UDim2.new(1, -298, 0.5, -105),
-        BackgroundColor3 = Color3.fromRGB(30, 39, 58),
-        BackgroundTransparency = 0.16,
-        BorderSizePixel = 0,
-        Active = true
-    }, gui)
-    round(frame, 10)
-    make("UIStroke", {Color = Color3.fromRGB(110, 145, 190), Transparency = 0.45}, frame)
-    make("UIGradient", {
-        Color = ColorSequence.new(Color3.fromRGB(48, 77, 111), Color3.fromRGB(79, 53, 112)),
-        Rotation = 25
-    }, frame)
-
-    local top = make("Frame", {
-        Size = UDim2.new(1, 0, 0, 34),
-        BackgroundColor3 = Color3.fromRGB(53, 90, 128),
-        BackgroundTransparency = 0.12,
-        BorderSizePixel = 0,
-        Active = true
-    }, frame)
-    round(top, 9)
-    local title = make("TextLabel", {
-        BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(10, 0),
-        Size = UDim2.new(1, -74, 1, 0),
-        Text = "MOBILE INSPECTOR",
-        TextColor3 = Color3.fromRGB(245, 248, 255),
-        Font = Enum.Font.GothamBold,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left
-    }, top)
-    local close = make("TextButton", {
-        Size = UDim2.fromOffset(26, 25),
-        Position = UDim2.new(1, -31, 0, 4),
-        Text = "×",
-        TextSize = 18,
-        Font = Enum.Font.GothamBold,
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundColor3 = Color3.fromRGB(160, 70, 90),
-        BorderSizePixel = 0
-    }, top)
-    round(close, 6)
-
-    local status = make("TextLabel", {
-        BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(10, 39),
-        Size = UDim2.new(1, -20, 0, 18),
-        Text = "Tap objek di map untuk memilih",
-        TextColor3 = Color3.fromRGB(110, 220, 240),
-        Font = Enum.Font.GothamMedium,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left
-    }, frame)
-    local info = make("TextLabel", {
-        BackgroundColor3 = Color3.fromRGB(18, 24, 37),
-        BackgroundTransparency = 0.18,
-        Position = UDim2.fromOffset(9, 61),
-        Size = UDim2.new(1, -18, 0, 65),
-        Text = "Belum ada objek dipilih.",
-        TextColor3 = Color3.fromRGB(235, 239, 248),
-        Font = Enum.Font.Gotham,
-        TextSize = 10,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Top
-    }, frame)
-    round(info, 6)
-    make("UIPadding", {PaddingLeft = UDim.new(0, 7), PaddingTop = UDim.new(0, 6), PaddingRight = UDim.new(0, 5)}, info)
-    local path = make("TextLabel", {
-        BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(10, 130),
-        Size = UDim2.new(1, -20, 0, 32),
-        Text = "Path: -",
-        TextColor3 = Color3.fromRGB(125, 240, 190),
-        Font = Enum.Font.Gotham,
-        TextSize = 9,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Top
-    }, frame)
-
-    local function actionButton(text, x, width, callback)
-        local b = make("TextButton", {
-            Position = UDim2.fromOffset(x, 170),
-            Size = UDim2.fromOffset(width, 27),
-            Text = text,
-            TextColor3 = Color3.fromRGB(245, 248, 255),
-            Font = Enum.Font.GothamBold,
-            TextSize = 9,
-            BackgroundColor3 = Color3.fromRGB(75, 91, 132),
-            BackgroundTransparency = 0.08,
-            BorderSizePixel = 0
-        }, frame)
-        round(b, 6)
-        b.MouseButton1Click:Connect(callback)
-    end
-    actionButton("COPY PATH", 9, 82, function()
-        if not self.Selected then status.Text = "Pilih objek dahulu."; return end
-        if safeClipboard(getPath(self.Selected)) then status.Text = "Full path berhasil disalin."
-        else status.Text = "Clipboard tidak tersedia di executor ini." end
-    end)
-    actionButton("EXPORT JSON", 96, 92, function()
-        if not self.Selected then status.Text = "Pilih objek dahulu."; return end
-        if type(writefile) ~= "function" or type(isfolder) ~= "function" or type(makefolder) ~= "function" then
-            status.Text = "File API tidak tersedia di executor ini."; return
+        local function button(text,x,width,callback)
+            local b=inspectorMake("TextButton",{Position=UDim2.fromOffset(x,170),Size=UDim2.fromOffset(width,27),Text=text,TextColor3=Color3.fromRGB(245,248,255),Font=Enum.Font.GothamBold,TextSize=9,BackgroundColor3=Color3.fromRGB(75,91,132),BackgroundTransparency=0.08,BorderSizePixel=0},frame)
+            inspectorCorner(b,6)
+            b.MouseButton1Click:Connect(callback)
         end
-        local ok, result = pcall(function()
-            local folder = "MobileInspectorExports"
-            if not isfolder(folder) then makefolder(folder) end
-            local data = serialize(self.Selected)
-            local safePart = tostring(self.Selected.Name):gsub('[%z\1-\31<>:"/\\|?*]', "_")
-            local file = string.format("%s/%s_%s_%s.json", folder, getMapName(), safePart, os.date("%H%M%S"))
-            writefile(file, HttpService:JSONEncode(data))
-            return file
+        button("COPY PATH",9,82,function()
+            if not self.Selected then status.Text="Pilih objek dahulu."; return end
+            if type(setclipboard)=="function" and pcall(setclipboard,inspectorPath(self.Selected)) then status.Text="Full path berhasil disalin."
+            else status.Text="Clipboard tidak tersedia di executor ini." end
         end)
-        status.Text = ok and ("Saved: " .. result) or ("Export gagal: " .. tostring(result))
-    end)
-    actionButton("CLEAR", 194, 82, function()
-        self.Selected = nil
-        info.Text = "Belum ada objek dipilih."
-        path.Text = "Path: -"
-        status.Text = "Pilihan dibersihkan."
-    end)
-
-    local dragging, dragInput, dragStart, startPos
-    local function inputSink() return Enum.ContextActionResult.Sink end
-    local actionName = "TryoInspectorDrag_" .. tostring(LocalPlayer.UserId)
-    local function beginDrag(input)
-        dragging = true
-        dragStart = input.Position
-        startPos = frame.Position
-        dragInput = input
-        pcall(function()
-            game:GetService("ContextActionService"):BindActionAtPriority(actionName, inputSink, false, 3000,
-                Enum.UserInputType.MouseButton1, Enum.UserInputType.Touch)
+        button("EXPORT JSON",96,92,function()
+            if not self.Selected then status.Text="Pilih objek dahulu."; return end
+            if type(writefile)~="function" or type(isfolder)~="function" or type(makefolder)~="function" then status.Text="File API tidak tersedia."; return end
+            local ok,result=pcall(function()
+                local folder="MobileInspectorExports"
+                if not isfolder(folder) then makefolder(folder) end
+                local safePart=tostring(self.Selected.Name):gsub('[%z\1-\31<>:"/\\|?*]',"_")
+                local file=string.format("%s/%s_%s_%s.json",folder,inspectorMapName(),safePart,os.date("%H%M%S"))
+                writefile(file,InspectorHttp:JSONEncode(inspectorSerialize(self.Selected)))
+                return file
+            end)
+            status.Text=ok and ("Saved: "..result) or ("Export gagal: "..tostring(result))
         end)
+        button("CLEAR",194,82,function()
+            self.Selected=nil
+            info.Text="Belum ada objek dipilih."
+            path.Text="Path: -"
+            status.Text="Pilihan dibersihkan."
+        end)
+
+        local dragging,dragInput,dragStart,startPos=false,nil,nil,nil
+        local actionName="TryoInspectorDrag_"..tostring(InspectorPlayer.UserId)
+        local function sink() return Enum.ContextActionResult.Sink end
+        table.insert(self.Connections,top.InputBegan:Connect(function(input)
+            if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+                dragging=true; dragInput=input; dragStart=input.Position; startPos=frame.Position
+                pcall(function() game:GetService("ContextActionService"):BindActionAtPriority(actionName,sink,false,3000,Enum.UserInputType.MouseButton1,Enum.UserInputType.Touch) end)
+            end
+        end))
+        table.insert(self.Connections,InspectorInput.InputChanged:Connect(function(input)
+            if not dragging then return end
+            local matches=input==dragInput or (dragInput and dragInput.UserInputType==Enum.UserInputType.MouseButton1 and input.UserInputType==Enum.UserInputType.MouseMovement)
+            if matches then
+                local delta=input.Position-dragStart
+                frame.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+            end
+        end))
+        table.insert(self.Connections,InspectorInput.InputEnded:Connect(function(input)
+            if dragging and (input==dragInput or input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then
+                dragging=false; dragInput=nil
+                pcall(function() game:GetService("ContextActionService"):UnbindAction(actionName) end)
+            end
+        end))
+        table.insert(self.Connections,InspectorInput.TouchTapInWorld:Connect(function(position,processed)
+            if not self.Active or processed then return end
+            local camera=InspectorWorkspace.CurrentCamera
+            if not camera then return end
+            local ray=camera:ViewportPointToRay(position.X,position.Y)
+            local params=RaycastParams.new()
+            params.FilterType=Enum.RaycastFilterType.Exclude
+            if InspectorPlayer.Character then params.FilterDescendantsInstances={InspectorPlayer.Character} end
+            local result=InspectorWorkspace:Raycast(ray.Origin,ray.Direction*500,params)
+            if not result or not result.Instance then return end
+            local selected=result.Instance
+            self.Selected=selected
+            local children={}
+            for _,child in ipairs(selected:GetChildren()) do table.insert(children,child.Name.." ("..child.ClassName..")") end
+            info.Text=string.format("Name: %s\nClass: %s\nChildren: %s",selected.Name,selected.ClassName,#children>0 and table.concat(children,", ") or "None")
+            path.Text="Path: "..inspectorPath(selected)
+            status.Text="Objek terpilih. Siap copy atau export."
+        end))
+        close.MouseButton1Click:Connect(function()
+            if inspectorController then Features.MobileInspector.Stop() end
+        end)
+        return true
+    end,
+    Stop = function()
+        local self=inspectorController
+        if not self then return end
+        self.Active=false
+        for _,connection in ipairs(self.Connections) do pcall(function() connection:Disconnect() end) end
+        pcall(function() game:GetService("ContextActionService"):UnbindAction("TryoInspectorDrag_"..tostring(InspectorPlayer.UserId)) end)
+        if self.Gui then self.Gui:Destroy() end
+        inspectorController=nil
     end
-    table.insert(self.Connections, top.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            beginDrag(input)
-        end
-    end))
-    table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
-        local matches = input == dragInput or
-            (dragInput and dragInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement)
-        if matches then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end))
-    table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
-        if dragging and (input == dragInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-            dragging = false
-            dragInput = nil
-            pcall(function() game:GetService("ContextActionService"):UnbindAction(actionName) end)
-        end
-    end))
-
-    table.insert(self.Connections, UserInputService.TouchTapInWorld:Connect(function(position, processed)
-        if not self.Active or processed then return end
-        local camera = Workspace.CurrentCamera
-        if not camera then return end
-        local ray = camera:ViewportPointToRay(position.X, position.Y)
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        if LocalPlayer.Character then params.FilterDescendantsInstances = {LocalPlayer.Character} end
-        local result = Workspace:Raycast(ray.Origin, ray.Direction * 500, params)
-        if not result or not result.Instance then return end
-        local selected = result.Instance
-        self.Selected = selected
-        local children = {}
-        for _, child in ipairs(selected:GetChildren()) do
-            table.insert(children, child.Name .. " (" .. child.ClassName .. ")")
-        end
-        info.Text = string.format("Name: %s\nClass: %s\nChildren: %s", selected.Name, selected.ClassName,
-            #children > 0 and table.concat(children, ", ") or "None")
-        path.Text = "Path: " .. getPath(selected)
-        status.Text = "Objek terpilih. Siap copy atau export."
-    end))
-
-    close.MouseButton1Click:Connect(function()
-        if controller then Feature.Stop() end
-    end)
-    return true
-end
-
-function Feature.Stop()
-    local self = controller
-    if not self then return end
-    self.Active = false
-    for _, connection in ipairs(self.Connections) do pcall(function() connection:Disconnect() end) end
-    pcall(function() game:GetService("ContextActionService"):UnbindAction("TryoInspectorDrag_" .. tostring(LocalPlayer.UserId)) end)
-    if self.Gui then self.Gui:Destroy() end
-    controller = nil
-end
-
-return Feature
+}
 
 return Features
