@@ -166,7 +166,7 @@ local function buildSpectateGui()
 
     local panel = Instance.new("Frame")
     panel.Name = "Panel"
-    panel.Size = UDim2.fromOffset(310, 104)
+    panel.Size = UDim2.fromOffset(310, 138)
     panel.AnchorPoint = Vector2.new(0.5, 1)
     panel.Position = UDim2.new(0.5, 0, 1, -92)
     panel.BackgroundColor3 = Color3.fromRGB(24, 31, 47)
@@ -209,6 +209,18 @@ local function buildSpectateGui()
         if spectate.Enabled then
             local managerStop = spectate.StopCallback
             if managerStop then managerStop() end
+        end
+    end)
+    makeSpectateButton(panel, "TELEPORT TO TARGET", UDim2.fromOffset(10, 74), UDim2.new(1, -20, 0, 27), Color3.fromRGB(106, 83, 42), function()
+        local target = spectate.Target
+        local targetRoot = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        local character = LocalPlayer.Character
+        local localRoot = character and character:FindFirstChild("HumanoidRootPart")
+        if targetRoot and localRoot then
+            character:PivotTo(targetRoot.CFrame + Vector3.new(0, 3, 0))
+            notify("Spectate Player", "Dipindahkan ke dekat target.")
+        else
+            notify("Spectate Player", "Target atau karakter belum siap.")
         end
     end)
 
