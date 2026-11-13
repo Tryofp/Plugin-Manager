@@ -32,6 +32,8 @@ local ok, result = pcall(function()
     assert(type(antiDisturbFeatures) == "table", "Invalid Anti-Disturb Shield module")
     local codeFinder = fetchModule(BASE_URL .. "Features/CodeFinder.lua", "Features/CodeFinder.lua")
     assert(type(codeFinder) == "table" and type(codeFinder.Start) == "function", "Invalid Code Finder module")
+    local instantPrompt = fetchModule(BASE_URL .. "Features/InstantPrompt.lua", "Features/InstantPrompt.lua")
+    assert(type(instantPrompt) == "table" and type(instantPrompt.Start) == "function", "Invalid Instant Prompt module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -113,6 +115,8 @@ local ok, result = pcall(function()
     for _, featureId in ipairs({"AnchorNearby", "AntiWind", "AntiTrigger", "AntiShake"}) do
         addFeatureToggle(toolsTab, featureId, antiDisturbFeatures[featureId])
     end
+    toolsTab:CreateSection("INTERACTION")
+    addFeatureToggle(toolsTab, "InstantPrompt", instantPrompt)
     toolsTab:CreateSection("PUZZLE TOOLS")
     addFeatureToggle(toolsTab, "CodeFinder", codeFinder)
 
