@@ -21,6 +21,8 @@ local ok, result = pcall(function()
     assert(type(FeatureManager) == "table" and type(FeatureManager.new) == "function", "Invalid FeatureManager")
     local toolFeatures = fetchModule(BASE_URL .. "Features/Tools.lua", "Features/Tools.lua")
     assert(type(toolFeatures) == "table", "Invalid standalone Tools module")
+    local espFeatures = fetchModule(BASE_URL .. "Features/ESP.lua", "Features/ESP.lua")
+    assert(type(espFeatures) == "table", "Invalid standalone ESP module")
     local featureManager = FeatureManager.new()
 
     local window = TryoUI.new({
@@ -30,7 +32,25 @@ local ok, result = pcall(function()
     })
 
     local mainTab = window:CreateTab("Main", "⌂")
-    mainTab:CreateSection("WELCOME")
+    mainTab:CreateSection("PLAYER & ENEMY ESP")
+    local espOrder = {"PlayerESP", "EnemyESP"}
+    for _, featureId in ipairs(espOrder) do
+        local definition = espFeatures[featureId]
+        if definition then
+            featureManager:Register(featureId, definition)
+            mainTab:CreateToggle({
+                Name = definition.Name or featureId,
+                Default = false,
+                Callback = function(enabled)
+                    local ok, err = featureManager:SetEnabled(featureId, enabled)
+                    if not ok then
+                        warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
+                    end
+                end
+            })
+        end
+    end
+    mainTab:CreateSection("STATUS")
     mainTab:CreateButton({
         Name = "Tryo Plugin Manager is running",
         Callback = function()
