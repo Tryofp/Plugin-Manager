@@ -9,6 +9,7 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
+local HttpService = game:GetService("HttpService")
 
 local COLORS = {
     Background = Color3.fromRGB(20, 22, 29),
@@ -61,7 +62,18 @@ function TryoUI.new(config)
     local self = setmetatable({}, TryoUI)
     self.Title = config.Title or "Tryo Plugin Manager"
     self.Subtitle = config.Subtitle or "Standalone Script Hub"
-    self.Size = config.Size or UDim2.fromOffset(590, 370)
+    self.SettingsFile = "TryoPluginManager_Settings.json"
+    local savedSettings
+    if type(readfile) == "function" and type(isfile) == "function" then
+        pcall(function()
+            if isfile(self.SettingsFile) then
+                savedSettings = HttpService:JSONDecode(readfile(self.SettingsFile))
+            end
+        end)
+    end
+    local initialWidth = tonumber(savedSettings and savedSettings.Width) or (config.Size and config.Size.X.Offset) or 590
+    local initialHeight = tonumber(savedSettings and savedSettings.Height) or (config.Size and config.Size.Y.Offset) or 370
+    self.Size = UDim2.fromOffset(math.clamp(initialWidth, 480, 820), math.clamp(initialHeight, 300, 600))
     self.Tabs = {}
     self.ActiveTab = nil
     self.Destroyed = false
@@ -89,18 +101,32 @@ function TryoUI.new(config)
         Size = self.Size,
         Position = UDim2.new(0.5, -self.Size.X.Offset / 2, 0.5, -self.Size.Y.Offset / 2),
         BackgroundColor3 = COLORS.Background,
+        BackgroundTransparency = 0.16,
         BorderSizePixel = 0,
         ClipsDescendants = true
     }, self.Gui)
     corner(self.Window, 11)
-    stroke(self.Window, COLORS.Border)
+    stroke(self.Window, Color3.fromRGB(115, 125, 180), 0.28)
+    make("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 43, 65)),
+            ColorSequenceKeypoint.new(0.48, Color3.fromRGB(38, 31, 61)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(19, 39, 52))
+        }),
+        Rotation = 28
+    }, self.Window)
 
     local top = make("Frame", {
         Name = "TopBar",
         Size = UDim2.new(1, 0, 0, 43),
-        BackgroundColor3 = COLORS.Surface,
+        BackgroundColor3 = Color3.fromRGB(38, 43, 61),
+        BackgroundTransparency = 0.22,
         BorderSizePixel = 0
     }, self.Window)
+    make("UIGradient", {
+        Color = ColorSequence.new(Color3.fromRGB(52, 80, 112), Color3.fromRGB(72, 48, 105)),
+        Rotation = 0
+    }, top)
 
     local title = label(top, self.Title, 14, COLORS.Text, Enum.Font.GothamBold)
     title.Position = UDim2.fromOffset(14, 3)
@@ -142,9 +168,14 @@ function TryoUI.new(config)
     self.Sidebar = make("Frame", {
         Name = "Sidebar",
         Size = UDim2.new(0, 145, 1, 0),
-        BackgroundColor3 = COLORS.Sidebar,
+        BackgroundColor3 = Color3.fromRGB(24, 31, 47),
+        BackgroundTransparency = 0.20,
         BorderSizePixel = 0
     }, body)
+    make("UIGradient", {
+        Color = ColorSequence.new(Color3.fromRGB(30, 48, 69), Color3.fromRGB(35, 29, 55)),
+        Rotation = 90
+    }, self.Sidebar)
 
     self.Nav = make("ScrollingFrame", {
         Name = "Navigation",
@@ -167,7 +198,8 @@ function TryoUI.new(config)
         Name = "Profile",
         Position = UDim2.new(0, 8, 1, -59),
         Size = UDim2.new(1, -16, 0, 50),
-        BackgroundColor3 = COLORS.Surface,
+        BackgroundColor3 = Color3.fromRGB(45, 54, 75),
+        BackgroundTransparency = 0.24,
         BorderSizePixel = 0
     }, self.Sidebar)
     corner(profile, 8)
@@ -276,6 +308,26 @@ function TryoUI.new(config)
 
     self.ExpandedSize = self.Size
     self.Minimized = false
+
+    function self:SaveSettings()
+        if type(writefile) ~= "function" then return end
+        pcall(function()
+            writefile(self.SettingsFile, HttpService:JSONEncode({
+                Width = self.Size.X.Offset,
+                Height = self.Size.Y.Offset
+            }))
+        end)
+    end
+
+    function self:SetSize(width, height)
+        width = math.clamp(math.floor(tonumber(width) or self.Size.X.Offset), 480, 820)
+        height = math.clamp(math.floor(tonumber(height) or self.Size.Y.Offset), 300, 600)
+        self.Size = UDim2.fromOffset(width, height)
+        self.ExpandedSize = self.Size
+        if self.Window and self.Window.Parent then self.Window.Size = self.Size end
+        self:SaveSettings()
+        return width, height
+    end
 
     local function restoreWindow()
         self.Minimized = false
@@ -441,6 +493,69 @@ function TryoUI:CreateTab(name, icon)
         return button
     end
 
+    function tab:CreateSizeControl(options)
+        options = options or {}
+        local card = make("Frame", {
+            Name = "WindowSizeControl",
+            Size = UDim2.new(1, -4, 0, 102),
+            BackgroundColor3 = Color3.fromRGB(42, 49, 68),
+            BackgroundTransparency = 0.22,
+            BorderSizePixel = 0
+        }, self.Page)
+        corner(card, 8)
+        stroke(card, Color3.fromRGB(105, 125, 170), 0.65)
+
+        local heading = label(card, options.Name or "Window size", 12, COLORS.Text, Enum.Font.GothamBold)
+        heading.Position = UDim2.fromOffset(11, 6)
+        heading.Size = UDim2.new(1, -22, 0, 20)
+        local dimensions = label(card, "", 10, COLORS.Muted)
+        dimensions.Position = UDim2.fromOffset(11, 29)
+        dimensions.Size = UDim2.new(1, -22, 0, 17)
+
+        local function adjustButton(text, x, callback)
+            local button = make("TextButton", {
+                Text = text, TextSize = 13, Font = Enum.Font.GothamBold,
+                TextColor3 = COLORS.Text, BackgroundColor3 = Color3.fromRGB(75, 78, 112),
+                BackgroundTransparency = 0.12, BorderSizePixel = 0,
+                Size = UDim2.fromOffset(31, 25), Position = UDim2.fromOffset(x, 58),
+                AutoButtonColor = true
+            }, card)
+            corner(button, 6)
+            button.MouseButton1Click:Connect(callback)
+        end
+
+        local widthLabel = label(card, "W", 10, COLORS.Muted)
+        widthLabel.Position = UDim2.fromOffset(11, 59)
+        widthLabel.Size = UDim2.fromOffset(18, 24)
+        local heightLabel = label(card, "H", 10, COLORS.Muted)
+        heightLabel.Position = UDim2.fromOffset(151, 59)
+        heightLabel.Size = UDim2.fromOffset(18, 24)
+
+        local function updateSize(dw, dh)
+            local width, height = tab._window:SetSize(tab._window.Size.X.Offset + dw, tab._window.Size.Y.Offset + dh)
+            dimensions.Text = string.format("%d × %d px", width, height)
+        end
+        adjustButton("−", 31, function() updateSize(-20, 0) end)
+        adjustButton("+", 65, function() updateSize(20, 0) end)
+        adjustButton("−", 171, function() updateSize(0, -20) end)
+        adjustButton("+", 205, function() updateSize(0, 20) end)
+
+        local reset = make("TextButton", {
+            Text = "Reset", TextSize = 10, Font = Enum.Font.GothamMedium,
+            TextColor3 = COLORS.Text, BackgroundColor3 = COLORS.Accent,
+            BorderSizePixel = 0, Size = UDim2.fromOffset(54, 25),
+            Position = UDim2.new(1, -65, 0, 58), AutoButtonColor = true
+        }, card)
+        corner(reset, 6)
+        reset.MouseButton1Click:Connect(function()
+            local width, height = tab._window:SetSize(590, 370)
+            dimensions.Text = string.format("%d × %d px", width, height)
+        end)
+
+        dimensions.Text = string.format("%d × %d px", tab._window.Size.X.Offset, tab._window.Size.Y.Offset)
+        return card
+    end
+
     function tab:CreateToggle(options)
         options = options or {}
         local state = options.Default == true
@@ -454,6 +569,7 @@ function TryoUI:CreateTab(name, icon)
         return { Set = set, Get = function() return state end }
     end
 
+    tab._window = self
     table.insert(self.Tabs, tab)
     if #self.Tabs == 1 then activate() end
     return tab
