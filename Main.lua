@@ -30,6 +30,8 @@ local ok, result = pcall(function()
     assert(type(adminDetector) == "table" and type(adminDetector.Start) == "function", "Invalid Admin Detector module")
     local antiDisturbFeatures = fetchModule(BASE_URL .. "Features/AntiDisturb.lua", "Features/AntiDisturb.lua")
     assert(type(antiDisturbFeatures) == "table", "Invalid Anti-Disturb Shield module")
+    local codeFinder = fetchModule(BASE_URL .. "Features/CodeFinder.lua", "Features/CodeFinder.lua")
+    assert(type(codeFinder) == "table" and type(codeFinder.Start) == "function", "Invalid Code Finder module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -111,6 +113,8 @@ local ok, result = pcall(function()
     for _, featureId in ipairs({"AnchorNearby", "AntiWind", "AntiTrigger", "AntiShake"}) do
         addFeatureToggle(toolsTab, featureId, antiDisturbFeatures[featureId])
     end
+    toolsTab:CreateSection("PUZZLE TOOLS")
+    addFeatureToggle(toolsTab, "CodeFinder", codeFinder)
 
     local settingsTab = window:CreateTab("Settings", "⚙")
     settingsTab:CreateSection("APPEARANCE")
