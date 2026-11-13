@@ -65,12 +65,15 @@ end
 local function getBasePart(object)
     if not object then return nil end
     if object:IsA("BasePart") then return object end
-    local model = object:FindFirstAncestorWhichIsA("Model")
-    if model then
-        return model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+    local cursor = object
+    for _ = 1, 8 do
+        if not cursor or cursor == Workspace then break end
+        if cursor:IsA("BasePart") then return cursor end
+        if cursor:IsA("Model") and cursor.PrimaryPart then return cursor.PrimaryPart end
+        cursor = cursor.Parent
     end
-    local parent = object.Parent
-    if parent and parent:IsA("BasePart") then return parent end
+    local model = object:FindFirstAncestorWhichIsA("Model")
+    if model then return model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true) end
     return nil
 end
 
@@ -308,6 +311,8 @@ local function buildGui()
     close.Parent = frame
     Instance.new("UICorner", close).CornerRadius = UDim.new(0, 5)
     close.MouseButton1Click:Connect(function()
+        if dragConnection then dragConnection:Disconnect(); dragConnection = nil end
+        ContextActionService:UnbindAction(dragActionName)
         if gui then gui:Destroy(); gui = nil; listFrame = nil; titleLabel = nil; countLabel = nil end
     end)
 
@@ -471,6 +476,12 @@ function Feature:Start()
     end)
     connections.removing = Workspace.DescendantRemoving:Connect(function(object)
         removeRecord(object)
+        for key, data in pairs(byKey) do
+            local part = data.Part
+            if part == object or (part and part:IsDescendantOf(object)) then
+                removeRecord(key)
+            end
+        end
     end)
     connections.playerRemoving = Players.PlayerRemoving:Connect(function(player)
         if player.Character then
