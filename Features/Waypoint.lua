@@ -494,7 +494,7 @@ local function buildUI()
             reopenDragging=true
             reopenDragInput=input
             reopenDragStart=input.Position
-            reopenButtonStart=reopenButton.Position
+            reopenButtonStart=reopenButton.AbsolutePosition
             ContextActionService:BindActionAtPriority(reopenDragAction,function() return Enum.ContextActionResult.Sink end,false,3001,Enum.UserInputType.MouseButton1,Enum.UserInputType.Touch)
         end
     end)
@@ -506,8 +506,8 @@ local function buildUI()
             local camera=Workspace.CurrentCamera
             local viewport=camera and camera.ViewportSize or Vector2.new(1920,1080)
             local size=reopenButton.AbsoluteSize
-            local x=math.clamp(reopenButtonStart.X.Offset+delta.X,0,math.max(0,viewport.X-size.X))
-            local y=math.clamp(reopenButtonStart.Y.Offset+delta.Y,0,math.max(0,viewport.Y-size.Y))
+            local x=math.clamp(reopenButtonStart.X+delta.X,0,math.max(0,viewport.X-size.X))
+            local y=math.clamp(reopenButtonStart.Y+delta.Y,0,math.max(0,viewport.Y-size.Y))
             reopenButton.Position=UDim2.fromOffset(x,y)
         end
     end)
