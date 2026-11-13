@@ -145,11 +145,13 @@ local ok, result = pcall(function()
         {id = "LOOT", name = "Loot"}
     }
     for _, item in ipairs(interactableFeatures) do
+        local featureId = item.id
+        local featureName = item.name
         toolsTab:CreateToggle({
-            Name = item.name,
+            Name = featureName,
             Default = false,
             Callback = function(enabled)
-                local success, err = interactable:SetFeatureEnabled(item.id, enabled)
+                local success, err = interactable:SetFeatureEnabled(featureId, enabled)
                 if not success then
                     warn("[Tryo Plugin Manager] " .. item.id .. ": " .. tostring(err))
                 end
