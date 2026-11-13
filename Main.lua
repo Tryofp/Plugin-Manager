@@ -36,6 +36,8 @@ local ok, result = pcall(function()
     assert(type(instantPrompt) == "table" and type(instantPrompt.Start) == "function", "Invalid Instant Prompt module")
     local lastServer = fetchModule(BASE_URL .. "Features/LastServer.lua", "LastServer.lua")
     assert(type(lastServer) == "table" and type(lastServer.Start) == "function", "Invalid Last Server module")
+    local smartRejoin = fetchModule(BASE_URL .. "Features/SmartRejoin.lua", "SmartRejoin.lua")
+    assert(type(smartRejoin) == "table" and type(smartRejoin.Start) == "function", "Invalid Smart Rejoin module")
     local waypoint = fetchModule(BASE_URL .. "Features/Waypoint.lua", "Waypoint.lua")
     assert(type(waypoint) == "table" and type(waypoint.Start) == "function", "Invalid Waypoint Manager module")
 
@@ -127,6 +129,8 @@ local ok, result = pcall(function()
     if not lastServerStarted then warn("[Tryo Plugin Manager] LastServer: " .. tostring(lastServerError)) end
     toolsTab:CreateButton({ Name = "Save Current Server", Callback = function() lastServer.SaveCurrent() end })
     toolsTab:CreateButton({ Name = "Rejoin Saved Server", Callback = function() lastServer.RejoinSaved() end })
+    toolsTab:CreateSection("SMART REJOIN")
+    addFeatureToggle(toolsTab, "SmartRejoin", smartRejoin)
     toolsTab:CreateSection("PUZZLE TOOLS")
     addFeatureToggle(toolsTab, "CodeFinder", codeFinder)
 
