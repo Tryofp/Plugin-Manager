@@ -249,8 +249,8 @@ function TryoUI.new(config)
     -- Floating circular restore button; the final Tryo logo can replace this glyph later.
     self.FloatingButton = make("TextButton", {
         Name = "TryoFloatingToggle",
-        AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -22, 1, -110),
+        AnchorPoint = Vector2.new(0, 0),
+        Position = UDim2.new(1, -76, 1, -164),
         Size = UDim2.fromOffset(54, 54),
         BackgroundColor3 = COLORS.Surface,
         BackgroundTransparency = 0.16,
@@ -291,7 +291,72 @@ function TryoUI.new(config)
         self.FloatingButton.Visible = true
     end)
 
-    self.FloatingButton.MouseButton1Click:Connect(restoreWindow)
+    -- Let users freely reposition the bubble with mouse or touch.
+    -- A short movement threshold distinguishes dragging from a normal tap.
+    local bubbleDragging = false
+    local bubbleMoved = false
+    local bubbleStartPointer
+    local bubbleStartPosition
+    local bubblePointerInput
+    local bubbleActionName = "TryoBubbleDrag_" .. tostring(player and player.UserId or 0)
+    self.FloatingButton.Active = true
+
+    self.FloatingButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            bubbleDragging = true
+            bubbleMoved = false
+            bubbleStartPointer = input.Position
+            bubbleStartPosition = self.FloatingButton.AbsolutePosition
+            bubblePointerInput = input
+
+            ContextActionService:BindActionAtPriority(
+                bubbleActionName,
+                function() return Enum.ContextActionResult.Sink end,
+                false,
+                Enum.ContextActionPriority.High.Value,
+                Enum.UserInputType.MouseButton1,
+                Enum.UserInputType.Touch
+            )
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    bubbleDragging = false
+                    ContextActionService:UnbindAction(bubbleActionName)
+                    if bubbleMoved then
+                        self.BubbleWasDragged = true
+                        task.delay(0.18, function()
+                            self.BubbleWasDragged = false
+                        end)
+                    end
+                end
+            end)
+        end
+    end)
+
+    self.BubbleDragConnection = UserInputService.InputChanged:Connect(function(input)
+        if not bubbleDragging then return end
+        local isMatchingTouch = input == bubblePointerInput
+        local isMouseMove = bubblePointerInput
+            and bubblePointerInput.UserInputType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseMovement
+        if not isMatchingTouch and not isMouseMove then return end
+
+        local delta = input.Position - bubbleStartPointer
+        if delta.Magnitude > 6 then bubbleMoved = true end
+        if not bubbleMoved then return end
+
+        local camera = workspace.CurrentCamera
+        local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+        local size = self.FloatingButton.AbsoluteSize
+        local x = math.clamp(bubbleStartPosition.X + delta.X, 0, math.max(0, viewport.X - size.X))
+        local y = math.clamp(bubbleStartPosition.Y + delta.Y, 0, math.max(0, viewport.Y - size.Y))
+        self.FloatingButton.Position = UDim2.fromOffset(x, y)
+    end)
+
+    self.FloatingButton.MouseButton1Click:Connect(function()
+        if self.BubbleWasDragged then return end
+        restoreWindow()
+    end)
 
     return self
 end
@@ -398,7 +463,9 @@ function TryoUI:Destroy()
     if self.Destroyed then return end
     self.Destroyed = true
     if self.DragConnection then self.DragConnection:Disconnect() end
+    if self.BubbleDragConnection then self.BubbleDragConnection:Disconnect() end
     ContextActionService:UnbindAction("TryoWindowDrag_" .. tostring(Players.LocalPlayer and Players.LocalPlayer.UserId or 0))
+    ContextActionService:UnbindAction("TryoBubbleDrag_" .. tostring(Players.LocalPlayer and Players.LocalPlayer.UserId or 0))
     if self.Gui then self.Gui:Destroy() end
 end
 
