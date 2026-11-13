@@ -83,7 +83,7 @@ local ok, result = pcall(function()
     for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip", "WalkSpeed"}) do
         addFeatureToggle(toolsTab, featureId, toolFeatures[featureId])
     end
-    featureManager.Context.WalkSpeedTarget = 32
+    featureManager.Context.WalkSpeedTarget = 16
     toolsTab:CreateSection("WALKSPEED CONTROL")
     toolsTab:CreateButton({
         Name = "Speed - 5",
@@ -100,9 +100,9 @@ local ok, result = pcall(function()
         end
     })
     toolsTab:CreateButton({
-        Name = "Reset speed to 32",
+        Name = "Reset speed to 16",
         Callback = function()
-            featureManager.Context.WalkSpeedTarget = 32
+            featureManager.Context.WalkSpeedTarget = 16
             print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
         end
     })
