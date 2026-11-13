@@ -30,8 +30,9 @@ local connections = {}
 local cache = {}
 local saved = {}
 local plainNumbers = {}
-local gui, panel, list, nameBox, promptFrame
+local gui, panel, list, nameBox, promptFrame, reopenButton
 local page = "RADAR"
+local minimized = false
 local scanBusy = false
 local refreshQueued = false
 local dragAction = "TryoWaypointDrag_" .. tostring(LocalPlayer.UserId)
@@ -394,7 +395,16 @@ local function buildUI()
         end
     end)
 
-    button(panel,"×",UDim2.fromOffset(28,25),UDim2.new(1,-32,0,5),function() Feature.Stop() end,false).ZIndex=3
+    button(panel,"R",UDim2.fromOffset(24,25),UDim2.new(1,-82,0,5),function() Feature.Scan(); notify("Radar discan ulang") end,true).ZIndex=3
+    button(panel,"−",UDim2.fromOffset(24,25),UDim2.new(1,-55,0,5),function()
+        minimized=not minimized
+        panel.Size=minimized and UDim2.fromOffset(340,36) or UDim2.fromOffset(340,330)
+        if list then list.Visible=not minimized end
+    end,false).ZIndex=3
+    button(panel,"×",UDim2.fromOffset(24,25),UDim2.new(1,-28,0,5),function()
+        panel.Visible=false
+        if reopenButton then reopenButton.Visible=true end
+    end,false).ZIndex=3
     button(panel,"RADAR",UDim2.fromOffset(72,25),UDim2.fromOffset(10,42),function() page="RADAR"; Feature.RefreshUI() end,page=="RADAR")
     button(panel,"SAVED",UDim2.fromOffset(72,25),UDim2.fromOffset(88,42),function() page="SAVED"; Feature.RefreshUI() end,page=="SAVED")
     button(panel,"＋ SAVE HERE",UDim2.fromOffset(105,25),UDim2.new(1,-115,0,42),showNamePrompt,true)
@@ -405,6 +415,12 @@ local function buildUI()
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
+    reopenButton=button(gui,"OPEN SCP",UDim2.fromOffset(86,30),UDim2.new(0,12,1,-48),function()
+        panel.Visible=true
+        reopenButton.Visible=false
+        Feature.RefreshUI()
+    end,true)
+    reopenButton.Visible=false
 end
 
 function Feature.RefreshUI()
@@ -443,7 +459,16 @@ function Feature.RefreshUI()
         make("TextLabel",{Text=keyText,Position=UDim2.fromOffset(7,0),Size=UDim2.fromOffset(66,31),BackgroundTransparency=1,TextColor3=Color3.fromRGB(105,210,245),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left},row)
         make("TextLabel",{Text=tostring(entry.desc),Position=UDim2.fromOffset(72,0),Size=UDim2.new(1,-157,1,0),BackgroundTransparency=1,TextColor3=Color3.fromRGB(225,230,242),Font=Enum.Font.Gotham,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
         if page=="RADAR" then
-            button(row,"SAVE",UDim2.fromOffset(68,23),UDim2.new(1,-73,0,4),function() saveFromData(entry.data) end,true)
+            button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
+                local data=entry.data
+                if data and data.part and data.part.Parent then
+                    assignPlainNumbers()
+                    local key=data.plain and (data.number or 1) or data.key
+                    teleportTo(data.part.CFrame)
+                    addSaved(key,data.desc,data.part.CFrame,data.plain)
+                    notify("Berhasil Teleport & Disave!")
+                end
+            end,true)
         else
             button(row,"TELE",UDim2.fromOffset(45,23),UDim2.new(1,-94,0,4),function()
                 if entry.item.cf then teleportTo(CFrame.new(unpack(entry.item.cf))) end
@@ -540,7 +565,7 @@ function Feature.Stop()
     for _,connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     table.clear(connections)
     if gui then gui:Destroy() end
-    gui,panel,list,nameBox,promptFrame=nil,nil,nil,nil,nil
+    gui,panel,list,nameBox,promptFrame,reopenButton=nil,nil,nil,nil,nil,nil
     table.clear(cache)
     notify("Waypoint Manager dimatikan")
     return true
