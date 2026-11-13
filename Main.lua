@@ -53,6 +53,7 @@ local ok, result = pcall(function()
     local settingsTab = window:CreateTab("Settings", "⚙")
     settingsTab:CreateSection("APPEARANCE")
     settingsTab:CreateSizeControl({ Name = "Customize window size" })
+    settingsTab:CreateGlassControl({ Name = "Glass transparency" })
     settingsTab:CreateSection("SETTINGS")
     settingsTab:CreateButton({
         Name = "Close Plugin Manager",
