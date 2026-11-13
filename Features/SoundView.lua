@@ -176,8 +176,9 @@ local function buildSpectateGui()
 
     local target = Instance.new("TextLabel")
     target.Name = "TargetName"
-    target.Size = UDim2.new(1, -8, 0, 24)
-    target.Position = UDim2.fromOffset(4, 0)
+    target.Size = UDim2.fromOffset(250, 24)
+    target.Position = UDim2.fromOffset(40, 0)
+    target.TextXAlignment = Enum.TextXAlignment.Center
     target.BackgroundTransparency = 1
     target.Font = Enum.Font.GothamBold
     target.Text = "Pilih player..."
@@ -186,17 +187,20 @@ local function buildSpectateGui()
     target.TextTruncate = Enum.TextTruncate.AtEnd
     target.Parent = panel
 
-    makeSpectateButton(panel, "‹", UDim2.fromOffset(0, 30), UDim2.fromOffset(34, 27), Color3.fromRGB(42, 67, 92), function()
+    -- Row 1: previous arrow, selected player, next arrow.
+    makeSpectateButton(panel, "‹", UDim2.fromOffset(0, 0), UDim2.fromOffset(34, 25), Color3.fromRGB(42, 67, 92), function()
         cycleSpectate(-1)
     end)
-    makeSpectateButton(panel, "PLAYERS", UDim2.fromOffset(38, 30), UDim2.fromOffset(88, 27), Color3.fromRGB(39, 94, 87), function()
+    makeSpectateButton(panel, "›", UDim2.fromOffset(296, 0), UDim2.fromOffset(34, 25), Color3.fromRGB(42, 67, 92), function()
+        cycleSpectate(1)
+    end)
+
+    -- Row 2: player list, teleport, exit.
+    makeSpectateButton(panel, "PLAYER", UDim2.fromOffset(0, 34), UDim2.fromOffset(100, 27), Color3.fromRGB(39, 94, 87), function()
         local list = gui:FindFirstChild("PlayerList")
         if list then list.Visible = not list.Visible end
     end)
-    makeSpectateButton(panel, "›", UDim2.fromOffset(130, 30), UDim2.fromOffset(34, 27), Color3.fromRGB(42, 67, 92), function()
-        cycleSpectate(1)
-    end)
-    makeSpectateButton(panel, "TELEPORT", UDim2.fromOffset(168, 30), UDim2.fromOffset(105, 27), Color3.fromRGB(106, 83, 42), function()
+    makeSpectateButton(panel, "TELEPORT", UDim2.fromOffset(108, 34), UDim2.fromOffset(110, 27), Color3.fromRGB(106, 83, 42), function()
         local target = spectate.Target
         local targetRoot = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
         local character = LocalPlayer.Character
@@ -208,7 +212,7 @@ local function buildSpectateGui()
             notify("Spectate Player", "Target atau karakter belum siap.")
         end
     end)
-    makeSpectateButton(panel, "EXIT", UDim2.fromOffset(277, 30), UDim2.fromOffset(53, 27), Color3.fromRGB(115, 48, 58), function()
+    makeSpectateButton(panel, "EXIT", UDim2.fromOffset(226, 34), UDim2.fromOffset(104, 27), Color3.fromRGB(115, 48, 58), function()
         if spectate.Enabled and spectate.StopCallback then spectate.StopCallback() end
     end)
 
