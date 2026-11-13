@@ -33,6 +33,7 @@ local connections = {}
 local cache = {}
 local saved = {}
 local plainNumbers = {}
+local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
 local page = "RADAR"
 local minimized = false
@@ -105,8 +106,18 @@ local function folderContext(part)
     return "Main"
 end
 
+local function isZoneCheckpoint(object)
+    if not object or not object:IsA("BasePart") then return false end
+    if not tonumber(object.Name) or not string.match(object.Name, "^%d+$") then return false end
+    local parent = object.Parent
+    local zoneFolder = parent and parent.Parent
+    return parent and string.lower(parent.Name) == "checkpoints"
+        and zoneFolder and string.lower(zoneFolder.Name) == "zones"
+end
+
 local function getValidCheckpointPart(obj)
     if not obj or not (obj:IsA("BasePart") or obj:IsA("Model")) then return nil end
+    if isZoneCheckpoint(obj) then return obj end
     if isIgnored(obj.Name) then return nil end
     local touch = obj:FindFirstChild("TouchInterest") or obj:FindFirstChildOfClass("TouchTransmitter")
     local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -133,7 +144,9 @@ local function parseCheckpoint(object)
     local lowerName = string.lower(object.Name)
     local lowerParent = string.lower(parent and parent.Name or "")
     local plain = lowerName == "checkpoint" and parent and lowerParent == "checkpoint"
+    local zoneCheckpoint = isZoneCheckpoint(object)
     local part = getValidCheckpointPart(object)
+    if not part and zoneCheckpoint then part = object end
     if not part and plain then
         part = object:IsA("BasePart") and object or (object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true))
     end
@@ -186,7 +199,7 @@ local function parseCheckpoint(object)
     if not number then number=string.match(object.Name,"^(%d+%.?%d*)$") end
     local n=tonumber(number)
     if not n or n<0 or n>500 then return nil end
-    local explicit=string.find(combined,"checkpoint",1,true) or string.find(combined,"cekpoin",1,true)
+    local explicit=zoneCheckpoint or string.find(combined,"checkpoint",1,true) or string.find(combined,"cekpoin",1,true)
         or string.find(combined,"cp",1,true) or string.find(combined,"waypoint",1,true)
         or string.find(combined,"wp",1,true) or string.find(combined,"stage",1,true)
         or string.find(combined,"pos",1,true)
@@ -407,7 +420,7 @@ local function buildUI()
     if not parent then parent = LocalPlayer:WaitForChild("PlayerGui") end
     gui = make("ScreenGui",{Name="TryoWaypointManager",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},parent)
     panel = make("Frame",{
-        Name="Panel",Size=UDim2.fromOffset(340,330),Position=UDim2.new(0.5,-170,0.35,0),
+        Name="Panel",Size=UDim2.fromOffset(310,285),Position=UDim2.new(0.5,-155,0.35,0),
         BackgroundColor3=Color3.fromRGB(25,32,46),BackgroundTransparency=0.16,BorderSizePixel=0,ClipsDescendants=true
     },gui)
     corner(panel,10)
@@ -438,23 +451,22 @@ local function buildUI()
         end
     end)
 
-    button(panel,"R",UDim2.fromOffset(24,25),UDim2.new(1,-82,0,5),function() Feature.Scan(); notify("Radar discan ulang") end,true).ZIndex=3
     button(panel,"−",UDim2.fromOffset(24,25),UDim2.new(1,-55,0,5),function()
         minimized=not minimized
-        panel.Size=minimized and UDim2.fromOffset(340,36) or UDim2.fromOffset(340,330)
+        panel.Size=minimized and UDim2.fromOffset(310,36) or UDim2.fromOffset(310,285)
         if list then list.Visible=not minimized end
     end,false).ZIndex=3
     button(panel,"×",UDim2.fromOffset(24,25),UDim2.new(1,-28,0,5),function()
         panel.Visible=false
         if reopenButton then reopenButton.Visible=true end
     end,false).ZIndex=3
-    button(panel,"RADAR",UDim2.fromOffset(72,25),UDim2.fromOffset(10,42),function() page="RADAR"; Feature.RefreshUI() end,page=="RADAR")
-    button(panel,"SAVED",UDim2.fromOffset(72,25),UDim2.fromOffset(88,42),function() page="SAVED"; Feature.RefreshUI() end,page=="SAVED")
-    button(panel,"＋ SAVE HERE",UDim2.fromOffset(105,25),UDim2.new(1,-115,0,42),showNamePrompt,true)
-    button(panel,"REFRESH",UDim2.fromOffset(72,23),UDim2.fromOffset(10,72),function() Feature.Scan(); Feature.RefreshUI() end,false)
+    button(panel,"RADAR",UDim2.fromOffset(62,25),UDim2.fromOffset(8,42),function() page="RADAR"; Feature.RefreshUI() end,page=="RADAR")
+    button(panel,"SAVED",UDim2.fromOffset(62,25),UDim2.fromOffset(74,42),function() page="SAVED"; Feature.RefreshUI() end,page=="SAVED")
+    button(panel,"REFRESH",UDim2.fromOffset(68,25),UDim2.fromOffset(140,42),function() Feature.Scan(); Feature.RefreshUI() end,false)
+    button(panel,"SAVE HERE",UDim2.fromOffset(86,25),UDim2.new(1,-94,0,42),showNamePrompt,true)
 
     list=make("ScrollingFrame",{
-        Name="WaypointList",Position=UDim2.fromOffset(10,101),Size=UDim2.new(1,-20,1,-111),
+        Name="WaypointList",Position=UDim2.fromOffset(8,75),Size=UDim2.new(1,-16,1,-83),
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
@@ -539,7 +551,7 @@ function Feature.Scan()
                 if not cache[cacheKey] then
                     cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
                     if plain then queuePlainNumbering() end
-                    if part:FindFirstChild("TouchInterest") or plain then
+                    if part:FindFirstChild("TouchInterest") or plain or isZoneCheckpoint(part) then
                         local lastTouch=0
                         connect(part.Touched,function(hit)
                             if not active or tick()-lastTouch<1 then return end
@@ -581,7 +593,7 @@ function Feature.Start()
                 if not cache[cacheKey] then
                     cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
                     if plain then queuePlainNumbering() end
-                    if part:FindFirstChild("TouchInterest") or plain then
+                    if part:FindFirstChild("TouchInterest") or plain or isZoneCheckpoint(part) then
                         local lastTouch=0
                         connect(part.Touched,function(hit)
                             if not active or tick()-lastTouch<1 then return end
