@@ -133,35 +133,45 @@ Features.PlayerESP={
 
 local enemyRunning=false
 local enemyConnection
-local enemyScanTimer=0
+local enemyModels={}
+local enemyDescendantConnection
+
+local function registerEnemyModel(model)
+    if not enemyRunning or not model or not model:IsA("Model") then return end
+    task.defer(function()
+        if enemyRunning and model.Parent and isEnemyCandidate(model) then enemyModels[model]=true end
+    end)
+end
+
 local function scanEnemies()
     local localRoot=rootOf(LocalPlayer.Character)
     local candidates={}
     if not localRoot then return end
-    for _,object in ipairs(Workspace:GetDescendants()) do
-        if object:IsA("Model") and isEnemyCandidate(object) then
-            local root=rootOf(object)
+    for model in pairs(enemyModels) do
+        if not model or not model.Parent then
+            enemyModels[model]=nil
+        elseif isEnemyCandidate(model) then
+            local root=rootOf(model)
             if root then
-                local distance=(root.Position-localRoot.Position).Magnitude
-                if distance<=180 then
-                    table.insert(candidates,{model=object,distance=distance})
+                local offset=root.Position-localRoot.Position
+                local distanceSquared=offset:Dot(offset)
+                if distanceSquared<=180*180 then
+                    table.insert(candidates,{model=model,distanceSquared=distanceSquared})
                 end
             end
+        else
+            enemyModels[model]=nil
         end
     end
-    table.sort(candidates,function(a,b) return a.distance<b.distance end)
+    table.sort(candidates,function(a,b) return a.distanceSquared<b.distanceSquared end)
     local active={}
     for i=1,math.min(#candidates,12) do
         local model=candidates[i].model
         active[model]=true
         makeVisual(model,ENEMY_TAG,Color3.fromRGB(255,75,75),model.Name)
     end
-    -- Remove stale/out-of-range visuals only when they belong to this module.
-    for _,object in ipairs(Workspace:GetDescendants()) do
-        if object:IsA("Highlight") and object.Name==ENEMY_TAG then
-            local model=object.Parent
-            if not active[model] then removeVisual(model,ENEMY_TAG) end
-        end
+    for model in pairs(enemyModels) do
+        if not active[model] then removeVisual(model,ENEMY_TAG) end
     end
 end
 
@@ -170,20 +180,30 @@ Features.EnemyESP={
     Start=function()
         if enemyRunning then return true end
         enemyRunning=true
-        scanEnemies()
-        enemyScanTimer=0
-        enemyConnection=RunService.Heartbeat:Connect(function(dt)
-            enemyScanTimer=enemyScanTimer+dt
-            if enemyScanTimer>=0.75 then enemyScanTimer=0; scanEnemies() end
+        for _,object in ipairs(Workspace:GetDescendants()) do
+            if object:IsA("Model") then registerEnemyModel(object) end
+        end
+        enemyDescendantConnection=Workspace.DescendantAdded:Connect(function(object)
+            if object:IsA("Model") then registerEnemyModel(object)
+            else
+                local model=object:FindFirstAncestorOfClass("Model")
+                if model then registerEnemyModel(model) end
+            end
         end)
+        local elapsed=0
+        enemyConnection=RunService.Heartbeat:Connect(function(dt)
+            elapsed=elapsed+dt
+            if elapsed>=0.75 then elapsed=0; scanEnemies() end
+        end)
+        scanEnemies()
         return true
     end,
     Stop=function()
         enemyRunning=false
         if enemyConnection then enemyConnection:Disconnect(); enemyConnection=nil end
-        for _,object in ipairs(Workspace:GetDescendants()) do
-            if object:IsA("Highlight") and object.Name==ENEMY_TAG then removeVisual(object.Parent,ENEMY_TAG) end
-        end
+        if enemyDescendantConnection then enemyDescendantConnection:Disconnect(); enemyDescendantConnection=nil end
+        for model in pairs(enemyModels) do removeVisual(model,ENEMY_TAG) end
+        table.clear(enemyModels)
     end
 }
 return Features
