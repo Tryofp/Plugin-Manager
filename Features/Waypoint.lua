@@ -102,75 +102,97 @@ local function folderContext(part)
     return "Main"
 end
 
+local function getValidCheckpointPart(obj)
+    if not obj or not (obj:IsA("BasePart") or obj:IsA("Model")) then return nil end
+    if isIgnored(obj.Name) then return nil end
+    local touch = obj:FindFirstChild("TouchInterest") or obj:FindFirstChildOfClass("TouchTransmitter")
+    local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if touch or prompt then
+        if obj:IsA("Model") then
+            return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
+        end
+        return obj
+    end
+    for _, descendant in ipairs(obj:GetDescendants()) do
+        if descendant:IsA("BasePart") and not isIgnored(descendant.Name) then
+            if descendant:FindFirstChild("TouchInterest") or descendant:FindFirstChildOfClass("TouchTransmitter")
+                or descendant:FindFirstChildOfClass("ProximityPrompt") then
+                return descendant
+            end
+        end
+    end
+    return nil
+end
+
 local function parseCheckpoint(object)
     if not object or not (object:IsA("BasePart") or object:IsA("Model")) then return nil end
-    if isIgnored(object.Name) then return nil end
-    local part = getPart(object)
-    if not part then return nil end
-
     local parent = object.Parent
     local lowerName = string.lower(object.Name)
     local lowerParent = string.lower(parent and parent.Name or "")
-    if lowerName == "text" or lowerName == "field" or lowerName == "base"
-        or lowerParent == "text" or lowerParent == "field" or lowerParent == "base"
-        or isIgnored(lowerParent) then return nil end
-
-    local touch = part:FindFirstChild("TouchInterest") or part:FindFirstChildOfClass("TouchTransmitter")
-    local prompt = object:FindFirstChildWhichIsA("ProximityPrompt", true)
-        or part:FindFirstChildWhichIsA("ProximityPrompt", true)
-    local plain = lowerName == "checkpoint" and lowerParent == "checkpoint"
-    if not touch and not prompt and not plain then return nil end
-
-    local context = folderContext(part)
-    if string.find(lowerName, "summit", 1, true) or string.find(lowerParent, "summit", 1, true)
-        or string.find(lowerName, "peak", 1, true) or string.find(lowerName, "finish", 1, true)
-        or string.find(lowerName, "puncak", 1, true) then
-        return "SUMMIT", context .. " - " .. object.Name, part, 10, false
+    local plain = lowerName == "checkpoint" and parent and lowerParent == "checkpoint"
+    local part = getValidCheckpointPart(object)
+    if not part and plain then
+        part = object:IsA("BasePart") and object or (object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true))
     end
-    if string.find(lowerName, "reset", 1, true) or string.find(lowerParent, "reset", 1, true) then
-        local path = string.lower(getPath(object))
-        if string.find(path, "checkpoint", 1, true) or string.find(path, "obby", 1, true)
-            or string.find(path, "gunung", 1, true) then
-            return "SUMMIT", context .. " - " .. object.Name, part, 10, false
+    if not part then return nil end
+
+    if lowerName=="text" or lowerParent=="text" or lowerName=="field" or lowerParent=="field"
+        or lowerName=="base" or lowerParent=="base" or isIgnored(lowerName) or isIgnored(lowerParent) then return nil end
+    if string.find(lowerName,"teleport",1,true) or string.find(lowerName,"tp",1,true)
+        or string.find(lowerName,"tele",1,true) then return nil end
+
+    local context=folderContext(part)
+    if string.find(lowerName,"summit",1,true) or string.find(lowerParent,"summit",1,true)
+        or string.find(lowerName,"peak",1,true) or string.find(lowerName,"finish",1,true)
+        or string.find(lowerName,"puncak",1,true) then
+        return "SUMMIT",context.." - "..object.Name,part,10,false
+    end
+    if string.find(lowerName,"reset",1,true) or string.find(lowerParent,"reset",1,true) then
+        local path=string.lower(getPath(object))
+        if string.find(path,"checkpoint",1,true) or string.find(path,"obby",1,true)
+            or string.find(path,"gunung",1,true) then
+            return "SUMMIT",context.." - "..object.Name,part,10,false
         end
     end
+    if plain then return "CP+",parent.Name.." - "..object.Name,part,3,true end
 
-    -- Exact plain Checkpoint.Checkpoint entries are numbered separately.
-    if plain then
-        return "PLAIN", context .. " - " .. object.Name, part, 3, true
+    local guiText=""
+    local guiObject=part:FindFirstChildOfClass("BillboardGui") or part:FindFirstChildOfClass("SurfaceGui")
+    if not guiObject and part.Parent and part.Parent:IsA("Model") then
+        guiObject=part.Parent:FindFirstChildOfClass("BillboardGui") or part.Parent:FindFirstChildOfClass("SurfaceGui")
     end
-
-    local guiObject = part:FindFirstChildWhichIsA("BillboardGui")
-        or part:FindFirstChildWhichIsA("SurfaceGui")
-        or (part.Parent and part.Parent:IsA("Model") and (
-            part.Parent:FindFirstChildWhichIsA("BillboardGui") or part.Parent:FindFirstChildWhichIsA("SurfaceGui")
-        ))
-    local guiText = ""
     if guiObject then
-        local textLabel = guiObject:FindFirstChildWhichIsA("TextLabel", true)
-        if textLabel then guiText = string.lower(textLabel.Text) end
+        local label=guiObject:FindFirstChildOfClass("TextLabel")
+        if label and label.Text~="" then guiText=string.lower(label.Text) end
     end
-    local combined = lowerParent .. " " .. lowerName .. " " .. guiText
-    local patterns = {
-        "checkpoints?%s*[_ ]*(%d+%.?%d*)", "checkpoint(%d+%.?%d*)",
-        "cekpoin%s*[_ ]*(%d+%.?%d*)", "cp%s*[_ ]*(%d+%.?%d*)",
-        "cp(%d+%.?%d*)", "stage%s*[_ ]*(%d+%.?%d*)",
-        "waypoint%s*[_ ]*(%d+%.?%d*)", "wp%s*[_ ]*(%d+%.?%d*)",
-        "ring%s*[_ ]*(%d+%.?%d*)", "pos%s*[_ ]*(%d+%.?%d*)"
-    }
-    local number
-    for _, pattern in ipairs(patterns) do
-        number = string.match(combined, pattern)
-        if number then break end
-    end
-    if not number and guiText ~= "" then number = string.match(guiText, "(%d+%.?%d*)") end
-    if not number then number = string.match(object.Name, "^(%d+%.?%d*)$") end
-    local n = tonumber(number)
-    if not n or n < 0 or n > 500 then return nil end
-    local description = guiText ~= "" and (context .. " - " .. guiText) or (context .. " - " .. object.Name)
-    return n, description, part, 3, false
+    local combined=lowerParent.." "..lowerName.." "..guiText
+    local number=
+        string.match(combined,"checkpoints?%s*[_]?%s*(%d+%.?%d*)") or
+        string.match(combined,"checkpoint(%d+%.?%d*)") or
+        string.match(combined,"checkpoint%s*[_]?%s*(%d+%.?%d*)") or
+        string.match(combined,"cekpoin%s*[%s_]*(%d+%.?%d*)") or
+        string.match(combined,"cp%s*[_]?%s*(%d+%.?%d*)") or
+        string.match(combined,"cp(%d+%.?%d*)") or
+        string.match(combined,"stage%s*[_]?%s*(%d+%.?%d*)") or
+        string.match(combined,"stage(%d+%.?%d*)") or
+        string.match(combined,"pos%s*[_]?%s*(%d+%.?%d*)") or
+        string.match(combined,"waypoint%s*[_]?%s*(%d+%.?%d*)") or
+        string.match(combined,"wp%s*[_]?%s*(%d+%.?%d*)") or
+        string.match(combined,"ring%s*[_]?%s*(%d+%.?%d*)")
+    if not number and guiText~="" then number=string.match(guiText,"(%d+%.?%d*)") end
+    if not number then number=string.match(object.Name,"^(%d+%.?%d*)$") end
+    local n=tonumber(number)
+    if not n or n<0 or n>500 then return nil end
+    local explicit=string.find(combined,"checkpoint",1,true) or string.find(combined,"cekpoin",1,true)
+        or string.find(combined,"cp",1,true) or string.find(combined,"waypoint",1,true)
+        or string.find(combined,"wp",1,true) or string.find(combined,"stage",1,true)
+        or string.find(combined,"pos",1,true)
+    local priority=explicit and 3 or (string.find(combined,"ring",1,true) and 2 or 1)
+    local description=object.Name
+    if context~="" then description=context.." ("..object.Name..")" end
+    if guiText~="" then description=context.." - "..guiText end
+    return n,description,part,priority,false
 end
-
 local function positionToken(position)
     return string.format("%.1f|%.1f|%.1f", position.X, position.Y, position.Z)
 end
@@ -271,6 +293,17 @@ local function assignPlainNumbers()
         data.number = n
         used[n] = true
     end
+end
+
+local plainNumberingGeneration=0
+local function queuePlainNumbering()
+    plainNumberingGeneration=plainNumberingGeneration+1
+    local generation=plainNumberingGeneration
+    task.delay(0.6,function()
+        if not active or generation~=plainNumberingGeneration then return end
+        assignPlainNumbers()
+        refresh()
+    end)
 end
 
 local function addSaved(key, description, cf, isPlain)
@@ -495,6 +528,7 @@ function Feature.Scan()
                 local cacheKey=plain and part or getPath(part)
                 if not cache[cacheKey] then
                     cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
+                    if plain then queuePlainNumbering() end
                     if part:FindFirstChild("TouchInterest") or plain then
                         local lastTouch=0
                         connect(part.Touched,function(hit)
@@ -536,6 +570,7 @@ function Feature.Start()
                 local cacheKey=plain and part or getPath(part)
                 if not cache[cacheKey] then
                     cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
+                    if plain then queuePlainNumbering() end
                     if part:FindFirstChild("TouchInterest") or plain then
                         local lastTouch=0
                         connect(part.Touched,function(hit)
