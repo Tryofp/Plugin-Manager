@@ -45,7 +45,7 @@ local ok, result = pcall(function()
     local aimAssist = fetchModule(BASE_URL .. "Features/AimAssist.lua", "AimAssist.lua")
     assert(type(aimAssist) == "table" and type(aimAssist.Start) == "function", "Invalid Aim Assist module")
     local interactable = fetchModule(BASE_URL .. "Features/Interactable.lua", "Interactable.lua")
-    assert(type(interactable) == "table" and type(interactable.OpenMenu) == "function", "Invalid Interactable Hub module")
+    assert(type(interactable) == "table" and type(interactable.SetFeatureEnabled) == "function", "Invalid Interactable module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -134,13 +134,28 @@ local ok, result = pcall(function()
     end
     toolsTab:CreateSection("INTERACTION")
     addFeatureToggle(toolsTab, "InstantPrompt", instantPrompt)
-    toolsTab:CreateButton({
-        Name = "Interactable",
-        Callback = function()
-            local success, err = pcall(function() interactable:OpenMenu() end)
-            if not success then warn("[Tryo Plugin Manager] Interactable: " .. tostring(err)) end
-        end
-    })
+    toolsTab:CreateSection("INTERACTABLE")
+    local interactableFeatures = {
+        {id = "PPESP", name = "Proximity (PPESP)"},
+        {id = "ITP", name = "Item Teleport (ITP)"},
+        {id = "DESP", name = "Door (DESP)"},
+        {id = "CDESP", name = "Click (CDESP)"},
+        {id = "TESP", name = "Touch (TESP)"},
+        {id = "ITESP", name = "Item (ITESP)"},
+        {id = "LOOT", name = "Loot"}
+    }
+    for _, item in ipairs(interactableFeatures) do
+        toolsTab:CreateToggle({
+            Name = item.name,
+            Default = false,
+            Callback = function(enabled)
+                local success, err = interactable:SetFeatureEnabled(item.id, enabled)
+                if not success then
+                    warn("[Tryo Plugin Manager] " .. item.id .. ": " .. tostring(err))
+                end
+            end
+        })
+    end
     toolsTab:CreateSection("SERVER SESSION")
     featureManager:Register("LastServer", lastServer)
     local lastServerStarted, lastServerError = featureManager:SetEnabled("LastServer", true)
