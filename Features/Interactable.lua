@@ -2315,6 +2315,8 @@ local function toggleITP()
     end)
     itpGui.Destroying:Connect(function()
         dragging = false
+        ContextActionService:UnbindAction("TryoITPItemScroll")
+        ContextActionService:UnbindAction("TryoITPTabScroll")
         ContextActionService:UnbindAction(dragActionName)
         dragEndedConnection:Disconnect()
         dragMovedConnection:Disconnect()
@@ -2411,7 +2413,38 @@ local function toggleITP()
     scrollingFrame.BorderSizePixel = 0
     scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
     scrollingFrame.ScrollBarThickness = 5
+    scrollingFrame.Active = true
+    scrollingFrame.ScrollingEnabled = true
     scrollingFrame.Parent = mainFrame
+
+    -- Capture touch/mouse gestures that begin inside the item list so mobile
+    -- camera controls do not receive the same drag while the list is scrolling.
+    local function bindScrollInputCapture(target, actionName)
+        target.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.Touch
+            and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+                return
+            end
+            ContextActionService:BindActionAtPriority(
+                actionName,
+                function()
+                    return Enum.ContextActionResult.Sink
+                end,
+                false,
+                Enum.ContextActionPriority.High.Value + 100,
+                Enum.UserInputType.Touch,
+                Enum.UserInputType.MouseButton1
+            )
+        end)
+        target.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                ContextActionService:UnbindAction(actionName)
+            end
+        end)
+    end
+    bindScrollInputCapture(scrollingFrame, "TryoITPItemScroll")
+    bindScrollInputCapture(tabContainer, "TryoITPTabScroll")
 
     local uiListLayout = Instance.new("UIListLayout")
     uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3148,5 +3181,27 @@ function Feature:Stop()
     table.clear(menuButtons)
     return true
 end
+function Feature:SetFeatureEnabled(id, enabled)
+    local info
+    for _, item in ipairs(ORDER) do
+        if item.id == id then info = item break end
+    end
+    if not info then return false, "Unknown Interactable feature: " .. tostring(id) end
+
+    if enabled then
+        if isRunning(id) then return true end
+        local command = Plugin.Commands[info.command]
+        if not command or type(command.Function) ~= "function" then
+            return false, "Command is unavailable: " .. tostring(info.command)
+        end
+        local ok, err = pcall(command.Function, {}, LocalPlayer)
+        if not ok then return false, err end
+        return true
+    end
+
+    stopFeature(id)
+    return true
+end
+
 Feature.IsRunning=isRunning
 return Feature
