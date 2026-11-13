@@ -1,6 +1,5 @@
 -- Tryo Plugin Manager - Standalone beta2
 -- Compact UI bootstrap. Independent from Infinite Yield.
--- Legacy feature modules will be migrated into this standalone architecture.
 
 local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta2/"
 local LIBRARY_URL = BASE_URL .. "UI/Library.lua"
@@ -25,7 +24,11 @@ local ok, result = pcall(function()
     assert(type(espFeatures) == "table", "Invalid standalone ESP module")
     local teleportFeatures = fetchModule(BASE_URL .. "Features/Teleport.lua", "Features/Teleport.lua")
     assert(type(teleportFeatures) == "table", "Invalid standalone Teleport module")
+    local soundViewFeatures = fetchModule(BASE_URL .. "Features/SoundView.lua", "Features/SoundView.lua")
+    assert(type(soundViewFeatures) == "table", "Invalid Sound & View module")
+
     local featureManager = FeatureManager.new()
+    featureManager.Context.FeatureManager = featureManager
 
     local window = TryoUI.new({
         Title = "Tryo Plugin Manager",
@@ -33,40 +36,28 @@ local ok, result = pcall(function()
         Size = UDim2.fromOffset(590, 370)
     })
 
-    local mainTab = window:CreateTab("Main", "⌂")
-    mainTab:CreateSection("PLAYER & ENEMY ESP")
-    local espOrder = {"PlayerESP", "EnemyESP"}
-    for _, featureId in ipairs(espOrder) do
-        local definition = espFeatures[featureId]
-        if definition then
-            featureManager:Register(featureId, definition)
-            mainTab:CreateToggle({
-                Name = definition.Name or featureId,
-                Default = false,
-                Callback = function(enabled)
-                    local ok, err = featureManager:SetEnabled(featureId, enabled)
-                    if not ok then
-                        warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
-                    end
-                end
-            })
-        end
-    end
-    mainTab:CreateSection("TELEPORT")
-    local teleportDefinition = teleportFeatures.PlayerTeleport
-    if teleportDefinition then
-        featureManager:Register("PlayerTeleport", teleportDefinition)
-        mainTab:CreateToggle({
-            Name = teleportDefinition.Name or "Teleport to Player",
+    local function addFeatureToggle(tab, featureId, definition)
+        if not definition then return end
+        featureManager:Register(featureId, definition)
+        tab:CreateToggle({
+            Name = definition.Name or featureId,
             Default = false,
             Callback = function(enabled)
-                local ok, err = featureManager:SetEnabled("PlayerTeleport", enabled)
-                if not ok then
-                    warn("[Tryo Plugin Manager] PlayerTeleport: " .. tostring(err))
+                local success, err = featureManager:SetEnabled(featureId, enabled)
+                if not success then
+                    warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
                 end
             end
         })
     end
+
+    local mainTab = window:CreateTab("Main", "⌂")
+    mainTab:CreateSection("PLAYER & ENEMY ESP")
+    for _, featureId in ipairs({"PlayerESP", "EnemyESP"}) do
+        addFeatureToggle(mainTab, featureId, espFeatures[featureId])
+    end
+    mainTab:CreateSection("TELEPORT")
+    addFeatureToggle(mainTab, "PlayerTeleport", teleportFeatures.PlayerTeleport)
     mainTab:CreateSection("STATUS")
     mainTab:CreateButton({
         Name = "Tryo Plugin Manager is running",
@@ -89,23 +80,12 @@ local ok, result = pcall(function()
 
     local toolsTab = window:CreateTab("Tools", "⚒")
     toolsTab:CreateSection("STANDALONE TOOLS")
-    local toolOrder = {"AntiAFK", "Fullbright", "InfiniteJump", "Noclip"}
-    for _, featureId in ipairs(toolOrder) do
-        local definition = toolFeatures[featureId]
-        if definition then
-            featureManager:Register(featureId, definition)
-            toolsTab:CreateToggle({
-                Name = definition.Name or featureId,
-                Default = false,
-                Callback = function(enabled)
-                    local ok, err = featureManager:SetEnabled(featureId, enabled)
-                    if not ok then
-                        warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
-                    end
-                end
-            })
-        end
+    for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip"}) do
+        addFeatureToggle(toolsTab, featureId, toolFeatures[featureId])
     end
+    toolsTab:CreateSection("SOUND & VIEW")
+    addFeatureToggle(toolsTab, "MuteMapSounds", soundViewFeatures.MuteMapSounds)
+    addFeatureToggle(toolsTab, "Spectate", soundViewFeatures.Spectate)
 
     local settingsTab = window:CreateTab("Settings", "⚙")
     settingsTab:CreateSection("APPEARANCE")
