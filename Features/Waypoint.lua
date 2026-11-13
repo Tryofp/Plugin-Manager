@@ -36,12 +36,14 @@ local plainNumbers = {}
 local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
 local page = "RADAR"
-local minimized = false
 local scanBusy = false
 local refreshQueued = false
 local dragAction = "TryoWaypointDrag_" .. tostring(LocalPlayer.UserId)
 local dragging = false
 local dragInput, dragStart, frameStart
+local reopenDragging, reopenDragInput, reopenDragStart, reopenButtonStart
+local reopenWasDragged = false
+local reopenDragAction = dragAction .. "_Toggle"
 
 local function connect(signal, callback)
     local c = signal:Connect(callback)
@@ -451,11 +453,6 @@ local function buildUI()
         end
     end)
 
-    button(panel,"−",UDim2.fromOffset(24,25),UDim2.new(1,-55,0,5),function()
-        minimized=not minimized
-        panel.Size=minimized and UDim2.fromOffset(310,36) or UDim2.fromOffset(310,285)
-        if list then list.Visible=not minimized end
-    end,false).ZIndex=3
     button(panel,"×",UDim2.fromOffset(24,25),UDim2.new(1,-28,0,5),function()
         panel.Visible=false
         if reopenButton then reopenButton.Visible=true end
@@ -470,12 +467,48 @@ local function buildUI()
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
-    reopenButton=button(gui,"OPEN SCP",UDim2.fromOffset(86,30),UDim2.new(0,12,1,-48),function()
+    reopenButton=button(gui,"SCP",UDim2.fromOffset(48,48),UDim2.new(0,14,1,-66),function()
+        if reopenWasDragged then
+            reopenWasDragged=false
+            return
+        end
         panel.Visible=true
         reopenButton.Visible=false
         Feature.RefreshUI()
     end,true)
+    corner(reopenButton,24)
+    reopenButton.TextSize=12
+    reopenButton.ZIndex=10
     reopenButton.Visible=false
+    reopenButton.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            reopenDragging=true
+            reopenDragInput=input
+            reopenDragStart=input.Position
+            reopenButtonStart=reopenButton.Position
+            ContextActionService:BindActionAtPriority(reopenDragAction,function() return Enum.ContextActionResult.Sink end,false,3001,Enum.UserInputType.MouseButton1,Enum.UserInputType.Touch)
+        end
+    end)
+    connect(UserInputService.InputChanged,function(input)
+        if not reopenDragging then return end
+        if input.UserInputType==Enum.UserInputType.MouseMovement or input==reopenDragInput then
+            local delta=input.Position-reopenDragStart
+            if delta.Magnitude>5 then reopenWasDragged=true end
+            local camera=Workspace.CurrentCamera
+            local viewport=camera and camera.ViewportSize or Vector2.new(1920,1080)
+            local size=reopenButton.AbsoluteSize
+            local x=math.clamp(reopenButtonStart.X.Offset+delta.X,0,math.max(0,viewport.X-size.X))
+            local y=math.clamp(reopenButtonStart.Y.Offset+delta.Y,0,math.max(0,viewport.Y-size.Y))
+            reopenButton.Position=UDim2.fromOffset(x,y)
+        end
+    end)
+    connect(UserInputService.InputEnded,function(input)
+        if reopenDragging and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then
+            reopenDragging=false
+            ContextActionService:UnbindAction(reopenDragAction)
+            if reopenWasDragged then task.delay(0.15,function() reopenWasDragged=false end) end
+        end
+    end)
 end
 
 function Feature.RefreshUI()
@@ -618,7 +651,9 @@ function Feature.Stop()
     if not active then return true end
     active=false
     dragging=false
+    reopenDragging=false
     ContextActionService:UnbindAction(dragAction)
+    ContextActionService:UnbindAction(reopenDragAction)
     for _,connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     table.clear(connections)
     if gui then gui:Destroy() end
