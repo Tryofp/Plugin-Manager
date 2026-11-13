@@ -74,6 +74,7 @@ function TryoUI.new(config)
     local initialWidth = tonumber(savedSettings and savedSettings.Width) or (config.Size and config.Size.X.Offset) or 590
     local initialHeight = tonumber(savedSettings and savedSettings.Height) or (config.Size and config.Size.Y.Offset) or 370
     self.Size = UDim2.fromOffset(math.clamp(initialWidth, 480, 820), math.clamp(initialHeight, 300, 600))
+    self.Transparency = math.clamp(tonumber(savedSettings and savedSettings.Transparency) or 0.34, 0.15, 0.60)
     self.Tabs = {}
     self.ActiveTab = nil
     self.Destroyed = false
@@ -101,7 +102,7 @@ function TryoUI.new(config)
         Size = self.Size,
         Position = UDim2.new(0.5, -self.Size.X.Offset / 2, 0.5, -self.Size.Y.Offset / 2),
         BackgroundColor3 = COLORS.Background,
-        BackgroundTransparency = 0.16,
+        BackgroundTransparency = self.Transparency,
         BorderSizePixel = 0,
         ClipsDescendants = true
     }, self.Gui)
@@ -109,9 +110,9 @@ function TryoUI.new(config)
     stroke(self.Window, Color3.fromRGB(115, 125, 180), 0.28)
     make("UIGradient", {
         Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 43, 65)),
-            ColorSequenceKeypoint.new(0.48, Color3.fromRGB(38, 31, 61)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(19, 39, 52))
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(48, 77, 111)),
+            ColorSequenceKeypoint.new(0.48, Color3.fromRGB(79, 53, 112)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(31, 72, 87))
         }),
         Rotation = 28
     }, self.Window)
@@ -120,14 +121,15 @@ function TryoUI.new(config)
         Name = "TopBar",
         Size = UDim2.new(1, 0, 0, 43),
         BackgroundColor3 = Color3.fromRGB(38, 43, 61),
-        BackgroundTransparency = 0.22,
+        BackgroundTransparency = math.min(self.Transparency + 0.06, 0.68),
         BorderSizePixel = 0
     }, self.Window)
     make("UIGradient", {
-        Color = ColorSequence.new(Color3.fromRGB(52, 80, 112), Color3.fromRGB(72, 48, 105)),
+        Color = ColorSequence.new(Color3.fromRGB(65, 133, 166), Color3.fromRGB(119, 75, 165)),
         Rotation = 0
     }, top)
 
+    self.TopBar = top
     local title = label(top, self.Title, 14, COLORS.Text, Enum.Font.GothamBold)
     title.Position = UDim2.fromOffset(14, 3)
     title.Size = UDim2.new(1, -110, 0, 20)
@@ -169,11 +171,11 @@ function TryoUI.new(config)
         Name = "Sidebar",
         Size = UDim2.new(0, 145, 1, 0),
         BackgroundColor3 = Color3.fromRGB(24, 31, 47),
-        BackgroundTransparency = 0.20,
+        BackgroundTransparency = math.min(self.Transparency + 0.08, 0.70),
         BorderSizePixel = 0
     }, body)
     make("UIGradient", {
-        Color = ColorSequence.new(Color3.fromRGB(30, 48, 69), Color3.fromRGB(35, 29, 55)),
+        Color = ColorSequence.new(Color3.fromRGB(43, 82, 112), Color3.fromRGB(72, 48, 98)),
         Rotation = 90
     }, self.Sidebar)
 
@@ -199,10 +201,11 @@ function TryoUI.new(config)
         Position = UDim2.new(0, 8, 1, -59),
         Size = UDim2.new(1, -16, 0, 50),
         BackgroundColor3 = Color3.fromRGB(45, 54, 75),
-        BackgroundTransparency = 0.24,
+        BackgroundTransparency = math.min(self.Transparency + 0.12, 0.72),
         BorderSizePixel = 0
     }, self.Sidebar)
     corner(profile, 8)
+    self.Profile = profile
     local avatar = make("ImageLabel", {
         Name = "Avatar",
         Position = UDim2.fromOffset(7, 8),
@@ -314,7 +317,8 @@ function TryoUI.new(config)
         pcall(function()
             writefile(self.SettingsFile, HttpService:JSONEncode({
                 Width = self.Size.X.Offset,
-                Height = self.Size.Y.Offset
+                Height = self.Size.Y.Offset,
+                Transparency = self.Transparency
             }))
         end)
     end
@@ -327,6 +331,16 @@ function TryoUI.new(config)
         if self.Window and self.Window.Parent then self.Window.Size = self.Size end
         self:SaveSettings()
         return width, height
+    end
+
+    function self:SetTransparency(value)
+        self.Transparency = math.clamp(tonumber(value) or self.Transparency, 0.15, 0.60)
+        if self.Window then self.Window.BackgroundTransparency = self.Transparency end
+        if self.TopBar then self.TopBar.BackgroundTransparency = math.min(self.Transparency + 0.06, 0.68) end
+        if self.Sidebar then self.Sidebar.BackgroundTransparency = math.min(self.Transparency + 0.08, 0.70) end
+        if self.Profile then self.Profile.BackgroundTransparency = math.min(self.Transparency + 0.12, 0.72) end
+        self:SaveSettings()
+        return self.Transparency
     end
 
     local function restoreWindow()
@@ -553,6 +567,56 @@ function TryoUI:CreateTab(name, icon)
         end)
 
         dimensions.Text = string.format("%d × %d px", tab._window.Size.X.Offset, tab._window.Size.Y.Offset)
+        return card
+    end
+
+    function tab:CreateGlassControl(options)
+        options = options or {}
+        local card = make("Frame", {
+            Name = "GlassTransparencyControl",
+            Size = UDim2.new(1, -4, 0, 92),
+            BackgroundColor3 = Color3.fromRGB(50, 62, 87),
+            BackgroundTransparency = 0.24,
+            BorderSizePixel = 0
+        }, self.Page)
+        corner(card, 8)
+        stroke(card, Color3.fromRGB(117, 157, 196), 0.62)
+
+        local heading = label(card, options.Name or "Glass transparency", 12, COLORS.Text, Enum.Font.GothamBold)
+        heading.Position = UDim2.fromOffset(11, 7)
+        heading.Size = UDim2.new(1, -22, 0, 20)
+        local valueLabel = label(card, "", 10, COLORS.Muted)
+        valueLabel.Position = UDim2.fromOffset(11, 30)
+        valueLabel.Size = UDim2.new(1, -22, 0, 16)
+
+        local function change(delta)
+            local value = tab._window:SetTransparency(tab._window.Transparency + delta)
+            valueLabel.Text = string.format("Transparency: %d%%", math.floor(value * 100 + 0.5))
+        end
+        local function button(text, x, callback)
+            local b = make("TextButton", {
+                Text = text, TextSize = 13, Font = Enum.Font.GothamBold,
+                TextColor3 = COLORS.Text, BackgroundColor3 = Color3.fromRGB(76, 94, 132),
+                BackgroundTransparency = 0.12, BorderSizePixel = 0,
+                Size = UDim2.fromOffset(38, 25), Position = UDim2.fromOffset(x, 57)
+            }, card)
+            corner(b, 6)
+            b.MouseButton1Click:Connect(callback)
+        end
+        button("−", 11, function() change(-0.05) end)
+        button("+", 54, function() change(0.05) end)
+        local reset = make("TextButton", {
+            Text = "Reset", TextSize = 10, Font = Enum.Font.GothamMedium,
+            TextColor3 = COLORS.Text, BackgroundColor3 = COLORS.Accent,
+            BorderSizePixel = 0, Size = UDim2.fromOffset(54, 25),
+            Position = UDim2.new(1, -65, 0, 57)
+        }, card)
+        corner(reset, 6)
+        reset.MouseButton1Click:Connect(function()
+            local value = tab._window:SetTransparency(0.34)
+            valueLabel.Text = string.format("Transparency: %d%%", math.floor(value * 100 + 0.5))
+        end)
+        valueLabel.Text = string.format("Transparency: %d%%", math.floor(tab._window.Transparency * 100 + 0.5))
         return card
     end
 
