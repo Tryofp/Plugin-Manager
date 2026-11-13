@@ -640,10 +640,10 @@ function TryoUI:CreateTab(name, icon)
             if options.SetValue then options.SetValue(math.min(100, (tonumber(options.GetValue()) or 16) + 5)) end
             updateValue()
         end)
-        controlButton("Reset", 0, 58, function()
+        controlButton("Reset", 0, 54, function()
             if options.SetValue then options.SetValue(16) end
             updateValue()
-        end, true).Position = UDim2.new(1, -69, 0, 34)
+        end, true).Position = UDim2.new(1, -65, 0, 34)
 
         local enabled = false
         local expanded = false
