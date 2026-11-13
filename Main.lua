@@ -80,30 +80,19 @@ local ok, result = pcall(function()
 
     local toolsTab = window:CreateTab("Tools", "⚒")
     toolsTab:CreateSection("STANDALONE TOOLS")
-    for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip", "WalkSpeed"}) do
+    for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip"}) do
         addFeatureToggle(toolsTab, featureId, toolFeatures[featureId])
     end
     featureManager.Context.WalkSpeedTarget = 16
-    toolsTab:CreateSection("WALKSPEED CONTROL")
-    toolsTab:CreateButton({
-        Name = "Speed - 5",
-        Callback = function()
-            featureManager.Context.WalkSpeedTarget = math.max(16, (featureManager.Context.WalkSpeedTarget or 32) - 5)
-            print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
-        end
-    })
-    toolsTab:CreateButton({
-        Name = "Speed + 5",
-        Callback = function()
-            featureManager.Context.WalkSpeedTarget = math.min(100, (featureManager.Context.WalkSpeedTarget or 32) + 5)
-            print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
-        end
-    })
-    toolsTab:CreateButton({
-        Name = "Reset speed to 16",
-        Callback = function()
-            featureManager.Context.WalkSpeedTarget = 16
-            print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
+    toolsTab:CreateWalkSpeedControl({
+        Name = "WalkSpeed",
+        GetValue = function() return featureManager.Context.WalkSpeedTarget end,
+        SetValue = function(value)
+            featureManager.Context.WalkSpeedTarget = math.clamp(tonumber(value) or 16, 16, 100)
+        end,
+        Callback = function(enabled)
+            local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
+            if not success then warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err)) end
         end
     })
     toolsTab:CreateSection("SOUND & VIEW")
