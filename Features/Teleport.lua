@@ -7,11 +7,18 @@ local Feature={Name="Teleport to Player",Description="Membuka daftar pemain untu
 
 local gui
 local connections={}
+local rowConnections={}
 local list
 local search
 local running=false
 
+local function disconnectRows()
+    for _,connection in ipairs(rowConnections) do pcall(function() connection:Disconnect() end) end
+    table.clear(rowConnections)
+end
+
 local function disconnectAll()
+    disconnectRows()
     for _,connection in ipairs(connections) do
         pcall(function() connection:Disconnect() end)
     end
@@ -52,6 +59,7 @@ local function make(class,properties,parent)
 end
 
 local function refresh()
+    disconnectRows()
     if not list or not list.Parent then return end
     for _,child in ipairs(list:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
@@ -77,7 +85,7 @@ local function refresh()
                     AutoButtonColor=true
                 },list)
                 make("UICorner",{CornerRadius=UDim.new(0,7)},row)
-                table.insert(connections,row.MouseButton1Click:Connect(function() teleportTo(player) end))
+                table.insert(rowConnections,row.MouseButton1Click:Connect(function() teleportTo(player) end))
             end
         end
     end
