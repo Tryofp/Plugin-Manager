@@ -86,7 +86,7 @@ local ok, result = pcall(function()
     featureManager.Context.WalkSpeedTarget = 32
     toolsTab:CreateSection("WALKSPEED CONTROL")
     toolsTab:CreateButton({
-        Name = "Speed - 5  |  Current: 32",
+        Name = "Speed - 5",
         Callback = function()
             featureManager.Context.WalkSpeedTarget = math.max(16, (featureManager.Context.WalkSpeedTarget or 32) - 5)
             print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
