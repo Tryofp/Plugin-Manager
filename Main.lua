@@ -80,9 +80,32 @@ local ok, result = pcall(function()
 
     local toolsTab = window:CreateTab("Tools", "⚒")
     toolsTab:CreateSection("STANDALONE TOOLS")
-    for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip"}) do
+    for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip", "WalkSpeed"}) do
         addFeatureToggle(toolsTab, featureId, toolFeatures[featureId])
     end
+    featureManager.Context.WalkSpeedTarget = 32
+    toolsTab:CreateSection("WALKSPEED CONTROL")
+    toolsTab:CreateButton({
+        Name = "Speed - 5  |  Current: 32",
+        Callback = function()
+            featureManager.Context.WalkSpeedTarget = math.max(16, (featureManager.Context.WalkSpeedTarget or 32) - 5)
+            print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
+        end
+    })
+    toolsTab:CreateButton({
+        Name = "Speed + 5",
+        Callback = function()
+            featureManager.Context.WalkSpeedTarget = math.min(100, (featureManager.Context.WalkSpeedTarget or 32) + 5)
+            print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
+        end
+    })
+    toolsTab:CreateButton({
+        Name = "Reset speed to 32",
+        Callback = function()
+            featureManager.Context.WalkSpeedTarget = 32
+            print("[Tryo] WalkSpeed target:", featureManager.Context.WalkSpeedTarget)
+        end
+    })
     toolsTab:CreateSection("SOUND & VIEW")
     addFeatureToggle(toolsTab, "MuteMapSounds", soundViewFeatures.MuteMapSounds)
     addFeatureToggle(toolsTab, "Spectate", soundViewFeatures.Spectate)
