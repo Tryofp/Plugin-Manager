@@ -429,7 +429,7 @@ local function buildUI()
     make("UIStroke",{Color=Color3.fromRGB(112,142,185),Transparency=0.45},panel)
     make("UIGradient",{Color=ColorSequence.new(Color3.fromRGB(43,76,108),Color3.fromRGB(75,48,105)),Rotation=28},panel)
     local header = make("TextButton",{
-        Name="Header",Text="WAYPOINT MANAGER  •  " .. tostring(game.PlaceId),Size=UDim2.new(1,0,0,36),
+        Name="Header",Text="WAYPOINT MANAGER",Size=UDim2.new(1,0,0,36),
         BackgroundColor3=Color3.fromRGB(47,80,112),BackgroundTransparency=0.12,TextColor3=Color3.fromRGB(245,247,255),
         Font=Enum.Font.GothamBold,TextSize=11,BorderSizePixel=0,AutoButtonColor=false
     },panel)
@@ -457,8 +457,17 @@ local function buildUI()
         panel.Visible=false
         if reopenButton then reopenButton.Visible=true end
     end,false).ZIndex=3
-    button(panel,"RADAR",UDim2.fromOffset(62,25),UDim2.fromOffset(8,42),function() page="RADAR"; Feature.RefreshUI() end,page=="RADAR")
-    button(panel,"SAVED",UDim2.fromOffset(62,25),UDim2.fromOffset(74,42),function() page="SAVED"; Feature.RefreshUI() end,page=="SAVED")
+    local radarTab, savedTab
+    local function selectPage(nextPage)
+        page = nextPage
+        local activeColor = Color3.fromRGB(93,78,145)
+        local inactiveColor = Color3.fromRGB(43,53,72)
+        if radarTab then radarTab.BackgroundColor3 = page == "RADAR" and activeColor or inactiveColor end
+        if savedTab then savedTab.BackgroundColor3 = page == "SAVED" and activeColor or inactiveColor end
+        Feature.RefreshUI()
+    end
+    radarTab = button(panel,"RADAR",UDim2.fromOffset(62,25),UDim2.fromOffset(8,42),function() selectPage("RADAR") end,page=="RADAR")
+    savedTab = button(panel,"SAVED",UDim2.fromOffset(62,25),UDim2.fromOffset(74,42),function() selectPage("SAVED") end,page=="SAVED")
     button(panel,"REFRESH",UDim2.fromOffset(68,25),UDim2.fromOffset(140,42),function() Feature.Scan(); Feature.RefreshUI() end,false)
     button(panel,"SAVE HERE",UDim2.fromOffset(86,25),UDim2.new(1,-94,0,42),showNamePrompt,true)
 
@@ -467,7 +476,7 @@ local function buildUI()
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
-    reopenButton=button(gui,"SCP",UDim2.fromOffset(48,48),UDim2.new(0,14,1,-66),function()
+    reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(0,14,1,-54),function()
         if reopenWasDragged then
             reopenWasDragged=false
             return
@@ -476,8 +485,8 @@ local function buildUI()
         reopenButton.Visible=false
         Feature.RefreshUI()
     end,true)
-    corner(reopenButton,24)
-    reopenButton.TextSize=12
+    corner(reopenButton,19)
+    reopenButton.TextSize=10
     reopenButton.ZIndex=10
     reopenButton.Visible=false
     reopenButton.InputBegan:Connect(function(input)
