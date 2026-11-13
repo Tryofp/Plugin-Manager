@@ -612,11 +612,13 @@ local function createLootESP(model)
     end
 end
 
-local function rebuildLootCache()
+local function rebuildLootCache(objects)
+    objects = objects or Workspace:GetDescendants()
     table.clear(itpLootCache)
     local seenParts = {}
 
-    for _, obj in ipairs(Workspace:GetDescendants()) do
+    for index, obj in ipairs(objects) do
+        if index % 250 == 0 then task.wait() end
         if isLootItem(obj) then
             local modelRoot = obj
             if obj:IsA("BasePart") and obj.Parent and obj.Parent:IsA("Model") then
@@ -2076,10 +2078,12 @@ local function showFilterPopup()
 end
 
 -- Fungsi Rebuild Cache ITESP Independen untuk ITP
-local function rebuildITESPCache()
+local function rebuildITESPCache(objects)
+    objects = objects or Workspace:GetDescendants()
     table.clear(itpTouchCache)
     local seen = {}
-    for _, obj in ipairs(Workspace:GetDescendants()) do
+    for index, obj in ipairs(objects) do
+        if index % 250 == 0 then task.wait() end
         if isTouchInteraction(obj) then
             local part = getTouchPart(obj)
             if part and isInWorkspace(part) and not seen[part] then
@@ -2099,9 +2103,11 @@ local function rebuildITESPCache()
 end
 
 -- Fungsi Rebuild Cache CDESP Independen untuk ITP
-local function rebuildCDESPCache()
+local function rebuildCDESPCache(objects)
+    objects = objects or Workspace:GetDescendants()
     table.clear(itpClickCache)
-    for _, obj in ipairs(Workspace:GetDescendants()) do
+    for index, obj in ipairs(objects) do
+        if index % 250 == 0 then task.wait() end
         if obj:IsA("ClickDetector") then
             local parent = obj.Parent
             if parent and parent:IsA("BasePart") and isInWorkspace(parent) then
@@ -2123,10 +2129,12 @@ local function rebuildCDESPCache()
 end
 
 local function scanAndFetchAllPrompts()
+    local descendants = Workspace:GetDescendants()
     table.clear(doorPromptMap)
     table.clear(proximityPartMap)
 
-    for _, obj in ipairs(Workspace:GetDescendants()) do
+    for index, obj in ipairs(descendants) do
+        if index % 250 == 0 then task.wait() end
         if obj:IsA("ProximityPrompt") then
             local part = getPromptPart(obj)
             if part and isValidPrompt(obj, part) then
@@ -2139,9 +2147,9 @@ local function scanAndFetchAllPrompts()
         end
     end
     rebuildPPESPCache()
-    rebuildITESPCache()
-    rebuildCDESPCache()
-    rebuildLootCache()
+    rebuildITESPCache(descendants)
+    rebuildCDESPCache(descendants)
+    rebuildLootCache(descendants)
 end
 
 local function toggleITP()
@@ -2167,7 +2175,7 @@ local function toggleITP()
 
     itpActive = true
 
-    scanAndFetchAllPrompts()
+    task.spawn(scanAndFetchAllPrompts)
 
     if connections.itpAdded then connections.itpAdded:Disconnect() end
     connections.itpAdded = Workspace.DescendantAdded:Connect(function(object)
@@ -2315,8 +2323,6 @@ local function toggleITP()
     end)
     itpGui.Destroying:Connect(function()
         dragging = false
-        ContextActionService:UnbindAction("TryoITPItemScroll")
-        ContextActionService:UnbindAction("TryoITPTabScroll")
         ContextActionService:UnbindAction(dragActionName)
         dragEndedConnection:Disconnect()
         dragMovedConnection:Disconnect()
@@ -2417,34 +2423,11 @@ local function toggleITP()
     scrollingFrame.ScrollingEnabled = true
     scrollingFrame.Parent = mainFrame
 
-    -- Capture touch/mouse gestures that begin inside the item list so mobile
-    -- camera controls do not receive the same drag while the list is scrolling.
-    local function bindScrollInputCapture(target, actionName)
-        target.InputBegan:Connect(function(input)
-            if input.UserInputType ~= Enum.UserInputType.Touch
-            and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-                return
-            end
-            ContextActionService:BindActionAtPriority(
-                actionName,
-                function()
-                    return Enum.ContextActionResult.Sink
-                end,
-                false,
-                Enum.ContextActionPriority.High.Value + 100,
-                Enum.UserInputType.Touch,
-                Enum.UserInputType.MouseButton1
-            )
-        end)
-        target.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                ContextActionService:UnbindAction(actionName)
-            end
-        end)
-    end
-    bindScrollInputCapture(scrollingFrame, "TryoITPItemScroll")
-    bindScrollInputCapture(tabContainer, "TryoITPTabScroll")
+    -- Native ScrollingFrame input handling: do not globally sink Touch,
+    -- so a second finger can still operate the movement joystick.
+    scrollingFrame.Active = true
+    scrollingFrame.ScrollingEnabled = true
+    tabContainer.Active = true
 
     local uiListLayout = Instance.new("UIListLayout")
     uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2492,12 +2475,7 @@ local function toggleITP()
                 currentTab = name
                 updateTabStyles()
                 clearItemFrames()
-                if currentTab == "PPESP" then scanAndFetchAllPrompts()
-                elseif currentTab == "ITESP" then rebuildITESPCache()
-                elseif currentTab == "CDESP" then rebuildCDESPCache()
-                elseif currentTab == "DESP" then scanAndFetchAllPrompts()
-                elseif currentTab == "LOOT" then rebuildLootCache()
-                end
+                -- Caches are populated by the initial/background scan; switching tabs is UI-only.
             end
         end)
 
@@ -2526,7 +2504,7 @@ local function toggleITP()
 
     refBtn.MouseButton1Click:Connect(function()
         clearItemFrames()
-        scanAndFetchAllPrompts()
+        task.spawn(scanAndFetchAllPrompts)
     end)
 
     -- MAIN LOOP UPDATE ITP UI
@@ -2633,10 +2611,6 @@ local function toggleITP()
         local allItems = {}
 
         if currentTab == "PPESP" then
-            if #itpCache == 0 then
-                rebuildPPESPCache()
-            end
-
             for i = 1, #itpCache do
                 local item = itpCache[i]
                 local part = item.part
@@ -2655,10 +2629,6 @@ local function toggleITP()
                 end
             end
         elseif currentTab == "ITESP" then
-            if #itpTouchCache == 0 then
-                rebuildITESPCache()
-            end
-
             for i = 1, #itpTouchCache do
                 local item = itpTouchCache[i]
                 local part = item.part
@@ -2677,10 +2647,6 @@ local function toggleITP()
                 end
             end
         elseif currentTab == "CDESP" then
-            if #itpClickCache == 0 then
-                rebuildCDESPCache()
-            end
-
             for i = 1, #itpClickCache do
                 local item = itpClickCache[i]
                 local part = item.part
@@ -2717,10 +2683,6 @@ local function toggleITP()
                 end
             end
         elseif currentTab == "LOOT" then
-            if #itpLootCache == 0 then
-                rebuildLootCache()
-            end
-
             for i = 1, #itpLootCache do
                 local item = itpLootCache[i]
                 local part = item.part
