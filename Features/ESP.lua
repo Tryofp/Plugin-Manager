@@ -181,7 +181,9 @@ Features.EnemyESP={
         if enemyRunning then return true end
         enemyRunning=true
         for _,object in ipairs(Workspace:GetDescendants()) do
-            if object:IsA("Model") then registerEnemyModel(object) end
+            if object:IsA("Model") and isEnemyCandidate(object) then
+                enemyModels[object]=true
+            end
         end
         enemyDescendantConnection=Workspace.DescendantAdded:Connect(function(object)
             if object:IsA("Model") then registerEnemyModel(object)
