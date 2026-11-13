@@ -633,11 +633,11 @@ function TryoUI:CreateTab(name, icon)
         end
 
         controlButton("−", 11, 38, function()
-            if options.SetValue then options.SetValue(math.max(16, (tonumber(options.GetValue()) or 16) - 5)) end
+            if options.SetValue then options.SetValue(math.max(16, (tonumber(options.GetValue()) or 16) - 1)) end
             updateValue()
         end)
         controlButton("+", 55, 38, function()
-            if options.SetValue then options.SetValue(math.min(100, (tonumber(options.GetValue()) or 16) + 5)) end
+            if options.SetValue then options.SetValue(math.min(100, (tonumber(options.GetValue()) or 16) + 1)) end
             updateValue()
         end)
         controlButton("Reset", 0, 54, function()
