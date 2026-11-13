@@ -8,6 +8,7 @@ TryoUI.__index = TryoUI
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local COLORS = {
     Background = Color3.fromRGB(20, 22, 29),
@@ -201,35 +202,96 @@ function TryoUI.new(config)
         BackgroundTransparency = 1
     }, body)
 
+    -- Drag only from the top bar. Sink the active pointer action while dragging
+    -- so Roblox's default camera controls do not receive the same touch/mouse gesture.
     local drag, dragInput, dragStart, startPos
+    local dragActionName = "TryoWindowDrag_" .. tostring(player and player.UserId or 0)
+    top.Active = true
+
     top.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             drag = true
             dragStart = input.Position
             startPos = self.Window.Position
+            ContextActionService:BindActionAtPriority(
+                dragActionName,
+                function() return Enum.ContextActionResult.Sink end,
+                false,
+                Enum.ContextActionPriority.High.Value,
+                Enum.UserInputType.MouseButton1,
+                Enum.UserInputType.Touch
+            )
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then drag = false end
+                if input.UserInputState == Enum.UserInputState.End then
+                    drag = false
+                    ContextActionService:UnbindAction(dragActionName)
+                end
             end)
         end
     end)
+
     top.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
+
+    self.DragConnection = UserInputService.InputChanged:Connect(function(input)
         if drag and (input == dragInput or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
-            self.Window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            self.Window.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
         end
     end)
 
+    -- Floating circular restore button; the final Tryo logo can replace this glyph later.
+    self.FloatingButton = make("TextButton", {
+        Name = "TryoFloatingToggle",
+        AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.new(1, -22, 1, -110),
+        Size = UDim2.fromOffset(54, 54),
+        BackgroundColor3 = COLORS.Surface,
+        BackgroundTransparency = 0.16,
+        BorderSizePixel = 0,
+        Text = "T",
+        TextColor3 = COLORS.Text,
+        TextSize = 25,
+        Font = Enum.Font.GothamBlack,
+        AutoButtonColor = false,
+        Visible = false,
+        ZIndex = 20
+    }, self.Gui)
+    corner(self.FloatingButton, 27)
+    stroke(self.FloatingButton, COLORS.Accent, 0.12)
+    make("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(65, 190, 220)),
+            ColorSequenceKeypoint.new(0.52, COLORS.Accent),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 65, 160))
+        }),
+        Rotation = 35
+    }, self.FloatingButton)
+
     self.ExpandedSize = self.Size
+    self.Minimized = false
+
+    local function restoreWindow()
+        self.Minimized = false
+        self.FloatingButton.Visible = false
+        self.Window.Visible = true
+        self.Window.Size = self.ExpandedSize
+    end
+
     minimize.MouseButton1Click:Connect(function()
-        self.Minimized = not self.Minimized
-        local target = self.Minimized and UDim2.new(self.ExpandedSize.X.Scale, self.ExpandedSize.X.Offset, 0, 43) or self.ExpandedSize
-        TweenService:Create(self.Window, TweenInfo.new(0.18), { Size = target }):Play()
+        if self.Minimized then return end
+        self.Minimized = true
+        self.Window.Visible = false
+        self.FloatingButton.Visible = true
     end)
+
+    self.FloatingButton.MouseButton1Click:Connect(restoreWindow)
 
     return self
 end
@@ -335,6 +397,8 @@ end
 function TryoUI:Destroy()
     if self.Destroyed then return end
     self.Destroyed = true
+    if self.DragConnection then self.DragConnection:Disconnect() end
+    ContextActionService:UnbindAction("TryoWindowDrag_" .. tostring(Players.LocalPlayer and Players.LocalPlayer.UserId or 0))
     if self.Gui then self.Gui:Destroy() end
 end
 
