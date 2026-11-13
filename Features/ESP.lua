@@ -26,7 +26,7 @@ local function makeVisual(model,tag,color,label)
     if not highlight then
         highlight=Instance.new("Highlight")
         highlight.Name=tag
-        highlight.DepthMode=Enum.HighlightDepthMode.Occluded
+        highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
         highlight.FillTransparency=0.72
         highlight.OutlineTransparency=0.08
         highlight.Parent=model
@@ -41,7 +41,7 @@ local function makeVisual(model,tag,color,label)
         billboard.Name=tag.."_Name"
         billboard.Size=UDim2.fromOffset(150,24)
         billboard.StudsOffset=Vector3.new(0,3,0)
-        billboard.AlwaysOnTop=false
+        billboard.AlwaysOnTop=true
         billboard.Parent=model
         local text=Instance.new("TextLabel")
         text.Name="Label"
