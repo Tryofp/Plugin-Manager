@@ -55,10 +55,13 @@ function Feature.SaveCurrent()
         notify("Last Server", "JobId kosong; server ini tidak bisa disimpan.")
         return false
     end
+    local infoOk, info = pcall(function()
+        return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+    end)
     local data = {
         PlaceId = game.PlaceId,
         JobId = game.JobId,
-        PlaceName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name,
+        PlaceName = infoOk and info and info.Name or tostring(game.PlaceId),
         SavedAt = os.time()
     }
     persist(data)
