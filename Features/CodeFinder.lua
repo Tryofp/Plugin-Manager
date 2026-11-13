@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ReplicatedFirst = game:GetService("ReplicatedFirst")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
@@ -247,11 +248,24 @@ local function buildGui(results, scanned)
     end
 
     local dragging, dragStart, startPos, activeInput = false, nil, nil, nil
+    local dragAction = "TryoCodeFinderDrag_" .. tostring(LocalPlayer.UserId)
+    local function sinkDragInput()
+        return Enum.ContextActionResult.Sink
+    end
+    local function stopDragging()
+        dragging = false
+        activeInput = nil
+        ContextActionService:UnbindAction(dragAction)
+    end
     title.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging, dragStart, startPos, activeInput = true, input.Position, frame.Position, input
+            ContextActionService:BindActionAtPriority(
+                dragAction, sinkDragInput, false, 3000,
+                Enum.UserInputType.MouseButton1, Enum.UserInputType.Touch
+            )
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+                if input.UserInputState == Enum.UserInputState.End then stopDragging() end
             end)
         end
     end)
@@ -264,7 +278,10 @@ local function buildGui(results, scanned)
         frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
             startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end)
-    gui.Destroying:Connect(function() connection:Disconnect() end)
+    gui.Destroying:Connect(function()
+        stopDragging()
+        connection:Disconnect()
+    end)
     return gui
 end
 
