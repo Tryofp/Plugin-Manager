@@ -83,6 +83,7 @@ local ok, result = pcall(function()
     for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip"}) do
         addFeatureToggle(toolsTab, featureId, toolFeatures[featureId])
     end
+    featureManager:Register("WalkSpeed", toolFeatures.WalkSpeed)
     featureManager.Context.WalkSpeedTarget = 16
     toolsTab:CreateWalkSpeedControl({
         Name = "WalkSpeed",
