@@ -570,6 +570,113 @@ function TryoUI:CreateTab(name, icon)
         return card
     end
 
+    function tab:CreateWalkSpeedControl(options)
+        options = options or {}
+        local card = make("Frame", {
+            Name = "WalkSpeedControl",
+            Size = UDim2.new(1, -4, 0, 35),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ClipsDescendants = true
+        }, self.Page)
+
+        local header = make("TextButton", {
+            Name = "ToggleHeader",
+            Text = "○  " .. (options.Name or "WalkSpeed") .. "     ▾",
+            TextSize = 12,
+            Font = Enum.Font.GothamMedium,
+            TextColor3 = COLORS.Text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            BackgroundColor3 = COLORS.Surface,
+            AutoButtonColor = false,
+            Size = UDim2.new(1, 0, 0, 35)
+        }, card)
+        corner(header, 7)
+
+        local panel = make("Frame", {
+            Name = "SpeedSettings",
+            Position = UDim2.fromOffset(0, 41),
+            Size = UDim2.new(1, 0, 0, 76),
+            BackgroundColor3 = Color3.fromRGB(42, 49, 68),
+            BackgroundTransparency = 0.22,
+            BorderSizePixel = 0,
+            Visible = false
+        }, card)
+        corner(panel, 8)
+        stroke(panel, Color3.fromRGB(105, 125, 170), 0.65)
+
+        local valueLabel = label(panel, "WalkSpeed: 16", 11, COLORS.Muted)
+        valueLabel.Position = UDim2.fromOffset(11, 4)
+        valueLabel.Size = UDim2.new(1, -22, 0, 19)
+
+        local function controlButton(text, x, width, callback, accent)
+            local b = make("TextButton", {
+                Text = text,
+                TextSize = 13,
+                Font = Enum.Font.GothamBold,
+                TextColor3 = COLORS.Text,
+                BackgroundColor3 = accent and COLORS.Accent or Color3.fromRGB(75, 78, 112),
+                BackgroundTransparency = 0.12,
+                BorderSizePixel = 0,
+                Size = UDim2.fromOffset(width, 25),
+                Position = UDim2.fromOffset(x, 34),
+                AutoButtonColor = true
+            }, panel)
+            corner(b, 6)
+            b.MouseButton1Click:Connect(callback)
+            return b
+        end
+
+        local function updateValue()
+            local value = math.clamp(tonumber(options.GetValue and options.GetValue()) or 16, 16, 100)
+            valueLabel.Text = "WalkSpeed: " .. tostring(value)
+        end
+
+        controlButton("−", 11, 38, function()
+            if options.SetValue then options.SetValue(math.max(16, (tonumber(options.GetValue()) or 16) - 5)) end
+            updateValue()
+        end)
+        controlButton("+", 55, 38, function()
+            if options.SetValue then options.SetValue(math.min(100, (tonumber(options.GetValue()) or 16) + 5)) end
+            updateValue()
+        end)
+        controlButton("Reset", nil, 58, function()
+            if options.SetValue then options.SetValue(16) end
+            updateValue()
+        end, true).Position = UDim2.new(1, -69, 0, 34)
+
+        local enabled = false
+        local expanded = false
+        local function refresh()
+            header.Text = (enabled and "●  " or "○  ") .. (options.Name or "WalkSpeed") .. (expanded and "     ▴" or "     ▾")
+            header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface
+            card.Size = UDim2.new(1, -4, 0, expanded and 123 or 35)
+            panel.Visible = expanded
+            updateValue()
+        end
+        header.MouseButton1Click:Connect(function()
+            enabled = not enabled
+            expanded = enabled
+            if type(options.Callback) == "function" then
+                local ok, err = pcall(options.Callback, enabled)
+                if not ok then warn("[Tryo UI] " .. tostring(err)) end
+            end
+            refresh()
+        end)
+        header.MouseEnter:Connect(function() header.BackgroundColor3 = COLORS.SurfaceHover end)
+        header.MouseLeave:Connect(function() header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface end)
+        refresh()
+        return {
+            Set = function(value)
+                enabled = value == true
+                expanded = enabled
+                refresh()
+            end,
+            Get = function() return enabled end,
+            Refresh = updateValue
+        }
+    end
+
     function tab:CreateGlassControl(options)
         options = options or {}
         local card = make("Frame", {
