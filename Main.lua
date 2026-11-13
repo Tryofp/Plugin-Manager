@@ -40,6 +40,10 @@ local ok, result = pcall(function()
     horrorTab:CreateSection("HOROR")
     horrorTab:CreateButton({ Name = "Feature slots are ready" })
 
+    local visualTab = window:CreateTab("Visual", "◉")
+    visualTab:CreateSection("VISUAL")
+    visualTab:CreateButton({ Name = "Visual features will be migrated here" })
+
     local toolsTab = window:CreateTab("Tools", "⚒")
     toolsTab:CreateSection("TOOLS")
     toolsTab:CreateToggle({
