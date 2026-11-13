@@ -12,16 +12,19 @@ local LocalPlayer = Players.LocalPlayer
 local FILE_NAME = "TeleportCP_MasterSaves.json"
 local HEIGHT_OFFSET = 1
 local IGNORE = {
-    "teleport","coin","gold","reward","cash","money","gem","damage","time",
-    "chat","block","boost","tutorial","kill","brick","gift","adminzone",
-    "crocodile","alligator","mob","npc","monster","animal","pet","zombie",
-    "boss","bear","sky","skybox","cloud","atmosphere","barrier","invisible",
-    "tree","branch","trunk","foliage","leaf","mushroom","axe","fence","bridge",
-    "ladder","stair","fog","hat","skip","wood","stone","rock","bamboo","raft",
-    "platform","floor","slime","camera","lamp","lantern","light","speaker",
-    "audio","music","sound","effect","head","torso","humanoid","character",
-    "arm","leg","face","hair","decoration","wall","roof","ceiling","window",
-    "door","table","chair","particle","sparkle","fire","smoke","player"
+    "teleport","tp","tele","coin","gold","reward","cash","money","gem","stop","jump","ready","inner","outer","damage",
+    "time","seluncur","remove","clone","seat","laying","down","fall","jatuh","chat","block","boost","cave","lake","goa",
+    "tutorial","hit","same","spin","kill","brick","birhday","gift","fun","needoh","rintangan","tanjakan","maut","uang",
+    "join","community","komunitas","enter","handle","squish","stand","adminzone","run","jaw","sphere","lompat","long",
+    "pop","boat","bot","crocodile","alligator","mob","npc","monster","animal","pet","zombie","boss","bear","sky",
+    "skypart","skybox","cloud","atmosphere","barrier","invisible","boundary","tree","pohon","branch","trunk","foliage",
+    "leaf","leaves","mushroom","axe","ice","shell","cookie","stick","fence","pagar","bridge","jembatan","ladder","stair",
+    "tangga","fog","hat","skip","skipboard","wood","stone","rock","batu","bambu","raft","platform","floor","step",
+    "pijakan","slime","camera","wax","lamp","lantern","light","street lamp","speaker","audio","music","sound","fx",
+    "effect","butter","head","torso","humanoid","character","arm","leg","face","hair","holder","neon","oreo","view",
+    "prop","decoration","wall","roof","ceiling","window","door","table","chair","badge","particle","sparkle","fire",
+    "smoke","cewe","cowo","refresh","ava","chinese","bubble","ball","chinematic","cinematic","dance","male","female",
+    "outfit","suguhan","big","small","sesi","trend","potret","player","douyin"
 }
 
 local Feature = { Name = "Waypoint / Checkpoint Manager" }
@@ -280,7 +283,12 @@ local function assignPlainNumbers()
             local db = (b.part.Position - hrp.Position).Magnitude
             if math.abs(da-db) > 0.01 then return da < db end
         end
-        return a.part.Position.Y < b.part.Position.Y
+        local ap,bp=a.part.Position,b.part.Position
+        if ap.Y==bp.Y then
+            if ap.X==bp.X then return ap.Z<bp.Z end
+            return ap.X<bp.X
+        end
+        return ap.Y<bp.Y
     end)
     for _, data in ipairs(pending) do
         local token = positionToken(data.part.Position)
@@ -308,6 +316,8 @@ end
 
 local function addSaved(key, description, cf, isPlain)
     local pos = cf.Position
+    local visitKey=tostring(key).."_"..math.floor(pos.X).."_"..math.floor(pos.Y).."_"..math.floor(pos.Z)
+    visitedKeys[visitKey]=true
     for _, item in ipairs(saved) do
         if item.cf and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3 then
             item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
