@@ -42,6 +42,8 @@ local ok, result = pcall(function()
     assert(type(waypoint) == "table" and type(waypoint.Start) == "function", "Invalid Waypoint Manager module")
     local cameraTools = fetchModule(BASE_URL .. "Features/CameraTools.lua", "CameraTools.lua")
     assert(type(cameraTools) == "table" and cameraTools.F1Lock and cameraTools.ForceUnlockCamera, "Invalid Camera Tools module")
+    local aimAssist = fetchModule(BASE_URL .. "Features/AimAssist.lua", "AimAssist.lua")
+    assert(type(aimAssist) == "table" and type(aimAssist.Start) == "function", "Invalid Aim Assist module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -92,6 +94,8 @@ local ok, result = pcall(function()
 
     local visualTab = window:CreateTab("Visual", "◉")
     visualTab:CreateSection("VISUAL")
+    visualTab:CreateSection("TARGET ASSIST")
+    addFeatureToggle(visualTab, "AimAssist", aimAssist)
     visualTab:CreateButton({ Name = "Visual features will be migrated here" })
 
     local toolsTab = window:CreateTab("Tools", "⚒")
