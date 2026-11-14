@@ -19,8 +19,8 @@ local ok, result = pcall(function()
     -- Build the visible shell before downloading the feature modules.
     local window = TryoUI.new({
         Title = "PLUGIN MANAGER",
-        Subtitle = "V0.1 • Stable",
-        LastUpdate = "14 Nov 2026",
+        Subtitle = "V0.1 • BETA",
+        LastUpdate = os.date("%d/%m/%y %H:%M"),
         Size = UDim2.fromOffset(590, 370)
     })
     local loadingTab = window:CreateTab("Loading", "◌")
@@ -231,11 +231,7 @@ local ok, result = pcall(function()
     settingsTab:CreateSection("APPEARANCE")
     settingsTab:CreateSizeControl({ Name = "Customize window size" })
     settingsTab:CreateGlassControl({ Name = "Glass transparency" })
-    settingsTab:CreateSection("SETTINGS")
-    settingsTab:CreateButton({
-        Name = "Close Plugin Manager",
-        Callback = function() window:Destroy() end
-    })
+    settingsTab:CreateColorWheel({ Name = "Custom theme color • Color wheel" })
 
     if window.Gui then
         window.Gui.Destroying:Connect(function()
