@@ -20,6 +20,33 @@ local ok, result = pcall(function()
     -- The endpoint serves pluginMetadata.LastUpdate from Firestore.
     local HttpService = game:GetService("HttpService")
     local METADATA_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
+    -- Public release manifest: only intentional user-facing changes create badges.
+    local RELEASES = {{
+        Version = "0.2.0", Date = "14/11/2026", Title = "Camera Tools Update",
+        Summary = "Peningkatan Force Unlock Camera dan sistem navigasi rilis publik.",
+        Changes = {{
+            Id = "ForceUnlockCamera", Type = "UPDATE", Tab = "Main", Menu = "F1Lock",
+            Feature = "Lock Kamera",
+            Details = "Force Unlock Camera kini menangani pergantian CurrentCamera dan memulihkan tipe kamera asal saat fitur dimatikan."
+        }}
+    }}
+    local RELEASE_STATE_FILE = "TryoPluginManager_Releases.json"
+    local releaseState = {Seen = {}}
+    if type(readfile) == "function" and type(isfile) == "function" then
+        pcall(function()
+            if isfile(RELEASE_STATE_FILE) then
+                local saved = HttpService:JSONDecode(readfile(RELEASE_STATE_FILE))
+                if type(saved) == "table" and type(saved.Seen) == "table" then releaseState = saved end
+            end
+        end)
+    end
+    local function saveReleaseState()
+        if type(writefile) == "function" then pcall(function() writefile(RELEASE_STATE_FILE, HttpService:JSONEncode(releaseState)) end) end
+    end
+    local function releaseKey(scope, id) return RELEASES[1].Version .. ":" .. scope .. ":" .. id end
+    local function isReleaseSeen(scope, id) return releaseState.Seen[releaseKey(scope, id)] == true end
+    local function markReleaseSeen(scope, id) releaseState.Seen[releaseKey(scope, id)] = true; saveReleaseState() end
+
 
     -- Hub tracker: record every hub load and send exit data synchronously from exit events.
     -- The backend sends push notifications and excludes the developer account.
@@ -302,7 +329,34 @@ local ok, result = pcall(function()
     end
 
     local mainTab = window:CreateTab("Main", "⌂")
+    local release = RELEASES[1]
+    local cameraChange = release.Changes[1]
+    if not isReleaseSeen("tab", "Main") then mainTab:SetBadge(cameraChange.Type) end
+    mainTab.OnActivated = function()
+        mainTab:SetBadge(nil)
+        markReleaseSeen("tab", "Main")
+    end
     mainTab:CreateSection("QUICK ACCESS")
+    mainTab:CreateDropdown({
+        Name = "VERSION HISTORY",
+        Build = function(panel)
+            for _, item in ipairs(RELEASES) do
+                mainTab:CreateButton({
+                    Name = "V" .. item.Version .. "  •  " .. item.Date .. "  •  " .. item.Title,
+                    Parent = panel,
+                    Callback = function()
+                        local details = item.Summary
+                        for _, change in ipairs(item.Changes or {}) do
+                            details = details .. "\n\n" .. change.Type .. " • " .. change.Feature .. "\n" .. change.Details
+                        end
+                        if window and not window.Destroyed then
+                            window:ShowReleaseDetails("VERSION " .. item.Version, details)
+                        end
+                    end
+                })
+            end
+        end
+    })
     addFeatureToggle(mainTab, "WaypointManager", waypoint, "Waypoint")
     addFeatureToggle(mainTab, "PlayMusic", musicPlayer, "Play Music")
     mainTab:CreateDropdown({
@@ -340,13 +394,29 @@ local ok, result = pcall(function()
             end})
         end
     })
-    mainTab:CreateDropdown({
+    local f1Menu = mainTab:CreateDropdown({
         Name = "F1Lock",
         Build = function(panel)
             addFeatureToggle(mainTab, "F1Lock", cameraTools.F1Lock, "F1 Toggle", panel)
-            addFeatureToggle(mainTab, "ForceUnlockCamera", cameraTools.ForceUnlockCamera, "Lock Kamera", panel)
+            local forceUnlockControl = addFeatureToggle(mainTab, "ForceUnlockCamera", cameraTools.ForceUnlockCamera, "Lock Kamera", panel)
+            if not isReleaseSeen("feature", "ForceUnlockCamera") then
+                forceUnlockControl.SetBadge(cameraChange.Type)
+            end
+            forceUnlockControl.OnBadgeActivate = function()
+                forceUnlockControl.SetBadge(nil)
+                markReleaseSeen("feature", "ForceUnlockCamera")
+                f1Menu.SetBadge(nil)
+                markReleaseSeen("menu", "F1Lock")
+            end
         end
     })
+    if not isReleaseSeen("menu", "F1Lock") then f1Menu.SetBadge(cameraChange.Type) end
+    f1Menu.OnExpanded = function(expanded)
+        if expanded then
+            f1Menu.SetBadge(nil)
+            markReleaseSeen("menu", "F1Lock")
+        end
+    end
 
     local mountainTab = window:CreateTab("Gunung", "▲")
     mountainTab:CreateSection("MOUNTAIN QUICK ACCESS")
