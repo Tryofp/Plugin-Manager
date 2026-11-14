@@ -776,13 +776,31 @@ function TryoUI:CreateTab(name, icon)
     tab.Name = name
     tab.Elements = {}
     local function makeReleaseBadge(parent, badgeName)
-        return make("TextLabel", {
+        local badge = make("TextLabel", {
             Name = badgeName, AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -7, 0.5, 0), Size = UDim2.fromOffset(43, 17),
             BackgroundColor3 = Color3.fromRGB(235, 171, 65), BorderSizePixel = 0,
-            Text = "UPDATE", TextColor3 = Color3.fromRGB(24, 25, 30),
+            BackgroundTransparency = 0, Text = "UPDATE",
+            TextColor3 = Color3.fromRGB(24, 25, 30), TextTransparency = 0,
             TextSize = 8, Font = Enum.Font.GothamBlack, Visible = false, ZIndex = 6
         }, parent)
+        local pulse = TweenService:Create(
+            badge,
+            TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+            { BackgroundTransparency = 0.38, TextTransparency = 0.22 }
+        )
+        badge:GetPropertyChangedSignal("Visible"):Connect(function()
+            if badge.Visible then
+                badge.BackgroundTransparency = 0
+                badge.TextTransparency = 0
+                pulse:Play()
+            else
+                pulse:Cancel()
+                badge.BackgroundTransparency = 0
+                badge.TextTransparency = 0
+            end
+        end)
+        return badge
     end
     -- Use a Frame as the layout surface. A separate full-size click layer
     -- handles input; icon and title are siblings with fixed coordinates.
