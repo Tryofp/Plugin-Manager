@@ -1543,6 +1543,8 @@ function TryoUI:CreateTab(name, icon)
         local title = make("TextLabel", {Name = "DropdownTitle", BackgroundTransparency = 1, Text = options.Name or "Menu", TextSize = 12, Font = Enum.Font.GothamSemibold, TextColor3 = COLORS.Text, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(11, 0), Size = UDim2.new(1, -88, 1, 0), Active = false}, header)
         local arrow = make("TextLabel", {Name = "DropdownArrow", BackgroundTransparency = 1, Text = "v", TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = COLORS.Muted, Position = UDim2.new(1, -28, 0, 0), Size = UDim2.fromOffset(18, 35), Active = false}, header)
         local panel = make("Frame", {Name = "DropdownContent", Position = UDim2.fromOffset(0, 41), Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, Visible = false}, card)
+        -- Indent every dropdown child slightly so nested options read as a clear hierarchy.
+        make("UIPadding", {PaddingLeft = UDim.new(0, 12)}, panel)
         local list = make("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, panel)
         local expanded = false
         local function resize()
