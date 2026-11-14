@@ -1000,6 +1000,48 @@ function TryoUI:CreateTab(name, icon)
         return button
     end
 
+    function tab:CreateTextInput(options)
+        options = options or {}
+        local card = make("Frame", {
+            Name = "TextInput_" .. tostring(options.Name or "Input"):gsub("%W", ""),
+            Size = UDim2.new(1, -4, 0, 62),
+            BackgroundColor3 = COLORS.Surface,
+            BorderSizePixel = 0
+        }, options.Parent or self.Page)
+        corner(card, 7)
+        make("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(10, 4),
+            Size = UDim2.new(1, -20, 0, 18),
+            Text = options.Name or "Input",
+            TextColor3 = COLORS.Text,
+            Font = Enum.Font.GothamSemibold,
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Left
+        }, card)
+        local input = make("TextBox", {
+            Name = "Input",
+            Position = UDim2.fromOffset(8, 25),
+            Size = UDim2.new(1, -16, 0, 29),
+            BackgroundColor3 = COLORS.Panel,
+            BorderSizePixel = 0,
+            Text = options.Default or "",
+            PlaceholderText = options.Placeholder or "Enter text...",
+            PlaceholderColor3 = COLORS.Muted,
+            TextColor3 = COLORS.Text,
+            Font = Enum.Font.Gotham,
+            TextSize = 11,
+            ClearTextOnFocus = false,
+            TextXAlignment = Enum.TextXAlignment.Left
+        }, card)
+        corner(input, 5)
+        make("UIPadding", {
+            PaddingLeft = UDim.new(0, 8),
+            PaddingRight = UDim.new(0, 8)
+        }, input)
+        return input
+    end
+
     function tab:CreateSizeControl(options)
         options = options or {}
         local card = make("Frame", {
@@ -1545,12 +1587,43 @@ function TryoUI:CreateTab(name, icon)
             end
         end
         local toggleBadge = makeReleaseBadge(card, "FeatureReleaseBadge")
+        local maintenanceBadge = make("TextLabel", {
+            Name = "MaintenanceBadge",
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -7, 0.5, 0),
+            Size = UDim2.fromOffset(91, 18),
+            BackgroundColor3 = Color3.fromRGB(177, 65, 72),
+            BorderSizePixel = 0,
+            Text = "MAINTENANCE",
+            TextColor3 = Color3.fromRGB(255, 245, 245),
+            TextSize = 7,
+            Font = Enum.Font.GothamBlack,
+            Visible = false,
+            ZIndex = 5
+        }, card)
+        corner(maintenanceBadge, 5)
+        local maintenanceLocked = false
+        local releaseBadgeKind = nil
         local toggleControl = { Set = set, Get = function() return state end }
         function toggleControl.SetBadge(kind)
-            if kind == nil then toggleBadge.Visible = false; return end
+            releaseBadgeKind = kind
+            if maintenanceLocked or kind == nil then toggleBadge.Visible = false; return end
             toggleBadge.Text = tostring(kind):upper()
             toggleBadge.BackgroundColor3 = kind == "NEW" and Color3.fromRGB(80, 215, 145) or Color3.fromRGB(235, 171, 65)
             toggleBadge.Visible = true
+        end
+        function toggleControl.SetMaintenance(value)
+            maintenanceLocked = value == true
+            maintenanceBadge.Visible = maintenanceLocked
+            clickArea.Active = not maintenanceLocked
+            clickArea.Selectable = not maintenanceLocked
+            if maintenanceLocked then
+                state = false
+                statusDot.BackgroundColor3 = COLORS.Muted
+                toggleBadge.Visible = false
+            elseif releaseBadgeKind then
+                toggleControl.SetBadge(releaseBadgeKind)
+            end
         end
         clickArea.MouseButton1Click:Connect(function()
             set(not state)
