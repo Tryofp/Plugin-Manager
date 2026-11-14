@@ -1023,7 +1023,7 @@ function TryoUI:CreateTab(name, icon)
             Name = "Input",
             Position = UDim2.fromOffset(8, 25),
             Size = UDim2.new(1, -16, 0, 29),
-            BackgroundColor3 = COLORS.Panel,
+            BackgroundColor3 = COLORS.Background,
             BorderSizePixel = 0,
             Text = options.Default or "",
             PlaceholderText = options.Placeholder or "Enter text...",
