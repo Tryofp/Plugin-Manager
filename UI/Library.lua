@@ -775,6 +775,15 @@ function TryoUI:CreateTab(name, icon)
     local tab = {}
     tab.Name = name
     tab.Elements = {}
+    local function makeReleaseBadge(parent, badgeName)
+        return make("TextLabel", {
+            Name = badgeName, AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -7, 0.5, 0), Size = UDim2.fromOffset(43, 17),
+            BackgroundColor3 = Color3.fromRGB(235, 171, 65), BorderSizePixel = 0,
+            Text = "UPDATE", TextColor3 = Color3.fromRGB(24, 25, 30),
+            TextSize = 8, Font = Enum.Font.GothamBlack, Visible = false, ZIndex = 6
+        }, parent)
+    end
     -- Use a Frame as the layout surface. A separate full-size click layer
     -- handles input; icon and title are siblings with fixed coordinates.
     tab.Button = make("Frame", {
@@ -808,7 +817,7 @@ function TryoUI:CreateTab(name, icon)
         TextWrapped = false,
         TextTruncate = Enum.TextTruncate.AtEnd,
         Position = UDim2.fromOffset(36, 0),
-        Size = UDim2.new(1, -42, 1, 0),
+        Size = UDim2.new(1, -88, 1, 0),
         ZIndex = 4,
         Active = false
     }, tab.Button)
@@ -905,6 +914,14 @@ function TryoUI:CreateTab(name, icon)
         tab.Button.BackgroundColor3 = COLORS.Accent
         tabTitle.TextColor3 = Color3.new(1, 1, 1)
         self.ActiveTab = tab
+        if type(tab.OnActivated) == "function" then pcall(tab.OnActivated) end
+    end
+    local tabBadge = makeReleaseBadge(tab.Button, "TabReleaseBadge")
+    function tab:SetBadge(kind)
+        if kind == nil then tabBadge.Visible = false; return end
+        tabBadge.Text = tostring(kind):upper()
+        tabBadge.BackgroundColor3 = kind == "NEW" and Color3.fromRGB(80, 215, 145) or Color3.fromRGB(235, 171, 65)
+        tabBadge.Visible = true
     end
     tab.ClickArea.MouseButton1Click:Connect(activate)
     tab.Activate = activate
@@ -1380,7 +1397,7 @@ function TryoUI:CreateTab(name, icon)
         local card = make("Frame", {Name = "Dropdown_" .. tostring(options.Name or "Menu"):gsub("%W", ""), Size = UDim2.new(1, -4, 0, 35), BackgroundTransparency = 1, ClipsDescendants = true}, self.Page)
         local header = make("TextButton", {Name = "DropdownHeader", Text = "", BackgroundColor3 = COLORS.Surface, AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 35)}, card)
         corner(header, 7)
-        local title = make("TextLabel", {Name = "DropdownTitle", BackgroundTransparency = 1, Text = options.Name or "Menu", TextSize = 12, Font = Enum.Font.GothamSemibold, TextColor3 = COLORS.Text, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(11, 0), Size = UDim2.new(1, -42, 1, 0), Active = false}, header)
+        local title = make("TextLabel", {Name = "DropdownTitle", BackgroundTransparency = 1, Text = options.Name or "Menu", TextSize = 12, Font = Enum.Font.GothamSemibold, TextColor3 = COLORS.Text, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(11, 0), Size = UDim2.new(1, -88, 1, 0), Active = false}, header)
         local arrow = make("TextLabel", {Name = "DropdownArrow", BackgroundTransparency = 1, Text = "v", TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = COLORS.Muted, Position = UDim2.new(1, -28, 0, 0), Size = UDim2.fromOffset(18, 35), Active = false}, header)
         local panel = make("Frame", {Name = "DropdownContent", Position = UDim2.fromOffset(0, 41), Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, Visible = false}, card)
         local list = make("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, panel)
@@ -1391,11 +1408,20 @@ function TryoUI:CreateTab(name, icon)
             card.Size = UDim2.new(1, -4, 0, expanded and (41 + h + 5) or 35)
         end
         list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize)
+        local dropdownBadge = makeReleaseBadge(header, "DropdownReleaseBadge")
+        local dropdownControl = {}
+        function dropdownControl.SetBadge(kind)
+            if kind == nil then dropdownBadge.Visible = false; return end
+            dropdownBadge.Text = tostring(kind):upper()
+            dropdownBadge.BackgroundColor3 = kind == "NEW" and Color3.fromRGB(80, 215, 145) or Color3.fromRGB(235, 171, 65)
+            dropdownBadge.Visible = true
+        end
         header.MouseButton1Click:Connect(function()
             expanded = not expanded
             panel.Visible = expanded
             arrow.Text = expanded and "^" or "v"
             header.BackgroundColor3 = expanded and Color3.fromRGB(49, 65, 79) or COLORS.Surface
+            if type(options.OnExpanded) == "function" then pcall(options.OnExpanded, expanded) end
             resize()
         end)
         header.MouseEnter:Connect(function() header.BackgroundColor3 = COLORS.SurfaceHover end)
@@ -1405,7 +1431,16 @@ function TryoUI:CreateTab(name, icon)
             if not ok then warn("[Tryo UI] Dropdown " .. tostring(options.Name) .. ": " .. tostring(err)) end
         end
         resize()
-        return {Card = card, Content = panel, SetExpanded = function(value) expanded = value == true; panel.Visible = expanded; arrow.Text = expanded and "^" or "v"; resize() end}
+        dropdownControl.Card = card
+        dropdownControl.Content = panel
+        dropdownControl.SetExpanded = function(value)
+            expanded = value == true
+            panel.Visible = expanded
+            arrow.Text = expanded and "^" or "v"
+            if type(options.OnExpanded) == "function" then pcall(options.OnExpanded, expanded) end
+            resize()
+        end
+        return dropdownControl
     end
 
     function tab:CreateToggle(options)
@@ -1455,7 +1490,7 @@ function TryoUI:CreateTab(name, icon)
             TextWrapped = false,
             TextTruncate = Enum.TextTruncate.AtEnd,
             Position = UDim2.fromOffset(30, 0),
-            Size = UDim2.new(1, -40, 1, 0),
+            Size = UDim2.new(1, -92, 1, 0),
             ZIndex = 4,
             Active = false
         }, card)
@@ -1468,16 +1503,55 @@ function TryoUI:CreateTab(name, icon)
                 if not ok then warn("[Tryo UI] " .. tostring(err)) end
             end
         end
-        clickArea.MouseButton1Click:Connect(function() set(not state) end)
+        local toggleBadge = makeReleaseBadge(card, "FeatureReleaseBadge")
+        local toggleControl = { Set = set, Get = function() return state end }
+        function toggleControl.SetBadge(kind)
+            if kind == nil then toggleBadge.Visible = false; return end
+            toggleBadge.Text = tostring(kind):upper()
+            toggleBadge.BackgroundColor3 = kind == "NEW" and Color3.fromRGB(80, 215, 145) or Color3.fromRGB(235, 171, 65)
+            toggleBadge.Visible = true
+        end
+        clickArea.MouseButton1Click:Connect(function()
+            set(not state)
+            if type(toggleControl.OnBadgeActivate) == "function" then pcall(toggleControl.OnBadgeActivate) end
+        end)
         clickArea.MouseEnter:Connect(function() card.BackgroundColor3 = COLORS.SurfaceHover end)
         clickArea.MouseLeave:Connect(function() card.BackgroundColor3 = COLORS.Surface end)
-        return { Set = set, Get = function() return state end }
+        return toggleControl
     end
 
     tab._window = self
     table.insert(self.Tabs, tab)
     if #self.Tabs == 1 then activate() end
     return tab
+end
+
+function TryoUI:ShowReleaseDetails(titleText, bodyText)
+    if not self.Window or not self.Window.Parent then return end
+    local old = self.Window:FindFirstChild("ReleaseDetailsOverlay")
+    if old then old:Destroy() end
+    local overlay = make("Frame", {Name = "ReleaseDetailsOverlay", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.3,
+        BorderSizePixel = 0, ZIndex = 300}, self.Window)
+    local panel = make("Frame", {AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -34, 0, 190),
+        BackgroundColor3 = Color3.fromRGB(25, 32, 44), BorderSizePixel = 0, ZIndex = 301}, overlay)
+    corner(panel, 9)
+    make("TextLabel", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 8),
+        Size = UDim2.new(1, -48, 0, 24), Text = titleText or "RELEASE NOTES",
+        TextColor3 = Color3.fromRGB(90, 220, 240), Font = Enum.Font.GothamBlack,
+        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 302}, panel)
+    local close = make("TextButton", {Position = UDim2.new(1, -34, 0, 7),
+        Size = UDim2.fromOffset(25, 24), Text = "×", TextColor3 = Color3.new(1,1,1),
+        BackgroundColor3 = Color3.fromRGB(150,55,65), Font = Enum.Font.GothamBold,
+        TextSize = 15, BorderSizePixel = 0, ZIndex = 303}, panel)
+    corner(close, 5)
+    make("TextLabel", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 39),
+        Size = UDim2.new(1, -24, 1, -50), Text = tostring(bodyText or ""),
+        TextColor3 = Color3.fromRGB(225, 232, 244), Font = Enum.Font.Gotham,
+        TextSize = 10, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 302}, panel)
+    close.MouseButton1Click:Connect(function() overlay:Destroy() end)
 end
 
 function TryoUI:Destroy()
