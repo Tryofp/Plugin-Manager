@@ -16,13 +16,54 @@ local ok, result = pcall(function()
     local TryoUI = fetchModule(LIBRARY_URL, "TryoUI/Library.lua")
     assert(type(TryoUI) == "table" and type(TryoUI.new) == "function", "Invalid Tryo UI Library")
 
-    -- Build the visible shell before downloading the feature modules.
+    -- Read the shared LastUpdate metadata from the production Apps Script endpoint.
+    -- The endpoint serves pluginMetadata.LastUpdate from Firestore.
+    local HttpService = game:GetService("HttpService")
+    local METADATA_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
+
+    local function formatLastUpdate(raw)
+        raw = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if raw == "" then return "-" end
+
+        local yyyy, mm, dd, hh, mi = raw:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d)")
+        if yyyy and mm and dd and hh and mi then
+            return string.format("%s/%s/%s %s:%s", dd, mm, yyyy:sub(3), hh, mi)
+        end
+
+        dd, mm, yyyy, hh, mi = raw:match("^(%d%d?)[/%-](%d%d?)[/%-](%d%d%d%d)[ T](%d%d?):(%d%d?)")
+        if dd and mm and yyyy and hh and mi then
+            return string.format("%02d/%02d/%s %02d:%02d",
+                tonumber(dd) or 0, tonumber(mm) or 0, yyyy:sub(3), tonumber(hh) or 0, tonumber(mi) or 0)
+        end
+
+        return raw
+    end
+
+    local function readLastUpdate()
+        local url = METADATA_URL .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis)
+        local response = game:HttpGet(url)
+        local decoded = HttpService:JSONDecode(response or "{}")
+        assert(type(decoded) == "table", "Metadata response is not a JSON object")
+        return formatLastUpdate(decoded.LastUpdate)
+    end
+
+    -- Build the visible shell immediately; metadata loads asynchronously.
     local window = TryoUI.new({
         Title = "PLUGIN MANAGER",
         Subtitle = "V0.1 • BETA",
-        LastUpdate = os.date("%d/%m/%y %H:%M"),
+        LastUpdate = "Memuat...",
         Size = UDim2.fromOffset(590, 370)
     })
+
+    task.spawn(function()
+        local ok, value = pcall(readLastUpdate)
+        if ok and window and not window.Destroyed then
+            window:SetLastUpdate(value)
+        elseif not ok then
+            warn("[Tryo Plugin Manager] LastUpdate metadata: " .. tostring(value))
+            if window and not window.Destroyed then window:SetLastUpdate("-") end
+        end
+    end)
     local loadingTab = window:CreateTab("Loading", "◌")
     loadingTab:CreateSection("INITIALIZING")
     local loadingMessage = loadingTab:CreateButton({Name = "Loading features, please wait..."})
