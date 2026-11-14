@@ -618,19 +618,6 @@ local ok, result = pcall(function()
             button.BackgroundColor3 = entry.Locked and Color3.fromRGB(92, 43, 52) or Color3.fromRGB(38, 76, 66)
         end
 
-        local function applyMaintenanceSnapshot(metadata)
-            for id, entry in pairs(maintenanceEntries) do
-                local key = "FeatureMaintenance_" .. tostring(id)
-                local raw = metadata[key]
-                -- Missing keys are treated as ACTIVE for backward compatibility.
-                -- An explicitly empty value is the server's maintenance state.
-                local locked = raw ~= nil and tostring(raw) ~= "ACTIVE"
-                maintenanceLocks[id] = locked
-                setMaintenanceLocked(id, locked)
-                updateMaintenanceRow(entry)
-            end
-        end
-
         local function refreshMaintenance()
             local okMeta, metadata = pcall(readAdminMetadata)
             if not okMeta then
@@ -638,6 +625,7 @@ local ok, result = pcall(function()
                 return false
             end
             applyMaintenanceSnapshot(metadata)
+            for _, entry in pairs(maintenanceEntries) do updateMaintenanceRow(entry) end
             local featureCount = 0
             for _ in pairs(maintenanceEntries) do featureCount = featureCount + 1 end
             setAdminStatus("Status maintenance tersinkron • " .. tostring(featureCount) .. " fitur.")
