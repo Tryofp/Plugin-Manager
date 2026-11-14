@@ -1047,7 +1047,7 @@ function TryoUI:CreateTab(name, icon)
         local info = make("TextLabel", {
             Name = options.Name or "Info",
             Size = UDim2.new(1, -4, 0, options.Height or 48),
-            BackgroundColor3 = options.Background or COLORS.Panel,
+            BackgroundColor3 = options.Background or COLORS.Background,
             BackgroundTransparency = 0.08,
             BorderSizePixel = 0,
             Text = options.Text or "",
@@ -1646,9 +1646,11 @@ function TryoUI:CreateTab(name, icon)
             if maintenanceLocked then
                 state = false
                 statusDot.BackgroundColor3 = COLORS.Muted
+                toggleTitle.Size = UDim2.new(1, -116, 1, 0)
                 toggleBadge.Visible = false
-            elseif releaseBadgeKind then
-                toggleControl.SetBadge(releaseBadgeKind)
+            else
+                toggleTitle.Size = UDim2.new(1, -92, 1, 0)
+                if releaseBadgeKind then toggleControl.SetBadge(releaseBadgeKind) end
             end
         end
         clickArea.MouseButton1Click:Connect(function()
