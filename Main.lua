@@ -502,6 +502,15 @@ local ok, result = pcall(function()
         end
     end
 
+    local teleportTab = window:CreateTab("Teleport", "↗")
+    teleportTab:CreateDropdown({
+        Name = "TELEPORT",
+        Build = function(panel)
+            addFeatureToggle(teleportTab, "TeleportToPlayer", teleportFeatures.PlayerTeleport, "TELEPORT TO PLAYER", panel)
+            addFeatureToggle(teleportTab, "TeleportToItemUniversal", tpItem, "TELEPORT TO ITEM", panel)
+        end
+    })
+
     local mountainTab = window:CreateTab("Gunung", "▲")
     mountainTab:CreateSection("MOUNTAIN QUICK ACCESS")
     addFeatureToggle(mountainTab, "WaypointManager", waypoint, "Waypoint")
