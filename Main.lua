@@ -209,7 +209,7 @@ local ok, result = pcall(function()
     -- Build the visible shell immediately; metadata loads asynchronously.
     local window = TryoUI.new({
         Title = "PLUGIN MANAGER",
-        Subtitle = "V0.1 • BETA",
+        Subtitle = "V0.2 • BETA",
         LastUpdate = "Memuat...",
         Size = UDim2.fromOffset(590, 370)
     })
