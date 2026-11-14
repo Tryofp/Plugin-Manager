@@ -64,130 +64,168 @@ local ok, result = pcall(function()
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
+    local featureControllers = {}
+    local walkSpeedControllers = {}
 
+    local function syncFeature(featureId, enabled)
+        for _, control in ipairs(featureControllers[featureId] or {}) do
+            control:Set(enabled, true)
+        end
+    end
 
-    local function addFeatureToggle(tab, featureId, definition)
+    local function addFeatureToggle(tab, featureId, definition, displayName, parent)
         if not definition then return end
-        featureManager:Register(featureId, definition)
-        tab:CreateToggle({
-            Name = definition.Name or featureId,
-            Default = false,
+        if not featureManager.Registry[featureId] then featureManager:Register(featureId, definition) end
+        local control = tab:CreateToggle({
+            Name = displayName or definition.Name or featureId,
+            Default = featureManager:IsEnabled(featureId),
+            Parent = parent,
             Callback = function(enabled)
                 local success, err = featureManager:SetEnabled(featureId, enabled)
-                if not success then
-                    warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
-                end
+                if not success then warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err)) end
+                syncFeature(featureId, featureManager:IsEnabled(featureId))
             end
         })
+        featureControllers[featureId] = featureControllers[featureId] or {}
+        table.insert(featureControllers[featureId], control)
+        return control
+    end
+
+    local function addWalkSpeed(tab)
+        if not featureManager.Registry.WalkSpeed then featureManager:Register("WalkSpeed", toolFeatures.WalkSpeed) end
+        if featureManager.Context.WalkSpeedTarget == nil then featureManager.Context.WalkSpeedTarget = 16 end
+        local control = tab:CreateWalkSpeedControl({
+            Name = "WalkSpeed",
+            GetValue = function() return featureManager.Context.WalkSpeedTarget end,
+            SetValue = function(value)
+                featureManager.Context.WalkSpeedTarget = math.clamp(tonumber(value) or 16, 16, 100)
+                for _, item in ipairs(walkSpeedControllers) do item.Refresh() end
+            end,
+            Callback = function(enabled)
+                local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
+                if not success then warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err)) end
+                for _, item in ipairs(walkSpeedControllers) do item.Set(featureManager:IsEnabled("WalkSpeed"), true) end
+            end
+        })
+        table.insert(walkSpeedControllers, control)
+        control.Set(featureManager:IsEnabled("WalkSpeed"), true)
+    end
+
+    local function addInteractableToggle(tab, id, name, parent)
+        local control = tab:CreateToggle({
+            Name = name,
+            Parent = parent,
+            Default = false,
+            Callback = function(enabled)
+                local success, err = interactable:SetFeatureEnabled(id, enabled)
+                if not success then warn("[Tryo Plugin Manager] " .. id .. ": " .. tostring(err)) end
+            end
+        })
+        return control
     end
 
     local mainTab = window:CreateTab("Main", "⌂")
-    mainTab:CreateSection("PLAYER & ENEMY ESP")
-    for _, featureId in ipairs({"PlayerESP", "EnemyESP"}) do
-        addFeatureToggle(mainTab, featureId, espFeatures[featureId])
-    end
-    mainTab:CreateSection("TELEPORT")
-    addFeatureToggle(mainTab, "PlayerTeleport", teleportFeatures.PlayerTeleport)
-    mainTab:CreateSection("STATUS")
-    mainTab:CreateButton({
-        Name = "Tryo Plugin Manager is running",
-        Callback = function()
-            print("[Tryo Plugin Manager] Standalone beta2 is running.")
+    mainTab:CreateSection("QUICK ACCESS")
+    addFeatureToggle(mainTab, "WaypointManager", waypoint, "Waypoint")
+    addFeatureToggle(mainTab, "PlayMusic", musicPlayer, "Play Music")
+    mainTab:CreateDropdown({
+        Name = "Rejoin",
+        Build = function(panel)
+            local autoSave = {
+                Name = "Auto Save Server",
+                Start = function()
+                    if featureManager.Context.AutoSaveRunning then return true end
+                    featureManager.Context.AutoSaveRunning = true
+                    task.spawn(function()
+                        while featureManager.Context.AutoSaveRunning do
+                            pcall(lastServer.SaveCurrent)
+                            task.wait(30)
+                        end
+                    end)
+                    pcall(lastServer.SaveCurrent)
+                    return true
+                end,
+                Stop = function() featureManager.Context.AutoSaveRunning = false end
+            }
+            addFeatureToggle(mainTab, "AutoSaveServer", autoSave, "Auto Save", panel)
+            panel.Parent = panel.Parent
+            mainTab:CreateButton({Name = "Save Server", Parent = panel, Callback = function() lastServer.SaveCurrent() end})
+            mainTab:CreateButton({Name = "Last Rejoin", Parent = panel, Callback = function() lastServer.RejoinSaved() end})
+            addFeatureToggle(mainTab, "SmartRejoin", smartRejoin, "Smart Rejoin", panel)
+        end
+    })
+    mainTab:CreateDropdown({
+        Name = "AIMBOT",
+        Build = function(panel)
+            addFeatureToggle(mainTab, "AimAssist", aimAssist, "Aimbot", panel)
+            mainTab:CreateButton({Name = "Set Radius", Parent = panel, Callback = function()
+                if aimAssist.OpenSettings then aimAssist.OpenSettings() end
+            end})
+        end
+    })
+    mainTab:CreateDropdown({
+        Name = "F1Lock",
+        Build = function(panel)
+            addFeatureToggle(mainTab, "F1Lock", cameraTools.F1Lock, "F1 Toggle", panel)
+            addFeatureToggle(mainTab, "ForceUnlockCamera", cameraTools.ForceUnlockCamera, "Lock Kamera", panel)
         end
     })
 
     local mountainTab = window:CreateTab("Gunung", "▲")
-    mountainTab:CreateSection("WAYPOINT & CHECKPOINT")
-    addFeatureToggle(mountainTab, "WaypointManager", waypoint)
+    mountainTab:CreateSection("MOUNTAIN QUICK ACCESS")
+    addFeatureToggle(mountainTab, "WaypointManager", waypoint, "Waypoint")
+    addFeatureToggle(mountainTab, "PlayerESP", espFeatures.PlayerESP)
+    addFeatureToggle(mountainTab, "InfiniteJump", toolFeatures.InfiniteJump)
+    addFeatureToggle(mountainTab, "InstantPrompt", instantPrompt, "Instant Prompt")
+    addWalkSpeed(mountainTab)
+    addInteractableToggle(mountainTab, "PPESP", "PPESP")
+    addFeatureToggle(mountainTab, "Spectate", soundViewFeatures.Spectate, "Spectator")
 
     local horrorTab = window:CreateTab("Horor", "◈")
-    horrorTab:CreateSection("HOROR")
-    horrorTab:CreateButton({ Name = "Feature slots are ready" })
-
-    local visualTab = window:CreateTab("Visual", "◉")
-    visualTab:CreateSection("VISUAL")
-    visualTab:CreateSection("TARGET ASSIST")
-    addFeatureToggle(visualTab, "AimAssist", aimAssist)
-    visualTab:CreateButton({
-        Name = "Aim Assist Settings (Radius)",
-        Callback = function()
-            if aimAssist.OpenSettings then aimAssist.OpenSettings() end
+    horrorTab:CreateSection("HORROR QUICK ACCESS")
+    horrorTab:CreateDropdown({
+        Name = "Interactable",
+        Build = function(panel)
+            local items = {
+                {id="PPESP", name="Proximity (PPESP)"},
+                {id="ITP", name="Item Teleport (ITP)"},
+                {id="DESP", name="Door (DESP)"},
+                {id="CDESP", name="Click (CDESP)"},
+                {id="TESP", name="Touch (TESP)"},
+                {id="ITESP", name="Item (ITESP)"},
+                {id="LOOT", name="Loot"}
+            }
+            for _, item in ipairs(items) do addInteractableToggle(horrorTab, item.id, item.name, panel) end
         end
     })
-    visualTab:CreateButton({ Name = "Visual features will be migrated here" })
+    horrorTab:CreateDropdown({
+        Name = "ESP",
+        Build = function(panel)
+            addFeatureToggle(horrorTab, "PlayerESP", espFeatures.PlayerESP, "Player ESP", panel)
+            addFeatureToggle(horrorTab, "EnemyESP", espFeatures.EnemyESP, "Enemy ESP", panel)
+        end
+    })
+    addFeatureToggle(horrorTab, "Fullbright", toolFeatures.Fullbright, "Full Bright")
+    addFeatureToggle(horrorTab, "InstantPrompt", instantPrompt, "Instant Prompt")
+    addFeatureToggle(horrorTab, "InfiniteJump", toolFeatures.InfiniteJump)
+    addWalkSpeed(horrorTab)
+    addFeatureToggle(horrorTab, "MuteMapSounds", soundViewFeatures.MuteMapSounds, "Mute Sound")
+    addFeatureToggle(horrorTab, "Noclip", toolFeatures.Noclip)
+    addFeatureToggle(horrorTab, "CodeFinder", codeFinder, "Code Finder")
 
     local toolsTab = window:CreateTab("Tools", "⚒")
-    toolsTab:CreateSection("STANDALONE TOOLS")
-    for _, featureId in ipairs({"AntiAFK", "Fullbright", "InfiniteJump", "Noclip"}) do
-        addFeatureToggle(toolsTab, featureId, toolFeatures[featureId])
-    end
-    featureManager:Register("WalkSpeed", toolFeatures.WalkSpeed)
-    featureManager.Context.WalkSpeedTarget = 16
-    toolsTab:CreateWalkSpeedControl({
-        Name = "WalkSpeed",
-        GetValue = function() return featureManager.Context.WalkSpeedTarget end,
-        SetValue = function(value)
-            featureManager.Context.WalkSpeedTarget = math.clamp(tonumber(value) or 16, 16, 100)
-        end,
-        Callback = function(enabled)
-            local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
-            if not success then warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err)) end
+    toolsTab:CreateSection("UTILITY")
+    addFeatureToggle(toolsTab, "AdminDetector", adminDetector, "Admin Detect")
+    addFeatureToggle(toolsTab, "AntiAFK", toolFeatures.AntiAFK)
+    addFeatureToggle(toolsTab, "MobileInspector", toolFeatures.MobileInspector, "Inspector")
+    toolsTab:CreateDropdown({
+        Name = "Effect",
+        Build = function(panel)
+            for _, featureId in ipairs({"AnchorNearby", "AntiWind", "AntiTrigger", "AntiShake"}) do
+                addFeatureToggle(toolsTab, featureId, antiDisturbFeatures[featureId], nil, panel)
+            end
         end
     })
-    toolsTab:CreateSection("INSPECTOR")
-    addFeatureToggle(toolsTab, "MobileInspector", toolFeatures.MobileInspector)
-    toolsTab:CreateSection("CAMERA")
-    addFeatureToggle(toolsTab, "F1Lock", cameraTools.F1Lock)
-    addFeatureToggle(toolsTab, "ForceUnlockCamera", cameraTools.ForceUnlockCamera)
-    toolsTab:CreateSection("SOUND & VIEW")
-    addFeatureToggle(toolsTab, "MuteMapSounds", soundViewFeatures.MuteMapSounds)
-    addFeatureToggle(toolsTab, "Spectate", soundViewFeatures.Spectate)
-    toolsTab:CreateSection("SECURITY")
-    addFeatureToggle(toolsTab, "AdminDetector", adminDetector)
-    toolsTab:CreateSection("ANTI-DISTURB SHIELD")
-    for _, featureId in ipairs({"AnchorNearby", "AntiWind", "AntiTrigger", "AntiShake"}) do
-        addFeatureToggle(toolsTab, featureId, antiDisturbFeatures[featureId])
-    end
-    toolsTab:CreateSection("INTERACTION")
-    addFeatureToggle(toolsTab, "InstantPrompt", instantPrompt)
-    toolsTab:CreateSection("INTERACTABLE")
-    local interactableFeatures = {
-        {id = "PPESP", name = "Proximity (PPESP)"},
-        {id = "ITP", name = "Item Teleport (ITP)"},
-        {id = "DESP", name = "Door (DESP)"},
-        {id = "CDESP", name = "Click (CDESP)"},
-        {id = "TESP", name = "Touch (TESP)"},
-        {id = "ITESP", name = "Item (ITESP)"},
-        {id = "LOOT", name = "Loot"}
-    }
-    for _, item in ipairs(interactableFeatures) do
-        local featureId = item.id
-        local featureName = item.name
-        toolsTab:CreateToggle({
-            Name = featureName,
-            Default = false,
-            Callback = function(enabled)
-                local success, err = interactable:SetFeatureEnabled(featureId, enabled)
-                if not success then
-                    warn("[Tryo Plugin Manager] " .. item.id .. ": " .. tostring(err))
-                end
-            end
-        })
-    end
-    toolsTab:CreateSection("ITEM GRABBER")
-    addFeatureToggle(toolsTab, "TeleportToItem", tpItem)
-    toolsTab:CreateSection("MUSIC")
-    addFeatureToggle(toolsTab, "PlayMusic", musicPlayer)
-    toolsTab:CreateSection("SERVER SESSION")
-    featureManager:Register("LastServer", lastServer)
-    local lastServerStarted, lastServerError = featureManager:SetEnabled("LastServer", true)
-    if not lastServerStarted then warn("[Tryo Plugin Manager] LastServer: " .. tostring(lastServerError)) end
-    toolsTab:CreateButton({ Name = "Save Current Server", Callback = function() lastServer.SaveCurrent() end })
-    toolsTab:CreateButton({ Name = "Rejoin Saved Server", Callback = function() lastServer.RejoinSaved() end })
-    toolsTab:CreateSection("SMART REJOIN")
-    addFeatureToggle(toolsTab, "SmartRejoin", smartRejoin)
-    toolsTab:CreateSection("PUZZLE TOOLS")
-    addFeatureToggle(toolsTab, "CodeFinder", codeFinder)
 
     local settingsTab = window:CreateTab("Settings", "⚙")
     settingsTab:CreateSection("APPEARANCE")
