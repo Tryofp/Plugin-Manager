@@ -21,14 +21,16 @@ local ok, result = pcall(function()
     local HttpService = game:GetService("HttpService")
     local METADATA_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
 
-    -- Hub tracker: record each successful script load and the eventual session exit.
-    -- Apps Script handles push notification and suppresses it for the developer account.
+    -- Hub tracker: record every hub load and send exit data synchronously from exit events.
+    -- The backend sends push notifications and excludes the developer account.
     local Players = game:GetService("Players")
     local UserInputService = game:GetService("UserInputService")
     local MarketplaceService = game:GetService("MarketplaceService")
     local LocalPlayer = Players.LocalPlayer
     local trackerSessionStart = os.time()
     local trackerExitSent = false
+    local trackerMapName = tostring(game.Name or "Unknown Map")
+    local trackerRequest = request or http_request or (syn and syn.request)
 
     local function getTrackerDevice()
         if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
@@ -41,49 +43,47 @@ local ok, result = pcall(function()
         return "Unknown Device"
     end
 
+    -- Resolve the game title ahead of time; never wait for this during shutdown.
+    task.spawn(function()
+        pcall(function()
+            local info = MarketplaceService:GetProductInfo(game.PlaceId)
+            if info and info.Name then trackerMapName = info.Name end
+        end)
+    end)
+
     local function sendTrackerData(isLeaving)
         if isLeaving then
             if trackerExitSent then return end
             trackerExitSent = true
         end
+        if type(trackerRequest) ~= "function" then return end
 
-        task.spawn(function()
-            pcall(function()
-                local req = request or http_request or (syn and syn.request)
-                if type(req) ~= "function" then return end
-
-                local mapName = tostring(game.Name or "Unknown Map")
-                pcall(function()
-                    local info = MarketplaceService:GetProductInfo(game.PlaceId)
-                    if info and info.Name then mapName = info.Name end
-                end)
-
-                local elapsed = math.max(0, os.time() - trackerSessionStart)
-                local playtime = string.format("%d Menit %d Detik", math.floor(elapsed / 60), elapsed % 60)
-                playtime = playtime .. (isLeaving and " (Keluar Game)" or " (Baru Load)")
-                local payload = HttpService:JSONEncode({
-                    Type = isLeaving and "Tracker" or "HubLoad",
-                    Username = LocalPlayer.Name,
-                    UserId = tostring(LocalPlayer.UserId),
-                    Device = getTrackerDevice(),
-                    Playtime = playtime,
-                    MapName = mapName,
-                    PlaceId = tostring(game.PlaceId),
-                    JobId = game.JobId or "Private/Solo Server"
-                })
-
-                req({
-                    Url = METADATA_URL,
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = payload
-                })
-            end)
+        -- Intentionally synchronous: exit events may be the last chance to POST.
+        pcall(function()
+            local elapsed = math.max(0, os.time() - trackerSessionStart)
+            local playtime = string.format("%d Menit %d Detik", math.floor(elapsed / 60), elapsed % 60)
+            playtime = playtime .. (isLeaving and " (Keluar Game)" or " (Baru Load)")
+            local payload = HttpService:JSONEncode({
+                Type = isLeaving and "Tracker" or "HubLoad",
+                Username = LocalPlayer.Name,
+                UserId = tostring(LocalPlayer.UserId),
+                Device = getTrackerDevice(),
+                Playtime = playtime,
+                MapName = trackerMapName,
+                PlaceId = tostring(game.PlaceId),
+                JobId = game.JobId or "Private/Solo Server"
+            })
+            trackerRequest({
+                Url = METADATA_URL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = payload
+            })
         end)
     end
 
-    -- Every load is recorded; the backend handles notification deduplication.
-    sendTrackerData(false)
+    -- Load logging can run asynchronously; exit logging remains synchronous.
+    task.spawn(function() sendTrackerData(false) end)
 
     local function replaceTrackerConnection(key, signal, callback)
         local previous = _G[key]
