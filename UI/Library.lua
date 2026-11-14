@@ -490,7 +490,7 @@ function TryoUI:CreateTab(name, icon)
             Position = position,
             BackgroundColor3 = color or COLORS.Muted,
             BorderSizePixel = 0,
-            Rotation = rotation or 0
+            Rotation = rotation or 0,
             ZIndex = 5
         }, tabIcon)
         if radius then corner(part, radius) end
