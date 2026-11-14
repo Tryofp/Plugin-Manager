@@ -572,11 +572,15 @@ function TryoUI:CreateTab(name, icon)
         return part
     end
 
-    local iconColor = name == "Gunung" and Color3.fromRGB(120, 195, 220)
+    -- Fixed high-contrast navigation colors: these must remain distinct
+    -- from the user-customizable accent so Main/Settings never disappear into it.
+    local iconColor = name == "Main" and Color3.fromRGB(70, 220, 235)
+        or name == "Settings" and Color3.fromRGB(255, 195, 75)
+        or name == "Gunung" and Color3.fromRGB(120, 195, 220)
         or name == "Tools" and Color3.fromRGB(120, 205, 170)
         or name == "Visual" and Color3.fromRGB(155, 175, 245)
         or name == "Horor" and Color3.fromRGB(220, 135, 155)
-        or COLORS.Accent
+        or Color3.fromRGB(205, 215, 235)
 
     if name == "Gunung" then
         iconPart("MountainBase", UDim2.fromOffset(15, 3), UDim2.fromOffset(1, 13), iconColor, 0, 2)
@@ -814,6 +818,25 @@ function TryoUI:CreateTab(name, icon)
         valueLabel.Position = UDim2.fromOffset(11, 4)
         valueLabel.Size = UDim2.new(1, -22, 0, 19)
 
+        local speedInput = make("TextBox", {
+            Name = "ManualSpeedInput",
+            Text = "16",
+            PlaceholderText = "16-100",
+            ClearTextOnFocus = false,
+            TextSize = 12,
+            Font = Enum.Font.GothamBold,
+            TextColor3 = COLORS.Text,
+            PlaceholderColor3 = COLORS.Muted,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            BackgroundColor3 = Color3.fromRGB(61, 69, 91),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            Size = UDim2.fromOffset(88, 25),
+            Position = UDim2.fromOffset(11, 34)
+        }, panel)
+        corner(speedInput, 6)
+        stroke(speedInput, Color3.fromRGB(115, 132, 170), 0.55)
+
         local function controlButton(text, x, width, callback, accent)
             local b = make("TextButton", {
                 Text = text,
@@ -832,16 +855,33 @@ function TryoUI:CreateTab(name, icon)
             return b
         end
 
-        local function updateValue()
-            local value = math.clamp(tonumber(options.GetValue and options.GetValue()) or 16, 16, 100)
-            valueLabel.Text = "WalkSpeed: " .. tostring(value)
+        local function applyManualValue()
+            local numeric = tonumber(speedInput.Text)
+            if not numeric then
+                speedInput.Text = tostring(options.GetValue and options.GetValue() or 16)
+                return
+            end
+            numeric = math.clamp(numeric, 16, 100)
+            if options.SetValue then options.SetValue(numeric) end
+            speedInput.Text = tostring(numeric)
         end
 
-        controlButton("−", 11, 38, function()
+        local function updateValue()
+            local current = math.clamp(tonumber(options.GetValue and options.GetValue()) or 16, 16, 100)
+            valueLabel.Text = "WalkSpeed: " .. tostring(current)
+            if not speedInput:IsFocused() then speedInput.Text = tostring(current) end
+        end
+
+        speedInput.FocusLost:Connect(function()
+            applyManualValue()
+            updateValue()
+        end)
+        controlButton("Apply", 105, 49, applyManualValue, true)
+        controlButton("−", 160, 32, function()
             if options.SetValue then options.SetValue(math.max(16, (tonumber(options.GetValue()) or 16) - 1)) end
             updateValue()
         end)
-        controlButton("+", 55, 38, function()
+        controlButton("+", 198, 32, function()
             if options.SetValue then options.SetValue(math.min(100, (tonumber(options.GetValue()) or 16) + 1)) end
             updateValue()
         end)
