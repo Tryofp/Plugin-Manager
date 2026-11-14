@@ -1303,6 +1303,7 @@ function TryoUI:CreateTab(name, icon)
             expandMark.TextColor3 = enabled and COLORS.Text or COLORS.Muted
             header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface
             headerTitle.Size = UDim2.new(1, maintenanceLocked and -116 or -62, 1, 0)
+            expandMark.Visible = not maintenanceLocked
             card.Size = UDim2.new(1, -4, 0, expanded and 123 or 35)
             panel.Visible = expanded
             updateValue()
@@ -1322,7 +1323,11 @@ function TryoUI:CreateTab(name, icon)
         refresh()
         local control = {
             Set = function(value, silent)
-                enabled = maintenanceLocked and false or value == true
+                if maintenanceLocked then
+                    enabled = false
+                else
+                    enabled = value == true
+                end
                 expanded = enabled
                 refresh()
                 if not silent and type(options.Callback) == "function" then options.Callback(enabled) end
