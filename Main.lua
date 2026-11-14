@@ -102,6 +102,12 @@ local ok, result = pcall(function()
     visualTab:CreateSection("VISUAL")
     visualTab:CreateSection("TARGET ASSIST")
     addFeatureToggle(visualTab, "AimAssist", aimAssist)
+    visualTab:CreateButton({
+        Name = "Aim Assist Settings (Radius)",
+        Callback = function()
+            if aimAssist.OpenSettings then aimAssist.OpenSettings() end
+        end
+    })
     visualTab:CreateButton({ Name = "Visual features will be migrated here" })
 
     local toolsTab = window:CreateTab("Tools", "⚒")
