@@ -345,17 +345,23 @@ local ok, result = pcall(function()
                 return true
             end,
             Callback = function(enabled)
+                if enabled and maintenanceLocks.WalkSpeed then
+                    for _, item in ipairs(walkSpeedControllers) do item.Set(false, true) end
+                    return
+                end
                 local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
                 if not success then warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err)) end
                 for _, item in ipairs(walkSpeedControllers) do item.Set(featureManager:IsEnabled("WalkSpeed"), true) end
             end
         })
         table.insert(walkSpeedControllers, control)
+        registerMaintenanceControl("WalkSpeed", "WalkSpeed", control, "feature")
         control.Set(featureManager:IsEnabled("WalkSpeed"), true)
     end
 
     local function addInteractableToggle(tab, id, name, parent)
-        local control = tab:CreateToggle({
+        local control
+        control = tab:CreateToggle({
             Name = name,
             Parent = parent,
             Default = false,
