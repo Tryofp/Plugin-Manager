@@ -40,12 +40,27 @@ local ok, result = pcall(function()
                 tonumber(dd) or 0, tonumber(mm) or 0, yyyy:sub(-2), tonumber(hh) or 0, tonumber(mi) or 0)
         end
 
-        -- Also normalize compact values such as 141126 1830.
-        local compactDate, compactTime = raw:match("^(%d%d%d%d%d%d)%s+(%d%d%d%d)$")
-        if compactDate and compactTime then
+        -- Normalize compact DDMMYY dates with either HHMM or HH:MM time.
+        local compactDate, compactHour, compactMinute =
+            raw:match("^(%d%d%d%d%d%d)%s+(%d%d):(%d%d)$")
+        if not compactDate then
+            local compactTime
+            compactDate, compactTime = raw:match("^(%d%d%d%d%d%d)%s+(%d%d%d%d)$")
+            if compactDate and compactTime then
+                compactHour, compactMinute = compactTime:sub(1, 2), compactTime:sub(3, 4)
+            end
+        end
+        if compactDate and compactHour and compactMinute then
             return string.format("%s/%s/%s %s:%s",
                 compactDate:sub(1, 2), compactDate:sub(3, 4), compactDate:sub(5, 6),
-                compactTime:sub(1, 2), compactTime:sub(3, 4))
+                compactHour, compactMinute)
+        end
+
+        -- Also accept compact YYYYMMDD dates and render them as DD/MM/YY.
+        local year, month, day, hour, minute =
+            raw:match("^(%d%d%d%d)(%d%d)(%d%d)[ T](%d%d):(%d%d)$")
+        if year and month and day then
+            return string.format("%s/%s/%s %s:%s", day, month, year:sub(3), hour, minute)
         end
 
         return raw
