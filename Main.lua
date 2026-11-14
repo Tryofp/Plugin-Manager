@@ -69,7 +69,7 @@ local ok, result = pcall(function()
 
     local function syncFeature(featureId, enabled)
         for _, control in ipairs(featureControllers[featureId] or {}) do
-            control:Set(enabled, true)
+            control.Set(enabled, true)
         end
     end
 
