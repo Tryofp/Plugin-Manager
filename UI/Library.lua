@@ -61,7 +61,8 @@ function TryoUI.new(config)
     config = config or {}
     local self = setmetatable({}, TryoUI)
     self.Title = config.Title or "Tryo Plugin Manager"
-    self.Subtitle = config.Subtitle or "Standalone Script Hub"
+    self.Subtitle = config.Subtitle or "Versi Window • Stable"
+    self.LastUpdate = config.LastUpdate or "N/A"
     self.SettingsFile = "TryoPluginManager_Settings.json"
     local savedSettings
     if type(readfile) == "function" and type(isfile) == "function" then
@@ -119,7 +120,7 @@ function TryoUI.new(config)
 
     local top = make("Frame", {
         Name = "TopBar",
-        Size = UDim2.new(1, 0, 0, 43),
+        Size = UDim2.new(1, 0, 0, 54),
         BackgroundColor3 = Color3.fromRGB(38, 43, 61),
         BackgroundTransparency = math.min(self.Transparency + 0.06, 0.68),
         BorderSizePixel = 0
@@ -131,11 +132,15 @@ function TryoUI.new(config)
 
     self.TopBar = top
     local title = label(top, self.Title, 14, COLORS.Text, Enum.Font.GothamBold)
-    title.Position = UDim2.fromOffset(14, 3)
+    title.Position = UDim2.fromOffset(14, 1)
     title.Size = UDim2.new(1, -110, 0, 20)
     local subtitle = label(top, self.Subtitle, 10, COLORS.Muted)
-    subtitle.Position = UDim2.fromOffset(14, 22)
-    subtitle.Size = UDim2.new(1, -110, 0, 14)
+    subtitle.Position = UDim2.fromOffset(14, 20)
+    subtitle.Size = UDim2.new(1, -110, 0, 13)
+    local lastUpdate = label(top, "Last Update: " .. self.LastUpdate, 9, COLORS.Muted)
+    lastUpdate.Position = UDim2.fromOffset(14, 34)
+    lastUpdate.Size = UDim2.new(1, -110, 0, 12)
+    self.LastUpdateLabel = lastUpdate
 
     local close = make("TextButton", {
         Name = "Close",
@@ -162,8 +167,8 @@ function TryoUI.new(config)
 
     local body = make("Frame", {
         Name = "Body",
-        Position = UDim2.fromOffset(0, 43),
-        Size = UDim2.new(1, 0, 1, -43),
+        Position = UDim2.fromOffset(54, 0),
+        Size = UDim2.new(1, 0, 1, -54),
         BackgroundTransparency = 1
     }, self.Window)
 
