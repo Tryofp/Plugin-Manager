@@ -416,6 +416,24 @@ local function showNamePrompt()
     end,false).ZIndex = 21
 end
 
+local function getThemeAccent()
+    local fallback = Color3.fromRGB(139, 92, 246)
+    if type(readfile) ~= "function" or type(isfile) ~= "function" then return fallback end
+    local ok, color = pcall(function()
+        local settingsFile = "TryoPluginManager_Settings.json"
+        if not isfile(settingsFile) then return fallback end
+        local settings = HttpService:JSONDecode(readfile(settingsFile))
+        local accent = type(settings) == "table" and settings.Accent or nil
+        if type(accent) ~= "table" then return fallback end
+        return Color3.fromRGB(
+            math.clamp(tonumber(accent.R) or 139, 0, 255),
+            math.clamp(tonumber(accent.G) or 92, 0, 255),
+            math.clamp(tonumber(accent.B) or 246, 0, 255)
+        )
+    end)
+    return ok and typeof(color) == "Color3" and color or fallback
+end
+
 local function buildUI()
     local parent
     pcall(function() parent = game:GetService("CoreGui") end)
@@ -476,7 +494,7 @@ local function buildUI()
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
-    reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-106,0,14),function()
+    reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-122,0,14),function()
         if reopenWasDragged then
             reopenWasDragged=false
             return
@@ -486,6 +504,8 @@ local function buildUI()
         Feature.RefreshUI()
     end,true)
     corner(reopenButton,19)
+    reopenButton.BackgroundColor3 = getThemeAccent()
+    make("UIStroke",{Color=reopenButton.BackgroundColor3,Transparency=0.18,Thickness=1.2},reopenButton)
     reopenButton.TextSize=10
     reopenButton.ZIndex=10
     reopenButton.Visible=false
@@ -652,6 +672,19 @@ function Feature.Start()
         end)
     end)
     Feature.Scan()
+    task.spawn(function()
+        local lastAccent
+        while active and reopenButton and reopenButton.Parent do
+            local accent = getThemeAccent()
+            if accent ~= lastAccent then
+                reopenButton.BackgroundColor3 = accent
+                local outline = reopenButton:FindFirstChildOfClass("UIStroke")
+                if outline then outline.Color = accent end
+                lastAccent = accent
+            end
+            task.wait(2)
+        end
+    end)
     notify("Scanner checkpoint aktif")
     return true
 end
