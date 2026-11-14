@@ -438,7 +438,7 @@ function TryoUI:CreateTab(name, icon)
     tab.Elements = {}
     tab.Button = make("TextButton", {
         Name = name .. "Tab",
-        Text = (icon and (icon .. "  ") or "") .. name,
+        Text = name,
         TextSize = 12,
         Font = Enum.Font.GothamMedium,
         TextColor3 = COLORS.Muted,
@@ -448,6 +448,69 @@ function TryoUI:CreateTab(name, icon)
         Size = UDim2.new(1, 0, 0, 33)
     }, self.Nav)
     corner(tab.Button, 7)
+
+    -- Draw tab marks with native UI shapes/ASCII-safe letters so unsupported
+    -- Unicode glyphs cannot turn into empty square symbols on mobile fonts.
+    local tabIcon = make("Frame", {
+        Name = "TabIcon",
+        Position = UDim2.fromOffset(9, 8),
+        Size = UDim2.fromOffset(17, 17),
+        BackgroundTransparency = 1,
+        ClipsDescendants = true
+    }, tab.Button)
+    tab.Button.TextXAlignment = Enum.TextXAlignment.Left
+    make("UIPadding", { PaddingLeft = UDim.new(0, 34) }, tab.Button)
+
+    if name == "Gunung" then
+        local rearPeak = make("TextLabel", {
+            BackgroundTransparency = 1,
+            Text = "▲",
+            TextColor3 = Color3.fromRGB(102, 190, 211),
+            TextSize = 12,
+            Font = Enum.Font.GothamBlack,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Bottom,
+            Size = UDim2.fromOffset(12, 13),
+            Position = UDim2.fromOffset(6, 2)
+        }, tabIcon)
+        local frontPeak = make("TextLabel", {
+            BackgroundTransparency = 1,
+            Text = "▲",
+            TextColor3 = Color3.fromRGB(190, 205, 245),
+            TextSize = 16,
+            Font = Enum.Font.GothamBlack,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Bottom,
+            Size = UDim2.fromOffset(14, 17),
+            Position = UDim2.fromOffset(0, 0)
+        }, tabIcon)
+    else
+        local initials = {
+            Main = "M", Horor = "H", Visual = "V",
+            Tools = "T", Settings = "S", Loading = "L"
+        }
+        local iconColor = name == "Tools" and Color3.fromRGB(120, 205, 170)
+            or name == "Visual" and Color3.fromRGB(155, 175, 245)
+            or name == "Horor" and Color3.fromRGB(220, 135, 155)
+            or COLORS.Accent
+        local iconBadge = make("Frame", {
+            Size = UDim2.fromOffset(17, 17),
+            BackgroundColor3 = iconColor,
+            BackgroundTransparency = 0.72,
+            BorderSizePixel = 0
+        }, tabIcon)
+        corner(iconBadge, 6)
+        local iconLetter = make("TextLabel", {
+            BackgroundTransparency = 1,
+            Text = initials[name] or string.sub(name, 1, 1),
+            TextColor3 = iconColor,
+            TextSize = 10,
+            Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            Size = UDim2.fromScale(1, 1)
+        }, iconBadge)
+    end
 
     tab.Page = make("ScrollingFrame", {
         Name = name .. "Page",
@@ -587,7 +650,7 @@ function TryoUI:CreateTab(name, icon)
 
         local header = make("TextButton", {
             Name = "ToggleHeader",
-            Text = "○  " .. (options.Name or "WalkSpeed") .. "     ▾",
+            Text = options.Name or "WalkSpeed",
             TextSize = 12,
             Font = Enum.Font.GothamMedium,
             TextColor3 = COLORS.Text,
@@ -597,6 +660,31 @@ function TryoUI:CreateTab(name, icon)
             Size = UDim2.new(1, 0, 0, 35)
         }, card)
         corner(header, 7)
+        make("UIPadding", { PaddingLeft = UDim.new(0, 30) }, header)
+        local statusDot = make("TextLabel", {
+            Name = "StatusDot",
+            BackgroundTransparency = 1,
+            Text = "●",
+            TextColor3 = COLORS.Muted,
+            TextSize = 9,
+            Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            Position = UDim2.fromOffset(10, 0),
+            Size = UDim2.fromOffset(10, 35)
+        }, header)
+        local expandMark = make("TextLabel", {
+            Name = "ExpandMark",
+            BackgroundTransparency = 1,
+            Text = "v",
+            TextColor3 = COLORS.Muted,
+            TextSize = 12,
+            Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            Position = UDim2.new(1, -25, 0, 0),
+            Size = UDim2.fromOffset(16, 35)
+        }, header)
 
         local panel = make("Frame", {
             Name = "SpeedSettings",
@@ -653,7 +741,9 @@ function TryoUI:CreateTab(name, icon)
         local enabled = false
         local expanded = false
         local function refresh()
-            header.Text = (enabled and "●  " or "○  ") .. (options.Name or "WalkSpeed") .. (expanded and "     ▴" or "     ▾")
+            statusDot.TextColor3 = enabled and COLORS.Success or COLORS.Muted
+            expandMark.Text = expanded and "^" or "v"
+            expandMark.TextColor3 = enabled and COLORS.Text or COLORS.Muted
             header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface
             card.Size = UDim2.new(1, -4, 0, expanded and 123 or 35)
             panel.Visible = expanded
@@ -735,10 +825,25 @@ function TryoUI:CreateTab(name, icon)
     function tab:CreateToggle(options)
         options = options or {}
         local state = options.Default == true
-        local button = self:CreateButton({ Name = (state and "●  " or "○  ") .. (options.Name or "Toggle") })
+        local name = options.Name or "Toggle"
+        local button = self:CreateButton({ Name = name })
+        local padding = button:FindFirstChildOfClass("UIPadding")
+        if padding then padding.PaddingLeft = UDim.new(0, 30) end
+        local statusDot = make("TextLabel", {
+            Name = "StatusDot",
+            BackgroundTransparency = 1,
+            Text = "●",
+            TextColor3 = state and COLORS.Success or COLORS.Muted,
+            TextSize = 9,
+            Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            Position = UDim2.fromOffset(10, 0),
+            Size = UDim2.fromOffset(10, 35)
+        }, button)
         local function set(value)
             state = value == true
-            button.Text = (state and "●  " or "○  ") .. (options.Name or "Toggle")
+            statusDot.TextColor3 = state and COLORS.Success or COLORS.Muted
             if type(options.Callback) == "function" then options.Callback(state) end
         end
         button.MouseButton1Click:Connect(function() set(not state) end)
