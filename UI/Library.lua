@@ -1409,6 +1409,7 @@ function TryoUI:CreateTab(name, icon)
         end
         list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize)
         local dropdownBadge = makeReleaseBadge(header, "DropdownReleaseBadge")
+        dropdownBadge.Position = UDim2.new(1, -49, 0.5, 0)
         local dropdownControl = {}
         function dropdownControl.SetBadge(kind)
             if kind == nil then dropdownBadge.Visible = false; return end
