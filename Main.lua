@@ -350,7 +350,7 @@ local ok, result = pcall(function()
                             details = details .. "\n\n" .. change.Type .. " • " .. change.Feature .. "\n" .. change.Details
                         end
                         if window and not window.Destroyed then
-                            window:ShowReleaseDetails("VERSION " .. item.Version, details)
+                            window:ShowReleaseDetails("LOG VERSION", "V" .. item.Version .. "\n\n" .. details)
                         end
                     end
                 })
