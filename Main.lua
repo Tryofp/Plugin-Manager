@@ -502,12 +502,11 @@ local ok, result = pcall(function()
         end
     end
 
-    local teleportTab = window:CreateTab("Teleport", "↗")
-    teleportTab:CreateDropdown({
+    mainTab:CreateDropdown({
         Name = "TELEPORT",
         Build = function(panel)
-            addFeatureToggle(teleportTab, "TeleportToPlayer", teleportFeatures.PlayerTeleport, "TELEPORT TO PLAYER", panel)
-            addFeatureToggle(teleportTab, "TeleportToItemUniversal", tpItem, "TELEPORT TO ITEM", panel)
+            addFeatureToggle(mainTab, "TeleportToPlayer", teleportFeatures.PlayerTeleport, "TELEPORT TO PLAYER", panel)
+            addFeatureToggle(mainTab, "TeleportToItemUniversal", tpItem, "TELEPORT TO ITEM", panel)
         end
     })
 
