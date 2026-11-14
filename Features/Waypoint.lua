@@ -471,7 +471,7 @@ local function buildUI()
         end
     end)
 
-    button(panel,"×",UDim2.fromOffset(24,25),UDim2.new(1,-28,0,5),function()
+    button(panel,"−",UDim2.fromOffset(24,25),UDim2.new(1,-28,0,5),function()
         panel.Visible=false
         if reopenButton then reopenButton.Visible=true end
     end,false).ZIndex=3
