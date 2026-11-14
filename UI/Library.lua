@@ -139,19 +139,19 @@ function TryoUI.new(config)
     self.TopBar = top
     local title = label(top, self.Title, 14, Color3.fromRGB(255, 255, 255), Enum.Font.GothamBlack)
     title.Position = UDim2.fromOffset(14, 0)
-    title.Size = UDim2.new(1, -110, 0, 19)
+    title.Size = UDim2.new(1, -180, 0, 19)
 
     local metadata = label(top,
         self.Subtitle .. " • LAST UPDATE : " .. self.LastUpdate,
         10, Color3.fromRGB(220, 235, 255), Enum.Font.GothamBold)
     metadata.Position = UDim2.fromOffset(14, 19)
-    metadata.Size = UDim2.new(1, -110, 0, 14)
+    metadata.Size = UDim2.new(1, -180, 0, 14)
     self.LastUpdateLabel = metadata
 
     local tickerClip = make("Frame", {
         Name = "HeaderTickerClip",
         Position = UDim2.fromOffset(14, 35),
-        Size = UDim2.new(1, -112, 0, 13),
+        Size = UDim2.new(1, -180, 0, 13),
         BackgroundTransparency = 1,
         ClipsDescendants = true
     }, top)
@@ -505,6 +505,242 @@ function TryoUI.new(config)
     end)
 
     return self
+end
+
+function TryoUI:CreateFeedbackButton(options)
+    options = options or {}
+    local endpoint = options.Endpoint
+    local top = self.TopBar
+    if not top or not endpoint then return nil end
+
+    local button = make("TextButton", {
+        Name = "FeedbackButton",
+        Text = "FEEDBACK",
+        TextSize = 9,
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        BackgroundColor3 = Color3.fromRGB(0, 125, 155),
+        BorderSizePixel = 0,
+        AutoButtonColor = true,
+        Size = UDim2.fromOffset(70, 23),
+        Position = UDim2.new(1, -150, 0, 5),
+        ZIndex = 20
+    }, top)
+    corner(button, 5)
+
+    local categories = {"Bug Report", "Feature Request", "Suggestion", "Other"}
+    local function openDialog()
+        if not self.Window or not self.Window.Parent then return end
+        local old = self.Window:FindFirstChild("FeedbackOverlay")
+        if old then old:Destroy() end
+
+        local overlay = make("Frame", {
+            Name = "FeedbackOverlay",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.32,
+            BorderSizePixel = 0,
+            ZIndex = 100
+        }, self.Window)
+
+        local modal = make("Frame", {
+            Name = "FeedbackModal",
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.new(1, -28, 0, 292),
+            BackgroundColor3 = Color3.fromRGB(25, 32, 42),
+            BorderSizePixel = 0,
+            ZIndex = 101
+        }, overlay)
+        corner(modal, 8)
+
+        local function addLabel(name, text, pos, size, fontSize, color)
+            local obj = make("TextLabel", {
+                Name = name, Position = pos, Size = size,
+                BackgroundTransparency = 1, Text = text,
+                Font = Enum.Font.GothamBold, TextSize = fontSize or 10,
+                TextColor3 = color or Color3.fromRGB(225, 235, 245),
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Center,
+                ZIndex = 103
+            }, modal)
+            return obj
+        end
+
+        addLabel("Title", "KIRIM FEEDBACK", UDim2.fromOffset(11, 7), UDim2.new(1, -48, 0, 22), 12, Color3.fromRGB(0, 220, 255))
+        local close = make("TextButton", {
+            Text = "X", Size = UDim2.fromOffset(23, 23),
+            Position = UDim2.new(1, -32, 0, 6),
+            BackgroundColor3 = Color3.fromRGB(170, 55, 55),
+            TextColor3 = Color3.new(1, 1, 1), TextSize = 10,
+            Font = Enum.Font.GothamBold, BorderSizePixel = 0, ZIndex = 104
+        }, modal)
+        corner(close, 4)
+
+        addLabel("CategoryLabel", "Kategori", UDim2.fromOffset(11, 34), UDim2.new(0.5, -16, 0, 16), 9)
+        local categoryIndex = 1
+        local categoryButton = make("TextButton", {
+            Text = categories[1] .. "  ▾", Size = UDim2.new(0.5, -16, 0, 26),
+            Position = UDim2.fromOffset(11, 52), BackgroundColor3 = Color3.fromRGB(40, 55, 72),
+            TextColor3 = Color3.new(1, 1, 1), TextSize = 9, Font = Enum.Font.GothamBold,
+            BorderSizePixel = 0, ZIndex = 103
+        }, modal)
+        corner(categoryButton, 4)
+
+        addLabel("RatingLabel", "Rating", UDim2.new(0.5, 5, 0, 34), UDim2.new(0.5, -16, 0, 16), 9)
+        local rating = 5
+        local ratingButton = make("TextButton", {
+            Text = "★★★★★  5/5", Size = UDim2.new(0.5, -16, 0, 26),
+            Position = UDim2.new(0.5, 5, 0, 52), BackgroundColor3 = Color3.fromRGB(75, 62, 30),
+            TextColor3 = Color3.fromRGB(255, 220, 90), TextSize = 9, Font = Enum.Font.GothamBold,
+            BorderSizePixel = 0, ZIndex = 103
+        }, modal)
+        corner(ratingButton, 4)
+
+        categoryButton.MouseButton1Click:Connect(function()
+            categoryIndex = categoryIndex % #categories + 1
+            categoryButton.Text = categories[categoryIndex] .. "  ▾"
+        end)
+        ratingButton.MouseButton1Click:Connect(function()
+            rating = rating % 5 + 1
+            ratingButton.Text = string.rep("★", rating) .. string.rep("☆", 5 - rating) .. "  " .. rating .. "/5"
+        end)
+
+        addLabel("MessageLabel", "Pesan (8–1.500 karakter)", UDim2.fromOffset(11, 84), UDim2.new(1, -22, 0, 16), 9)
+        local messageBox = make("TextBox", {
+            Size = UDim2.new(1, -22, 0, 112), Position = UDim2.fromOffset(11, 102),
+            BackgroundColor3 = Color3.fromRGB(13, 18, 25), BorderSizePixel = 0,
+            ClearTextOnFocus = false, MultiLine = true, TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+            Font = Enum.Font.Gotham, Text = "",
+            PlaceholderText = "Tulis bug, saran, atau ide lu di sini...",
+            PlaceholderColor3 = Color3.fromRGB(115, 130, 148),
+            TextColor3 = Color3.fromRGB(240, 245, 250), TextSize = 10, ZIndex = 103
+        }, modal)
+        corner(messageBox, 4)
+
+        local status = addLabel("Status", "", UDim2.fromOffset(11, 218), UDim2.new(1, -22, 0, 24), 8, Color3.fromRGB(170, 190, 205))
+        status.TextWrapped = true
+        local submit = make("TextButton", {
+            Text = "KIRIM FEEDBACK", Size = UDim2.new(0.5, -16, 0, 26),
+            Position = UDim2.fromOffset(11, 255), BackgroundColor3 = Color3.fromRGB(0, 145, 90),
+            TextColor3 = Color3.new(1, 1, 1), TextSize = 9, Font = Enum.Font.GothamBold,
+            BorderSizePixel = 0, ZIndex = 103
+        }, modal)
+        corner(submit, 4)
+        local cancel = make("TextButton", {
+            Text = "TUTUP", Size = UDim2.new(0.5, -16, 0, 26),
+            Position = UDim2.new(0.5, 5, 0, 255), BackgroundColor3 = Color3.fromRGB(65, 75, 90),
+            TextColor3 = Color3.new(1, 1, 1), TextSize = 9, Font = Enum.Font.GothamBold,
+            BorderSizePixel = 0, ZIndex = 103
+        }, modal)
+        corner(cancel, 4)
+        close.MouseButton1Click:Connect(function() overlay:Destroy() end)
+        cancel.MouseButton1Click:Connect(function() overlay:Destroy() end)
+
+        submit.MouseButton1Click:Connect(function()
+            local message = tostring(messageBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if #message < 8 or #message > 1500 then
+                status.Text = "Pesan harus 8–1.500 karakter."
+                status.TextColor3 = Color3.fromRGB(255, 175, 100)
+                return
+            end
+            local req = request or http_request
+            if type(req) ~= "function" and type(syn) == "table" then req = syn.request end
+            if type(req) ~= "function" then
+                status.Text = "Executor tidak menyediakan HTTP request."
+                status.TextColor3 = Color3.fromRGB(255, 120, 120)
+                return
+            end
+
+            submit.Active = false
+            submit.AutoButtonColor = false
+            submit.Text = "MENGIRIM..."
+            status.Text = "Mengirim feedback..."
+            status.TextColor3 = Color3.fromRGB(170, 190, 205)
+
+            task.spawn(function()
+                local players = game:GetService("Players")
+                local player = players.LocalPlayer
+                local input = game:GetService("UserInputService")
+                local device = (input.TouchEnabled and not input.KeyboardEnabled) and "Mobile / Tablet"
+                    or (input.KeyboardEnabled and input.MouseEnabled) and "PC / Laptop"
+                    or input.GamepadEnabled and "Console / Controller" or "Unknown"
+                local requestId = HttpService:GenerateGUID(false)
+                local payload = HttpService:JSONEncode({
+                    Type = "Feedback", RequestId = requestId,
+                    Username = player and player.Name or "Unknown",
+                    UserId = player and tostring(player.UserId) or "0",
+                    Category = categories[categoryIndex], Rating = rating, Message = message,
+                    Device = device, PlaceId = tostring(game.PlaceId),
+                    PlaceName = tostring(game.Name or "Unknown Game")
+                })
+
+                local requestOk, response = pcall(function()
+                    return req({
+                        Url = endpoint, Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        FollowRedirects = false, Body = payload
+                    })
+                end)
+                local function headerValue(headers, wanted)
+                    if type(headers) ~= "table" then return nil end
+                    for key, value in pairs(headers) do
+                        if tostring(key):lower() == wanted:lower() then return tostring(value) end
+                    end
+                end
+                local code = response and (response.StatusCode or response.Status or response.status_code)
+                local headers = response and (response.Headers or response.headers)
+                local redirect = headerValue(headers, "Location")
+                if requestOk and response and redirect and ({[301]=true,[302]=true,[303]=true,[307]=true,[308]=true})[tonumber(code)] then
+                    requestOk, response = pcall(function()
+                        return req({Url = redirect, Method = "GET", FollowRedirects = true})
+                    end)
+                end
+
+                local decoded
+                if requestOk and response then
+                    local body = response.Body or response.body or ""
+                    code = response.StatusCode or response.Status or response.status_code
+                    local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
+                    if decodeOk and type(result) == "table" then decoded = result end
+                end
+                if not decoded and tonumber(code) == 405 then
+                    local statusOk, statusResponse = pcall(function()
+                        return req({Url = endpoint .. "?action=FeedbackStatus&requestId=" .. requestId, Method = "GET", FollowRedirects = true})
+                    end)
+                    if statusOk and statusResponse then
+                        local body = statusResponse.Body or statusResponse.body or ""
+                        local decodeOk, result = pcall(function() return HttpService:JSONDecode(body) end)
+                        if decodeOk and type(result) == "table" then decoded = result end
+                    end
+                end
+
+                if not overlay.Parent then return end
+                if decoded and decoded.status == "success" then
+                    submit.Text = "TERKIRIM"
+                    submit.BackgroundColor3 = Color3.fromRGB(0, 115, 75)
+                    status.Text = decoded.notificationSent and "Feedback tersimpan dan notifikasi terkirim!"
+                        or ("Feedback tersimpan. ntfy: " .. tostring(decoded.notificationError or "belum terkirim"))
+                    status.TextColor3 = Color3.fromRGB(100, 235, 155)
+                    messageBox.Text = ""
+                else
+                    submit.Active = true
+                    submit.AutoButtonColor = true
+                    submit.Text = "COBA LAGI"
+                    status.Text = decoded and tostring(decoded.message or "Server menolak feedback.")
+                        or (not requestOk and ("Request gagal: " .. tostring(response):sub(1, 100)))
+                        or (not response and "Server tidak mengembalikan respons.")
+                        or (code and ("Respons server bukan JSON (HTTP " .. tostring(code) .. ")."))
+                        or "Respons server bukan JSON atau redirect gagal."
+                    status.TextColor3 = Color3.fromRGB(255, 130, 120)
+                end
+            end)
+        end)
+    end
+
+    button.MouseButton1Click:Connect(openDialog)
+    return button
 end
 
 function TryoUI:CreateTab(name, icon)
