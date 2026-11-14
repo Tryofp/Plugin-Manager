@@ -76,6 +76,12 @@ function TryoUI.new(config)
     local initialHeight = tonumber(savedSettings and savedSettings.Height) or (config.Size and config.Size.Y.Offset) or 370
     self.Size = UDim2.fromOffset(math.clamp(initialWidth, 480, 820), math.clamp(initialHeight, 300, 600))
     self.Transparency = math.clamp(tonumber(savedSettings and savedSettings.Transparency) or 0.34, 0.15, 0.60)
+    if type(savedSettings) == "table" and type(savedSettings.Accent) == "table" then
+        local r = math.clamp(tonumber(savedSettings.Accent.R) or 139, 0, 255)
+        local g = math.clamp(tonumber(savedSettings.Accent.G) or 92, 0, 255)
+        local b = math.clamp(tonumber(savedSettings.Accent.B) or 246, 0, 255)
+        COLORS.Accent = Color3.fromRGB(r, g, b)
+    end
     self.Tabs = {}
     self.ActiveTab = nil
     self.Destroyed = false
@@ -120,43 +126,41 @@ function TryoUI.new(config)
 
     local top = make("Frame", {
         Name = "TopBar",
-        Size = UDim2.new(1, 0, 0, 68),
+        Size = UDim2.new(1, 0, 0, 52),
         BackgroundColor3 = Color3.fromRGB(38, 43, 61),
         BackgroundTransparency = math.min(self.Transparency + 0.06, 0.68),
         BorderSizePixel = 0
     }, self.Window)
     make("UIGradient", {
-        Color = ColorSequence.new(Color3.fromRGB(65, 133, 166), Color3.fromRGB(119, 75, 165)),
+        Color = ColorSequence.new(Color3.fromRGB(65, 133, 166), ColorSequence.new(Color3.fromRGB(119, 75, 165))),
         Rotation = 0
     }, top)
 
     self.TopBar = top
-    local title = label(top, self.Title, 15, Color3.fromRGB(255, 255, 255), Enum.Font.GothamBlack)
-    title.Position = UDim2.fromOffset(14, 1)
-    title.Size = UDim2.new(1, -110, 0, 20)
+    local title = label(top, self.Title, 14, Color3.fromRGB(255, 255, 255), Enum.Font.GothamBlack)
+    title.Position = UDim2.fromOffset(14, 0)
+    title.Size = UDim2.new(1, -110, 0, 19)
 
-    local subtitle = label(top, self.Subtitle, 11, Color3.fromRGB(220, 235, 255), Enum.Font.GothamBold)
-    subtitle.Position = UDim2.fromOffset(14, 20)
-    subtitle.Size = UDim2.new(1, -110, 0, 14)
-
-    local lastUpdate = label(top, "Last Update: " .. self.LastUpdate, 10, Color3.fromRGB(190, 255, 220), Enum.Font.GothamBold)
-    lastUpdate.Position = UDim2.fromOffset(14, 35)
-    lastUpdate.Size = UDim2.new(1, -110, 0, 13)
-    self.LastUpdateLabel = lastUpdate
+    local metadata = label(top,
+        self.Subtitle .. " • LAST UPDATE : " .. self.LastUpdate,
+        10, Color3.fromRGB(220, 235, 255), Enum.Font.GothamBold)
+    metadata.Position = UDim2.fromOffset(14, 19)
+    metadata.Size = UDim2.new(1, -110, 0, 14)
+    self.LastUpdateLabel = metadata
 
     local tickerClip = make("Frame", {
         Name = "HeaderTickerClip",
-        Position = UDim2.fromOffset(14, 51),
-        Size = UDim2.new(1, -112, 0, 14),
+        Position = UDim2.fromOffset(14, 35),
+        Size = UDim2.new(1, -112, 0, 13),
         BackgroundTransparency = 1,
         ClipsDescendants = true
     }, top)
     local tickerText = label(tickerClip,
         "TRYO PLUGIN MANAGER  •  STANDALONE SCRIPT HUB  •  MOBILE FRIENDLY  •  ",
-        10, Color3.fromRGB(205, 230, 255), Enum.Font.GothamBold)
+        9, Color3.fromRGB(205, 230, 255), Enum.Font.GothamBold)
     tickerText.Name = "HeaderTicker"
     tickerText.AutomaticSize = Enum.AutomaticSize.X
-    tickerText.Size = UDim2.fromOffset(460, 14)
+    tickerText.Size = UDim2.fromOffset(460, 13)
     tickerText.Position = UDim2.fromOffset(0, 0)
     tickerText.TextStrokeColor3 = Color3.fromRGB(20, 35, 60)
     tickerText.TextStrokeTransparency = 0.65
@@ -199,8 +203,8 @@ function TryoUI.new(config)
 
     local body = make("Frame", {
         Name = "Body",
-        Position = UDim2.fromOffset(0, 68),
-        Size = UDim2.new(1, 0, 1, -68),
+        Position = UDim2.fromOffset(0, 52),
+        Size = UDim2.new(1, 0, 1, -52),
         BackgroundTransparency = 1
     }, self.Window)
 
@@ -322,7 +326,7 @@ function TryoUI.new(config)
     self.FloatingButton = make("TextButton", {
         Name = "TryoFloatingToggle",
         AnchorPoint = Vector2.new(0, 0),
-        Position = UDim2.new(1, -76, 1, -164),
+        Position = UDim2.new(1, -76, 0, 88),
         Size = UDim2.fromOffset(54, 54),
         BackgroundColor3 = COLORS.Surface,
         BackgroundTransparency = 0.16,
@@ -355,7 +359,8 @@ function TryoUI.new(config)
             writefile(self.SettingsFile, HttpService:JSONEncode({
                 Width = self.Size.X.Offset,
                 Height = self.Size.Y.Offset,
-                Transparency = self.Transparency
+                Transparency = self.Transparency,
+                Accent = { R = math.floor(COLORS.Accent.R * 255 + 0.5), G = math.floor(COLORS.Accent.G * 255 + 0.5), B = math.floor(COLORS.Accent.B * 255 + 0.5) }
             }))
         end)
     end
@@ -378,6 +383,49 @@ function TryoUI.new(config)
         if self.Profile then self.Profile.BackgroundTransparency = math.min(self.Transparency + 0.12, 0.72) end
         self:SaveSettings()
         return self.Transparency
+    end
+
+    function self:SetAccent(color)
+        if typeof(color) ~= "Color3" then return COLORS.Accent end
+        local previous = COLORS.Accent
+        COLORS.Accent = color
+        if self.Gui then
+            for _, object in ipairs(self.Gui:GetDescendants()) do
+                if object:IsA("GuiObject") and object.BackgroundColor3 == previous then
+                    object.BackgroundColor3 = color
+                elseif object:IsA("TextLabel") or object:IsA("TextButton") then
+                    if object.TextColor3 == previous then object.TextColor3 = color end
+                elseif object:IsA("UIStroke") and object.Color == previous then
+                    object.Color = color
+                elseif object:IsA("UIGradient") then
+                    local keys = object.Color.Keypoints
+                    local updated = {}
+                    local changed = false
+                    for _, keypoint in ipairs(keys) do
+                        local keyColor = keypoint.Value
+                        if keyColor == previous then keyColor = color; changed = true end
+                        table.insert(updated, ColorSequenceKeypoint.new(keypoint.Time, keyColor))
+                    end
+                    if changed then object.Color = ColorSequence.new(updated) end
+                end
+            end
+        end
+        if self.FloatingButton then
+            for _, object in ipairs(self.FloatingButton:GetDescendants()) do
+                if object:IsA("UIStroke") and object.Color == previous then object.Color = color end
+                if object:IsA("UIGradient") then
+                    local keys, updated, changed = object.Color.Keypoints, {}, false
+                    for _, keypoint in ipairs(keys) do
+                        local keyColor = keypoint.Value
+                        if keyColor == previous then keyColor = color; changed = true end
+                        table.insert(updated, ColorSequenceKeypoint.new(keypoint.Time, keyColor))
+                    end
+                    if changed then object.Color = ColorSequence.new(updated) end
+                end
+            end
+        end
+        self:SaveSettings()
+        return color
     end
 
     local function restoreWindow()
@@ -886,6 +934,101 @@ function TryoUI:CreateTab(name, icon)
             valueLabel.Text = string.format("Transparency: %d%%", math.floor(value * 100 + 0.5))
         end)
         valueLabel.Text = string.format("Transparency: %d%%", math.floor(tab._window.Transparency * 100 + 0.5))
+        return card
+    end
+
+    function tab:CreateColorWheel(options)
+        options = options or {}
+        local card = make("Frame", {
+            Name = "AccentColorWheel",
+            Size = UDim2.new(1, -4, 0, 176),
+            BackgroundColor3 = Color3.fromRGB(42, 49, 68),
+            BackgroundTransparency = 0.18,
+            BorderSizePixel = 0
+        }, options.Parent or self.Page)
+        corner(card, 9)
+        stroke(card, Color3.fromRGB(105, 125, 170), 0.58)
+
+        local heading = label(card, options.Name or "Custom theme color", 12, COLORS.Text, Enum.Font.GothamBold)
+        heading.Position = UDim2.fromOffset(11, 6)
+        heading.Size = UDim2.new(1, -22, 0, 19)
+
+        local wheel = make("Frame", {
+            Name = "ColorWheel",
+            Position = UDim2.fromOffset(15, 31),
+            Size = UDim2.fromOffset(112, 112),
+            BackgroundTransparency = 1,
+            Active = true
+        }, card)
+
+        local center = Vector2.new(56, 56)
+        local radius = 47
+        for index = 0, 71 do
+            local hue = index / 72
+            local angle = hue * math.pi * 2
+            local dot = make("Frame", {
+                Name = "Hue" .. tostring(index),
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.fromOffset(center.X + math.cos(angle) * radius, center.Y + math.sin(angle) * radius),
+                Size = UDim2.fromOffset(9, 9),
+                BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
+                BorderSizePixel = 0
+            }, wheel)
+            corner(dot, 5)
+        end
+
+        local selector = make("Frame", {
+            Name = "ColorSelector",
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromOffset(center.X + radius, center.Y),
+            Size = UDim2.fromOffset(13, 13),
+            BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+            BorderSizePixel = 0,
+            ZIndex = 4
+        }, wheel)
+        corner(selector, 7)
+        stroke(selector, Color3.fromRGB(25, 28, 38), 0)
+
+        local preview = make("Frame", {
+            Name = "ColorPreview",
+            Position = UDim2.fromOffset(145, 42),
+            Size = UDim2.fromOffset(42, 42),
+            BackgroundColor3 = COLORS.Accent,
+            BorderSizePixel = 0
+        }, card)
+        corner(preview, 21)
+        stroke(preview, Color3.fromRGB(220, 225, 240), 0.2)
+
+        local value = label(card, "Tap wheel to choose", 10, Color3.fromRGB(220, 225, 240), Enum.Font.GothamBold)
+        value.Position = UDim2.fromOffset(196, 47)
+        value.Size = UDim2.new(1, -205, 0, 32)
+        value.TextWrapped = true
+
+        local function chooseAt(position)
+            local localPoint = position - wheel.AbsolutePosition
+            local dx, dy = localPoint.X - center.X, localPoint.Y - center.Y
+            local distance = math.sqrt(dx * dx + dy * dy)
+            if distance > 54 then return end
+            local hue = (math.atan2(dy, dx) / (math.pi * 2)) % 1
+            local saturation = math.clamp(distance / radius, 0.18, 1)
+            local color = Color3.fromHSV(hue, saturation, 1)
+            tab._window:SetAccent(color)
+            preview.BackgroundColor3 = color
+            selector.Position = UDim2.fromOffset(center.X + math.cos(hue * math.pi * 2) * math.min(distance, radius), center.Y + math.sin(hue * math.pi * 2) * math.min(distance, radius))
+            value.Text = string.format("RGB  %d, %d, %d", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
+        end
+
+        wheel.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                chooseAt(input.Position)
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                if input.UserInputState == Enum.UserInputState.Change then chooseAt(input.Position) end
+            end
+        end)
+
         return card
     end
 
