@@ -56,7 +56,30 @@ local ok, result = pcall(function()
         local response = game:HttpGet(url)
         local decoded = HttpService:JSONDecode(response or "{}")
         assert(type(decoded) == "table", "Metadata response is not a JSON object")
-        return formatLastUpdate(decoded.LastUpdate)
+
+        -- The public endpoint normally returns a flat { LastUpdate = value } map.
+        -- Accept common casing/nesting variants too, so a wrapper response does not
+        -- silently turn a valid Firestore value into a dash.
+        local raw = decoded.LastUpdate or decoded.lastUpdate or decoded.last_update
+        local containers = { decoded.metadata, decoded.Metadata, decoded.data, decoded.Data }
+        for _, container in ipairs(containers) do
+            if raw == nil and type(container) == "table" then
+                raw = container.LastUpdate or container.lastUpdate or container.last_update
+            end
+        end
+        if raw == nil then
+            for key, value in pairs(decoded) do
+                if tostring(key):lower():gsub("[^a-z]", "") == "lastupdate" then
+                    raw = value
+                    break
+                end
+            end
+        end
+        if type(raw) == "table" then
+            raw = raw.Value or raw.value or raw.Timestamp or raw.timestamp or raw.updatedAt
+        end
+        assert(raw ~= nil and tostring(raw) ~= "", "LastUpdate key is missing or empty in metadata response")
+        return formatLastUpdate(raw)
     end
 
     -- Build the visible shell immediately; metadata loads asynchronously.
@@ -73,7 +96,7 @@ local ok, result = pcall(function()
             window:SetLastUpdate(value)
         elseif not ok then
             warn("[Tryo Plugin Manager] LastUpdate metadata: " .. tostring(value))
-            if window and not window.Destroyed then window:SetLastUpdate("-") end
+            if window and not window.Destroyed then window:SetLastUpdate("N/A") end
         end
     end)
     local loadingTab = window:CreateTab("Loading", "◌")
@@ -151,8 +174,11 @@ local ok, result = pcall(function()
             Name = "WalkSpeed",
             GetValue = function() return featureManager.Context.WalkSpeedTarget end,
             SetValue = function(value)
-                featureManager.Context.WalkSpeedTarget = math.clamp(tonumber(value) or 16, 16, 100)
+                local numeric = tonumber(value)
+                if not numeric then return false end
+                featureManager.Context.WalkSpeedTarget = math.clamp(numeric, 16, 100)
                 for _, item in ipairs(walkSpeedControllers) do item.Refresh() end
+                return true
             end,
             Callback = function(enabled)
                 local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
