@@ -903,7 +903,7 @@ function TryoUI:CreateTab(name, icon)
         tab.Page.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y + 8)
     end)
 
-    local function activate()
+    local function activate(fromUser)
         for _, existing in ipairs(self.Tabs) do
             existing.Page.Visible = false
             existing.Button.BackgroundColor3 = COLORS.Sidebar
@@ -914,7 +914,7 @@ function TryoUI:CreateTab(name, icon)
         tab.Button.BackgroundColor3 = COLORS.Accent
         tabTitle.TextColor3 = Color3.new(1, 1, 1)
         self.ActiveTab = tab
-        if type(tab.OnActivated) == "function" then pcall(tab.OnActivated) end
+        if fromUser and type(tab.OnActivated) == "function" then pcall(tab.OnActivated) end
     end
     local tabBadge = makeReleaseBadge(tab.Button, "TabReleaseBadge")
     function tab:SetBadge(kind)
@@ -923,8 +923,8 @@ function TryoUI:CreateTab(name, icon)
         tabBadge.BackgroundColor3 = kind == "NEW" and Color3.fromRGB(80, 215, 145) or Color3.fromRGB(235, 171, 65)
         tabBadge.Visible = true
     end
-    tab.ClickArea.MouseButton1Click:Connect(activate)
-    tab.Activate = activate
+    tab.ClickArea.MouseButton1Click:Connect(function() activate(true) end)
+    tab.Activate = function() activate(false) end
 
     function tab:CreateSection(text)
         local section = label(self.Page, text, 13, Color3.fromRGB(239, 242, 252), Enum.Font.GothamBlack)
