@@ -544,7 +544,7 @@ function TryoUI:CreateFeedbackButton(options)
         BorderSizePixel = 0,
         AutoButtonColor = true,
         Size = UDim2.fromOffset(76, 36),
-        Position = UDim2.new(1, -92, 0, 8),
+        Position = UDim2.new(1, -168, 0, 8),
         ZIndex = 20
     }, top)
     corner(button, 8)
