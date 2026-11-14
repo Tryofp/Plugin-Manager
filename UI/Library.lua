@@ -120,7 +120,7 @@ function TryoUI.new(config)
 
     local top = make("Frame", {
         Name = "TopBar",
-        Size = UDim2.new(1, 0, 0, 54),
+        Size = UDim2.new(1, 0, 0, 68),
         BackgroundColor3 = Color3.fromRGB(38, 43, 61),
         BackgroundTransparency = math.min(self.Transparency + 0.06, 0.68),
         BorderSizePixel = 0
@@ -131,16 +131,48 @@ function TryoUI.new(config)
     }, top)
 
     self.TopBar = top
-    local title = label(top, self.Title, 14, COLORS.Text, Enum.Font.GothamBold)
+    local title = label(top, self.Title, 15, Color3.fromRGB(255, 255, 255), Enum.Font.GothamBlack)
     title.Position = UDim2.fromOffset(14, 1)
     title.Size = UDim2.new(1, -110, 0, 20)
-    local subtitle = label(top, self.Subtitle, 10, COLORS.Muted)
+
+    local subtitle = label(top, self.Subtitle, 11, Color3.fromRGB(220, 235, 255), Enum.Font.GothamBold)
     subtitle.Position = UDim2.fromOffset(14, 20)
-    subtitle.Size = UDim2.new(1, -110, 0, 13)
-    local lastUpdate = label(top, "Last Update: " .. self.LastUpdate, 9, COLORS.Muted)
-    lastUpdate.Position = UDim2.fromOffset(14, 34)
-    lastUpdate.Size = UDim2.new(1, -110, 0, 12)
+    subtitle.Size = UDim2.new(1, -110, 0, 14)
+
+    local lastUpdate = label(top, "Last Update: " .. self.LastUpdate, 10, Color3.fromRGB(190, 255, 220), Enum.Font.GothamBold)
+    lastUpdate.Position = UDim2.fromOffset(14, 35)
+    lastUpdate.Size = UDim2.new(1, -110, 0, 13)
     self.LastUpdateLabel = lastUpdate
+
+    local tickerClip = make("Frame", {
+        Name = "HeaderTickerClip",
+        Position = UDim2.fromOffset(14, 51),
+        Size = UDim2.new(1, -112, 0, 14),
+        BackgroundTransparency = 1,
+        ClipsDescendants = true
+    }, top)
+    local tickerText = label(tickerClip,
+        "TRYO PLUGIN MANAGER  •  STANDALONE SCRIPT HUB  •  MOBILE FRIENDLY  •  ",
+        10, Color3.fromRGB(205, 230, 255), Enum.Font.GothamBold)
+    tickerText.Name = "HeaderTicker"
+    tickerText.AutomaticSize = Enum.AutomaticSize.X
+    tickerText.Size = UDim2.fromOffset(460, 14)
+    tickerText.Position = UDim2.fromOffset(0, 0)
+    tickerText.TextStrokeColor3 = Color3.fromRGB(20, 35, 60)
+    tickerText.TextStrokeTransparency = 0.65
+
+    task.spawn(function()
+        while tickerText.Parent and top.Parent do
+            tickerText.Position = UDim2.fromOffset(tickerClip.AbsoluteSize.X, 0)
+            local distance = tickerClip.AbsoluteSize.X + tickerText.AbsoluteSize.X
+            local duration = math.max(8, distance / 32)
+            local tween = TweenService:Create(tickerText, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                Position = UDim2.fromOffset(-tickerText.AbsoluteSize.X, 0)
+            })
+            tween:Play()
+            tween.Completed:Wait()
+        end
+    end)
 
     local close = make("TextButton", {
         Name = "Close",
@@ -167,8 +199,8 @@ function TryoUI.new(config)
 
     local body = make("Frame", {
         Name = "Body",
-        Position = UDim2.fromOffset(0, 54),
-        Size = UDim2.new(1, 0, 1, -54),
+        Position = UDim2.fromOffset(0, 68),
+        Size = UDim2.new(1, 0, 1, -68),
         BackgroundTransparency = 1
     }, self.Window)
 
