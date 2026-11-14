@@ -438,7 +438,7 @@ function TryoUI:CreateTab(name, icon)
     tab.Elements = {}
     tab.Button = make("TextButton", {
         Name = name .. "Tab",
-        Text = name,
+        Text = "",
         TextSize = 12,
         Font = Enum.Font.GothamMedium,
         TextColor3 = COLORS.Muted,
@@ -449,15 +449,23 @@ function TryoUI:CreateTab(name, icon)
     }, self.Nav)
     corner(tab.Button, 7)
 
-    -- Keep icon and title in separate fixed zones; draw icons from Frames,
-    -- not font glyphs, so mobile fonts cannot substitute square characters.
-    tab.Button.TextXAlignment = Enum.TextXAlignment.Left
-    tab.Button.TextYAlignment = Enum.TextYAlignment.Center
-    tab.Button.TextWrapped = false
-    tab.Button.TextTruncate = Enum.TextTruncate.AtEnd
-    local tabPadding = make("UIPadding", {
-        PaddingLeft = UDim.new(0, 36),
-        PaddingRight = UDim.new(0, 6)
+    -- Icon and title are independent children. Avoid TextButton text alignment
+    -- and UIPadding: mobile rendering can center text despite those properties.
+    local tabTitle = make("TextLabel", {
+        Name = "TabTitle",
+        BackgroundTransparency = 1,
+        Text = name,
+        TextSize = 12,
+        Font = Enum.Font.GothamMedium,
+        TextColor3 = COLORS.Muted,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        TextWrapped = false,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Position = UDim2.fromOffset(36, 0),
+        Size = UDim2.new(1, -42, 1, 0),
+        ZIndex = tab.Button.ZIndex + 1,
+        Active = false
     }, tab.Button)
 
     local tabIcon = make("Frame", {
@@ -539,11 +547,12 @@ function TryoUI:CreateTab(name, icon)
         for _, existing in ipairs(self.Tabs) do
             existing.Page.Visible = false
             existing.Button.BackgroundColor3 = COLORS.Sidebar
-            existing.Button.TextColor3 = COLORS.Muted
+            local existingTitle = existing.Button:FindFirstChild("TabTitle")
+            if existingTitle then existingTitle.TextColor3 = COLORS.Muted end
         end
         tab.Page.Visible = true
         tab.Button.BackgroundColor3 = COLORS.Accent
-        tab.Button.TextColor3 = Color3.new(1, 1, 1)
+        tabTitle.TextColor3 = Color3.new(1, 1, 1)
         self.ActiveTab = tab
     end
     tab.Button.MouseButton1Click:Connect(activate)
@@ -655,7 +664,7 @@ function TryoUI:CreateTab(name, icon)
 
         local header = make("TextButton", {
             Name = "ToggleHeader",
-            Text = options.Name or "WalkSpeed",
+            Text = "",
             TextSize = 12,
             Font = Enum.Font.GothamMedium,
             TextColor3 = COLORS.Text,
@@ -665,7 +674,22 @@ function TryoUI:CreateTab(name, icon)
             Size = UDim2.new(1, 0, 0, 35)
         }, card)
         corner(header, 7)
-        make("UIPadding", { PaddingLeft = UDim.new(0, 30) }, header)
+        local headerTitle = make("TextLabel", {
+            Name = "ToggleTitle",
+            BackgroundTransparency = 1,
+            Text = options.Name or "WalkSpeed",
+            TextSize = 12,
+            Font = Enum.Font.GothamMedium,
+            TextColor3 = COLORS.Text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            TextWrapped = false,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            Position = UDim2.fromOffset(30, 0),
+            Size = UDim2.new(1, -62, 1, 0),
+            ZIndex = header.ZIndex + 1,
+            Active = false
+        }, header)
         local statusDot = make("Frame", {
             Name = "StatusDot",
             BackgroundColor3 = COLORS.Muted,
@@ -829,16 +853,25 @@ function TryoUI:CreateTab(name, icon)
         local state = options.Default == true
         local name = options.Name or "Toggle"
         local button = self:CreateButton({ Name = name })
-        local padding = button:FindFirstChildOfClass("UIPadding")
-        if padding then padding.PaddingLeft = UDim.new(0, 30) end
-        button.TextXAlignment = Enum.TextXAlignment.Left
-        button.TextYAlignment = Enum.TextYAlignment.Center
-        button.TextWrapped = false
-        local buttonPadding = button:FindFirstChildOfClass("UIPadding")
-        if buttonPadding then
-            buttonPadding.PaddingLeft = UDim.new(0, 30)
-            buttonPadding.PaddingRight = UDim.new(0, 8)
-        end
+        -- Fixed child layout: dot owns the left 18px, title starts at 30px.
+        -- The clickable TextButton itself carries no text, avoiding mobile centering.
+        button.Text = ""
+        local toggleTitle = make("TextLabel", {
+            Name = "ToggleTitle",
+            BackgroundTransparency = 1,
+            Text = name,
+            TextSize = 12,
+            Font = Enum.Font.GothamMedium,
+            TextColor3 = COLORS.Text,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center,
+            TextWrapped = false,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            Position = UDim2.fromOffset(30, 0),
+            Size = UDim2.new(1, -40, 1, 0),
+            ZIndex = button.ZIndex + 1,
+            Active = false
+        }, button)
         local statusDot = make("Frame", {
             Name = "StatusDot",
             BackgroundColor3 = state and COLORS.Success or COLORS.Muted,
