@@ -812,14 +812,16 @@ local ok, result = pcall(function()
         end})
 
         task.spawn(refreshMaintenance)
-        task.spawn(function()
-            while window and not window.Destroyed do
-                task.wait(30)
-                if not window or window.Destroyed then break end
-                refreshMaintenance()
-            end
-        end)
     end
+
+    task.spawn(refreshPublicMaintenance)
+    task.spawn(function()
+        while window and not window.Destroyed do
+            task.wait(30)
+            if not window or window.Destroyed then break end
+            refreshPublicMaintenance()
+        end
+    end)
 
     if window.Gui then
         window.Gui.Destroying:Connect(function()
