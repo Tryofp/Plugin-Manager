@@ -22,7 +22,7 @@ local ok, result = pcall(function()
     local METADATA_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
     -- Public release manifest: only intentional user-facing changes create badges.
     local RELEASES = {{
-        Version = "0.2.0", Date = "14/11/2026", Title = "Camera Tools Update",
+        Version = "0.2", Date = "14/11/2026", Title = "Camera Tools Update",
         Summary = "Peningkatan Force Unlock Camera dan sistem navigasi rilis publik.",
         Changes = {{
             Id = "ForceUnlockCamera", Type = "UPDATE", Tab = "Main", Menu = "F1Lock",
@@ -209,7 +209,7 @@ local ok, result = pcall(function()
     -- Build the visible shell immediately; metadata loads asynchronously.
     local window = TryoUI.new({
         Title = "PLUGIN MANAGER",
-        Subtitle = "V0.2 • BETA",
+        Subtitle = "V" .. RELEASES[1].Version .. " • BETA",
         LastUpdate = "Memuat...",
         Size = UDim2.fromOffset(590, 370)
     })
