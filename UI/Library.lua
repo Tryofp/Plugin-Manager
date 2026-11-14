@@ -449,67 +449,72 @@ function TryoUI:CreateTab(name, icon)
     }, self.Nav)
     corner(tab.Button, 7)
 
-    -- Draw tab marks with native UI shapes/ASCII-safe letters so unsupported
-    -- Unicode glyphs cannot turn into empty square symbols on mobile fonts.
+    -- Keep icon and title in separate fixed zones; draw icons from Frames,
+    -- not font glyphs, so mobile fonts cannot substitute square characters.
+    tab.Button.TextXAlignment = Enum.TextXAlignment.Left
+    tab.Button.TextYAlignment = Enum.TextYAlignment.Center
+    tab.Button.TextWrapped = false
+    tab.Button.TextTruncate = Enum.TextTruncate.AtEnd
+    local tabPadding = make("UIPadding", {
+        PaddingLeft = UDim.new(0, 36),
+        PaddingRight = UDim.new(0, 6)
+    }, tab.Button)
+
     local tabIcon = make("Frame", {
         Name = "TabIcon",
         Position = UDim2.fromOffset(9, 8),
         Size = UDim2.fromOffset(17, 17),
         BackgroundTransparency = 1,
-        ClipsDescendants = true
+        BorderSizePixel = 0
     }, tab.Button)
-    tab.Button.TextXAlignment = Enum.TextXAlignment.Left
-    make("UIPadding", { PaddingLeft = UDim.new(0, 34) }, tab.Button)
+
+    local function iconPart(name, size, position, color, rotation, radius)
+        local part = make("Frame", {
+            Name = name,
+            Size = size,
+            Position = position,
+            BackgroundColor3 = color or COLORS.Muted,
+            BorderSizePixel = 0,
+            Rotation = rotation or 0
+        }, tabIcon)
+        if radius then corner(part, radius) end
+        return part
+    end
+
+    local iconColor = name == "Gunung" and Color3.fromRGB(120, 195, 220)
+        or name == "Tools" and Color3.fromRGB(120, 205, 170)
+        or name == "Visual" and Color3.fromRGB(155, 175, 245)
+        or name == "Horor" and Color3.fromRGB(220, 135, 155)
+        or COLORS.Accent
 
     if name == "Gunung" then
-        local rearPeak = make("TextLabel", {
-            BackgroundTransparency = 1,
-            Text = "▲",
-            TextColor3 = Color3.fromRGB(102, 190, 211),
-            TextSize = 12,
-            Font = Enum.Font.GothamBlack,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            TextYAlignment = Enum.TextYAlignment.Bottom,
-            Size = UDim2.fromOffset(12, 13),
-            Position = UDim2.fromOffset(6, 2)
-        }, tabIcon)
-        local frontPeak = make("TextLabel", {
-            BackgroundTransparency = 1,
-            Text = "▲",
-            TextColor3 = Color3.fromRGB(190, 205, 245),
-            TextSize = 16,
-            Font = Enum.Font.GothamBlack,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            TextYAlignment = Enum.TextYAlignment.Bottom,
-            Size = UDim2.fromOffset(14, 17),
-            Position = UDim2.fromOffset(0, 0)
-        }, tabIcon)
+        iconPart("MountainBase", UDim2.fromOffset(15, 3), UDim2.fromOffset(1, 13), iconColor, 0, 2)
+        iconPart("PeakLeft", UDim2.fromOffset(9, 9), UDim2.fromOffset(2, 5), iconColor, 45, 1)
+        iconPart("PeakRight", UDim2.fromOffset(9, 9), UDim2.fromOffset(8, 5), Color3.fromRGB(190, 205, 245), -45, 1)
+    elseif name == "Main" then
+        iconPart("HomeBase", UDim2.fromOffset(11, 9), UDim2.fromOffset(3, 7), iconColor, 0, 2)
+        iconPart("RoofLeft", UDim2.fromOffset(10, 3), UDim2.fromOffset(1, 5), iconColor, -38, 1)
+        iconPart("RoofRight", UDim2.fromOffset(10, 3), UDim2.fromOffset(8, 5), iconColor, 38, 1)
+        iconPart("Door", UDim2.fromOffset(3, 5), UDim2.fromOffset(7, 11), COLORS.Sidebar, 0, 1)
+    elseif name == "Horor" then
+        iconPart("GhostBody", UDim2.fromOffset(12, 13), UDim2.fromOffset(2, 2), iconColor, 0, 6)
+        iconPart("GhostCutout", UDim2.fromOffset(3, 3), UDim2.fromOffset(4, 6), COLORS.Sidebar, 0, 2)
+        iconPart("GhostCutout2", UDim2.fromOffset(3, 3), UDim2.fromOffset(9, 6), COLORS.Sidebar, 0, 2)
+        iconPart("GhostFoot", UDim2.fromOffset(12, 3), UDim2.fromOffset(2, 13), iconColor, 0, 1)
+    elseif name == "Visual" then
+        iconPart("EyeOuter", UDim2.fromOffset(15, 9), UDim2.fromOffset(1, 4), iconColor, 0, 6)
+        iconPart("EyeInner", UDim2.fromOffset(5, 5), UDim2.fromOffset(6, 6), COLORS.Sidebar, 0, 3)
+    elseif name == "Tools" then
+        iconPart("ToolHandle", UDim2.fromOffset(4, 13), UDim2.fromOffset(7, 2), iconColor, 42, 2)
+        iconPart("ToolHead", UDim2.fromOffset(10, 4), UDim2.fromOffset(4, 2), iconColor, -35, 2)
+    elseif name == "Settings" then
+        iconPart("GearCore", UDim2.fromOffset(9, 9), UDim2.fromOffset(4, 4), iconColor, 0, 5)
+        for i = 0, 3 do
+            iconPart("GearTooth" .. tostring(i), UDim2.fromOffset(3, 5), UDim2.fromOffset(7, 0), iconColor, i * 90, 1)
+        end
     else
-        local initials = {
-            Main = "M", Horor = "H", Visual = "V",
-            Tools = "T", Settings = "S", Loading = "L"
-        }
-        local iconColor = name == "Tools" and Color3.fromRGB(120, 205, 170)
-            or name == "Visual" and Color3.fromRGB(155, 175, 245)
-            or name == "Horor" and Color3.fromRGB(220, 135, 155)
-            or COLORS.Accent
-        local iconBadge = make("Frame", {
-            Size = UDim2.fromOffset(17, 17),
-            BackgroundColor3 = iconColor,
-            BackgroundTransparency = 0.72,
-            BorderSizePixel = 0
-        }, tabIcon)
-        corner(iconBadge, 6)
-        local iconLetter = make("TextLabel", {
-            BackgroundTransparency = 1,
-            Text = initials[name] or string.sub(name, 1, 1),
-            TextColor3 = iconColor,
-            TextSize = 10,
-            Font = Enum.Font.GothamBold,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            TextYAlignment = Enum.TextYAlignment.Center,
-            Size = UDim2.fromScale(1, 1)
-        }, iconBadge)
+        iconPart("LoadingRing", UDim2.fromOffset(13, 13), UDim2.fromOffset(2, 2), iconColor, 0, 7)
+        iconPart("LoadingCore", UDim2.fromOffset(7, 7), UDim2.fromOffset(5, 5), COLORS.Sidebar, 0, 4)
     end
 
     tab.Page = make("ScrollingFrame", {
@@ -661,18 +666,15 @@ function TryoUI:CreateTab(name, icon)
         }, card)
         corner(header, 7)
         make("UIPadding", { PaddingLeft = UDim.new(0, 30) }, header)
-        local statusDot = make("TextLabel", {
+        local statusDot = make("Frame", {
             Name = "StatusDot",
-            BackgroundTransparency = 1,
-            Text = "●",
-            TextColor3 = COLORS.Muted,
-            TextSize = 9,
-            Font = Enum.Font.GothamBold,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            TextYAlignment = Enum.TextYAlignment.Center,
-            Position = UDim2.fromOffset(10, 0),
-            Size = UDim2.fromOffset(10, 35)
+            BackgroundColor3 = COLORS.Muted,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(11, 14),
+            Size = UDim2.fromOffset(7, 7),
+            ZIndex = header.ZIndex + 1
         }, header)
+        corner(statusDot, 4)
         local expandMark = make("TextLabel", {
             Name = "ExpandMark",
             BackgroundTransparency = 1,
@@ -741,7 +743,7 @@ function TryoUI:CreateTab(name, icon)
         local enabled = false
         local expanded = false
         local function refresh()
-            statusDot.TextColor3 = enabled and COLORS.Success or COLORS.Muted
+            statusDot.BackgroundColor3 = enabled and COLORS.Success or COLORS.Muted
             expandMark.Text = expanded and "^" or "v"
             expandMark.TextColor3 = enabled and COLORS.Text or COLORS.Muted
             header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface
@@ -829,21 +831,26 @@ function TryoUI:CreateTab(name, icon)
         local button = self:CreateButton({ Name = name })
         local padding = button:FindFirstChildOfClass("UIPadding")
         if padding then padding.PaddingLeft = UDim.new(0, 30) end
-        local statusDot = make("TextLabel", {
+        button.TextXAlignment = Enum.TextXAlignment.Left
+        button.TextYAlignment = Enum.TextYAlignment.Center
+        button.TextWrapped = false
+        local buttonPadding = button:FindFirstChildOfClass("UIPadding")
+        if buttonPadding then
+            buttonPadding.PaddingLeft = UDim.new(0, 30)
+            buttonPadding.PaddingRight = UDim.new(0, 8)
+        end
+        local statusDot = make("Frame", {
             Name = "StatusDot",
-            BackgroundTransparency = 1,
-            Text = "●",
-            TextColor3 = state and COLORS.Success or COLORS.Muted,
-            TextSize = 9,
-            Font = Enum.Font.GothamBold,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            TextYAlignment = Enum.TextYAlignment.Center,
-            Position = UDim2.fromOffset(10, 0),
-            Size = UDim2.fromOffset(10, 35)
+            BackgroundColor3 = state and COLORS.Success or COLORS.Muted,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(11, 14),
+            Size = UDim2.fromOffset(7, 7),
+            ZIndex = button.ZIndex + 1
         }, button)
+        corner(statusDot, 4)
         local function set(value)
             state = value == true
-            statusDot.TextColor3 = state and COLORS.Success or COLORS.Muted
+            statusDot.BackgroundColor3 = state and COLORS.Success or COLORS.Muted
             if type(options.Callback) == "function" then options.Callback(state) end
         end
         button.MouseButton1Click:Connect(function() set(not state) end)
