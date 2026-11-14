@@ -583,7 +583,7 @@ function TryoUI:CreateTab(name, icon)
             BackgroundColor3 = COLORS.Surface,
             AutoButtonColor = false,
             Size = UDim2.new(1, -4, 0, 35)
-        }, self.Page)
+        }, options.Parent or self.Page)
         corner(button, 7)
         local pad = make("UIPadding", { PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 10) }, button)
         button.MouseEnter:Connect(function() button.BackgroundColor3 = COLORS.SurfaceHover end)
@@ -605,7 +605,7 @@ function TryoUI:CreateTab(name, icon)
             BackgroundColor3 = Color3.fromRGB(42, 49, 68),
             BackgroundTransparency = 0.22,
             BorderSizePixel = 0
-        }, self.Page)
+        }, options.Parent or self.Page)
         corner(card, 8)
         stroke(card, Color3.fromRGB(105, 125, 170), 0.65)
 
@@ -796,10 +796,11 @@ function TryoUI:CreateTab(name, icon)
         header.MouseLeave:Connect(function() header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface end)
         refresh()
         return {
-            Set = function(value)
+            Set = function(value, silent)
                 enabled = value == true
                 expanded = enabled
                 refresh()
+                if not silent and type(options.Callback) == "function" then options.Callback(enabled) end
             end,
             Get = function() return enabled end,
             Refresh = updateValue
