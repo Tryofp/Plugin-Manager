@@ -132,7 +132,7 @@ function TryoUI.new(config)
         BorderSizePixel = 0
     }, self.Window)
     make("UIGradient", {
-        Color = ColorSequence.new(Color3.fromRGB(65, 133, 166), ColorSequence.new(Color3.fromRGB(119, 75, 165))),
+        Color = ColorSequence.new(Color3.fromRGB(65, 133, 166), Color3.fromRGB(119, 75, 165)),
         Rotation = 0
     }, top)
 
@@ -963,18 +963,22 @@ function TryoUI:CreateTab(name, icon)
 
         local center = Vector2.new(56, 56)
         local radius = 47
-        for index = 0, 71 do
-            local hue = index / 72
-            local angle = hue * math.pi * 2
-            local dot = make("Frame", {
-                Name = "Hue" .. tostring(index),
-                AnchorPoint = Vector2.new(0.5, 0.5),
-                Position = UDim2.fromOffset(center.X + math.cos(angle) * radius, center.Y + math.sin(angle) * radius),
-                Size = UDim2.fromOffset(9, 9),
-                BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
-                BorderSizePixel = 0
-            }, wheel)
-            corner(dot, 5)
+        for ring = 1, 5 do
+            local saturation = ring / 5
+            local ringRadius = radius * saturation
+            for index = 0, 35 do
+                local hue = index / 36
+                local angle = hue * math.pi * 2
+                local dot = make("Frame", {
+                    Name = "Hue" .. tostring(ring) .. "_" .. tostring(index),
+                    AnchorPoint = Vector2.new(0.5, 0.5),
+                    Position = UDim2.fromOffset(center.X + math.cos(angle) * ringRadius, center.Y + math.sin(angle) * ringRadius),
+                    Size = UDim2.fromOffset(9, 9),
+                    BackgroundColor3 = Color3.fromHSV(hue, saturation, 1),
+                    BorderSizePixel = 0
+                }, wheel)
+                corner(dot, 5)
+            end
         end
 
         local selector = make("Frame", {
@@ -1018,15 +1022,27 @@ function TryoUI:CreateTab(name, icon)
             value.Text = string.format("RGB  %d, %d, %d", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
         end
 
+        local draggingWheel = false
         wheel.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingWheel = true
                 chooseAt(input.Position)
             end
         end)
-        UserInputService.InputChanged:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch then
-                if input.UserInputState == Enum.UserInputState.Change then chooseAt(input.Position) end
+        local wheelChanged = UserInputService.InputChanged:Connect(function(input)
+            if not draggingWheel then return end
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
+                chooseAt(input.Position)
             end
+        end)
+        local wheelEnded = UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingWheel = false
+            end
+        end)
+        card.Destroying:Connect(function()
+            wheelChanged:Disconnect()
+            wheelEnded:Disconnect()
         end)
 
         return card
