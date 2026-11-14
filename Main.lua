@@ -614,7 +614,9 @@ local ok, result = pcall(function()
                 return false
             end
             applyMaintenanceSnapshot(metadata)
-            setAdminStatus("Status maintenance tersinkron • " .. tostring(#maintenanceEntries) .. " fitur.")
+            local featureCount = 0
+            for _ in pairs(maintenanceEntries) do featureCount = featureCount + 1 end
+            setAdminStatus("Status maintenance tersinkron • " .. tostring(featureCount) .. " fitur.")
             return true
         end
 
