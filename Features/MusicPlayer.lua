@@ -93,6 +93,15 @@ function Feature.Start()
         Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false
     }, panel)
     make("UICorner", {CornerRadius = UDim.new(0, 6)}, idBox)
+    -- Keep the Asset ID field numeric-only, including pasted text.
+    idBox:GetPropertyChangedSignal("Text"):Connect(function()
+        local digitsOnly = idBox.Text:gsub("%D", "")
+        if idBox.Text ~= digitsOnly then
+            local cursor = idBox.CursorPosition
+            idBox.Text = digitsOnly
+            if cursor >= 1 then idBox.CursorPosition = math.min(cursor, #digitsOnly + 1) end
+        end
+    end)
     local pitchBox = make("TextBox", {
         Size = UDim2.new(0.48, -12, 0, 28), Position = UDim2.fromOffset(10, 78),
         BackgroundColor3 = Color3.fromRGB(20, 32, 49), Text = "1", PlaceholderText = "Pitch",
