@@ -197,7 +197,7 @@ function TryoUI.new(config)
         TextSize = 21,
         Font = Enum.Font.GothamBold,
         TextColor3 = Color3.fromRGB(215, 230, 250),
-        BackgroundColor3 = COLORS.Accent,
+        BackgroundColor3 = Color3.fromRGB(62, 91, 125),
         Size = UDim2.fromOffset(29, 28),
         Position = UDim2.fromOffset(4, 4),
         BorderSizePixel = 0,
@@ -540,11 +540,11 @@ function TryoUI:CreateFeedbackButton(options)
         TextSize = 9,
         Font = Enum.Font.GothamBold,
         TextColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundColor3 = Color3.fromRGB(0, 125, 155),
+        BackgroundColor3 = COLORS.Accent,
         BorderSizePixel = 0,
         AutoButtonColor = true,
         Size = UDim2.fromOffset(76, 36),
-        Position = UDim2.new(1, -244, 0, 8),
+        Position = UDim2.new(1, -168, 0, 8),
         ZIndex = 20
     }, top)
     corner(button, 8)
