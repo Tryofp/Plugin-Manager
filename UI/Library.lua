@@ -375,6 +375,14 @@ function TryoUI.new(config)
         return width, height
     end
 
+    function self:SetLastUpdate(value)
+        self.LastUpdate = tostring(value or "-")
+        if self.LastUpdateLabel then
+            self.LastUpdateLabel.Text = self.Subtitle .. " • LAST UPDATE : " .. self.LastUpdate
+        end
+        return self.LastUpdate
+    end
+
     function self:SetTransparency(value)
         self.Transparency = math.clamp(tonumber(value) or self.Transparency, 0.15, 0.60)
         if self.Window then self.Window.BackgroundTransparency = self.Transparency end
@@ -393,29 +401,16 @@ function TryoUI.new(config)
             for _, object in ipairs(self.Gui:GetDescendants()) do
                 if object:IsA("GuiObject") and object.BackgroundColor3 == previous then
                     object.BackgroundColor3 = color
-                elseif object:IsA("TextLabel") or object:IsA("TextButton") then
-                    if object.TextColor3 == previous then object.TextColor3 = color end
-                elseif object:IsA("UIStroke") and object.Color == previous then
-                    object.Color = color
-                elseif object:IsA("UIGradient") then
-                    local keys = object.Color.Keypoints
-                    local updated = {}
-                    local changed = false
-                    for _, keypoint in ipairs(keys) do
-                        local keyColor = keypoint.Value
-                        if keyColor == previous then keyColor = color; changed = true end
-                        table.insert(updated, ColorSequenceKeypoint.new(keypoint.Time, keyColor))
-                    end
-                    if changed then object.Color = ColorSequence.new(updated) end
                 end
-            end
-        end
-        if self.FloatingButton then
-            for _, object in ipairs(self.FloatingButton:GetDescendants()) do
-                if object:IsA("UIStroke") and object.Color == previous then object.Color = color end
+                if (object:IsA("TextLabel") or object:IsA("TextButton")) and object.TextColor3 == previous then
+                    object.TextColor3 = color
+                end
+                if object:IsA("UIStroke") and object.Color == previous then
+                    object.Color = color
+                end
                 if object:IsA("UIGradient") then
-                    local keys, updated, changed = object.Color.Keypoints, {}, false
-                    for _, keypoint in ipairs(keys) do
+                    local updated, changed = {}, false
+                    for _, keypoint in ipairs(object.Color.Keypoints) do
                         local keyColor = keypoint.Value
                         if keyColor == previous then keyColor = color; changed = true end
                         table.insert(updated, ColorSequenceKeypoint.new(keypoint.Time, keyColor))
@@ -647,8 +642,11 @@ function TryoUI:CreateTab(name, icon)
     tab.Activate = activate
 
     function tab:CreateSection(text)
-        local section = label(self.Page, text, 11, COLORS.Accent, Enum.Font.GothamBold)
-        section.Size = UDim2.new(1, -4, 0, 22)
+        local section = label(self.Page, text, 13, Color3.fromRGB(239, 242, 252), Enum.Font.GothamBlack)
+        section.Size = UDim2.new(1, -4, 0, 25)
+        section.TextXAlignment = Enum.TextXAlignment.Left
+        section.TextStrokeColor3 = Color3.fromRGB(12, 15, 24)
+        section.TextStrokeTransparency = 0.72
         return section
     end
 
@@ -1022,8 +1020,31 @@ function TryoUI:CreateTab(name, icon)
             value.Text = string.format("RGB  %d, %d, %d", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
         end
 
+        -- A transparent hit target sits above the decorative dots so mobile taps
+        -- are received consistently instead of landing on individual color dots.
+        local hitArea = make("TextButton", {
+            Name = "ColorWheelHitArea",
+            Text = "",
+            BackgroundTransparency = 1,
+            AutoButtonColor = false,
+            Active = true,
+            Size = UDim2.fromScale(1, 1),
+            ZIndex = 10
+        }, wheel)
+
+        local initialHue, initialSaturation = COLORS.Accent:ToHSV()
+        local initialRadius = math.clamp(initialSaturation, 0.18, 1) * radius
+        selector.Position = UDim2.fromOffset(
+            center.X + math.cos(initialHue * math.pi * 2) * initialRadius,
+            center.Y + math.sin(initialHue * math.pi * 2) * initialRadius
+        )
+        value.Text = string.format("RGB  %d, %d, %d",
+            math.floor(COLORS.Accent.R * 255 + 0.5),
+            math.floor(COLORS.Accent.G * 255 + 0.5),
+            math.floor(COLORS.Accent.B * 255 + 0.5))
+
         local draggingWheel = false
-        wheel.InputBegan:Connect(function(input)
+        hitArea.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 draggingWheel = true
                 chooseAt(input.Position)
