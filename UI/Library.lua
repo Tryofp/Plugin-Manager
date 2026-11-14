@@ -1178,6 +1178,21 @@ function TryoUI:CreateTab(name, icon)
             ZIndex = header.ZIndex + 1
         }, header)
         corner(statusDot, 4)
+        local maintenanceBadge = make("TextLabel", {
+            Name = "MaintenanceBadge",
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -7, 0.5, 0),
+            Size = UDim2.fromOffset(91, 18),
+            BackgroundColor3 = Color3.fromRGB(177, 65, 72),
+            BorderSizePixel = 0,
+            Text = "MAINTENANCE",
+            TextColor3 = Color3.fromRGB(255, 245, 245),
+            TextSize = 7,
+            Font = Enum.Font.GothamBlack,
+            Visible = false,
+            ZIndex = header.ZIndex + 2
+        }, header)
+        corner(maintenanceBadge, 5)
         local expandMark = make("TextLabel", {
             Name = "ExpandMark",
             BackgroundTransparency = 1,
@@ -1281,16 +1296,19 @@ function TryoUI:CreateTab(name, icon)
 
         local enabled = false
         local expanded = false
+        local maintenanceLocked = false
         local function refresh()
             statusDot.BackgroundColor3 = enabled and COLORS.Success or COLORS.Muted
             expandMark.Text = expanded and "^" or "v"
             expandMark.TextColor3 = enabled and COLORS.Text or COLORS.Muted
             header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface
+            headerTitle.Size = UDim2.new(1, maintenanceLocked and -116 or -62, 1, 0)
             card.Size = UDim2.new(1, -4, 0, expanded and 123 or 35)
             panel.Visible = expanded
             updateValue()
         end
         header.MouseButton1Click:Connect(function()
+            if maintenanceLocked then return end
             enabled = not enabled
             expanded = enabled
             if type(options.Callback) == "function" then
@@ -1302,16 +1320,28 @@ function TryoUI:CreateTab(name, icon)
         header.MouseEnter:Connect(function() header.BackgroundColor3 = COLORS.SurfaceHover end)
         header.MouseLeave:Connect(function() header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface end)
         refresh()
-        return {
+        local control = {
             Set = function(value, silent)
-                enabled = value == true
+                enabled = maintenanceLocked and false or value == true
                 expanded = enabled
                 refresh()
                 if not silent and type(options.Callback) == "function" then options.Callback(enabled) end
             end,
             Get = function() return enabled end,
-            Refresh = updateValue
+            Refresh = updateValue,
+            SetMaintenance = function(value)
+                maintenanceLocked = value == true
+                maintenanceBadge.Visible = maintenanceLocked
+                header.Active = not maintenanceLocked
+                header.Selectable = not maintenanceLocked
+                if maintenanceLocked then
+                    enabled = false
+                    expanded = false
+                end
+                refresh()
+            end
         }
+        return control
     end
 
     function tab:CreateGlassControl(options)
