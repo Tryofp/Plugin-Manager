@@ -1042,6 +1042,32 @@ function TryoUI:CreateTab(name, icon)
         return input
     end
 
+    function tab:CreateInfo(options)
+        options = options or {}
+        local info = make("TextLabel", {
+            Name = options.Name or "Info",
+            Size = UDim2.new(1, -4, 0, options.Height or 48),
+            BackgroundColor3 = options.Background or COLORS.Panel,
+            BackgroundTransparency = 0.08,
+            BorderSizePixel = 0,
+            Text = options.Text or "",
+            TextColor3 = options.Color or COLORS.Muted,
+            Font = Enum.Font.Gotham,
+            TextSize = options.TextSize or 10,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center
+        }, options.Parent or self.Page)
+        corner(info, 7)
+        make("UIPadding", {
+            PaddingLeft = UDim.new(0, 9),
+            PaddingRight = UDim.new(0, 9),
+            PaddingTop = UDim.new(0, 5),
+            PaddingBottom = UDim.new(0, 5)
+        }, info)
+        return info
+    end
+
     function tab:CreateSizeControl(options)
         options = options or {}
         local card = make("Frame", {
