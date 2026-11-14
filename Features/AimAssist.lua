@@ -124,4 +124,82 @@ function AimAssist.SetSmoothness(value)
     AimAssist.Smoothness = math.clamp(tonumber(value) or 0.18, 0.03, 1)
 end
 
+local settingsGui
+function AimAssist.OpenSettings()
+    if settingsGui and settingsGui.Parent then
+        settingsGui.Enabled = true
+        return true
+    end
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "TryoAimAssistSettings"
+    gui.ResetOnSpawn = false
+    local parentOk = pcall(function() gui.Parent = game:GetService("CoreGui") end)
+    if not parentOk then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+    settingsGui = gui
+
+    local panel = Instance.new("Frame")
+    panel.Size = UDim2.fromOffset(230, 112)
+    panel.Position = UDim2.new(0.5, -115, 0.5, -56)
+    panel.BackgroundColor3 = Color3.fromRGB(38, 54, 78)
+    panel.BackgroundTransparency = 0.12
+    panel.BorderSizePixel = 0
+    panel.Parent = gui
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 9)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -36, 0, 28)
+    title.Position = UDim2.fromOffset(9, 0)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = "AIM ASSIST SETTINGS"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextSize = 11
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = panel
+
+    local close = Instance.new("TextButton")
+    close.Size = UDim2.fromOffset(23, 22)
+    close.Position = UDim2.new(1, -27, 0, 3)
+    close.Text = "×"
+    close.Font = Enum.Font.GothamBold
+    close.TextSize = 15
+    close.TextColor3 = Color3.new(1, 1, 1)
+    close.BackgroundColor3 = Color3.fromRGB(150, 65, 80)
+    close.Parent = panel
+    close.MouseButton1Click:Connect(function() gui.Enabled = false end)
+
+    local radiusBox = Instance.new("TextBox")
+    radiusBox.Size = UDim2.new(1, -18, 0, 28)
+    radiusBox.Position = UDim2.fromOffset(9, 36)
+    radiusBox.BackgroundColor3 = Color3.fromRGB(20, 32, 49)
+    radiusBox.TextColor3 = Color3.new(1, 1, 1)
+    radiusBox.PlaceholderText = "Radius 25 - 800"
+    radiusBox.Text = tostring(AimAssist.Radius)
+    radiusBox.ClearTextOnFocus = false
+    radiusBox.Font = Enum.Font.Gotham
+    radiusBox.TextSize = 11
+    radiusBox.Parent = panel
+
+    local apply = Instance.new("TextButton")
+    apply.Size = UDim2.new(1, -18, 0, 27)
+    apply.Position = UDim2.fromOffset(9, 74)
+    apply.BackgroundColor3 = Color3.fromRGB(25, 140, 100)
+    apply.Text = "APPLY"
+    apply.TextColor3 = Color3.new(1, 1, 1)
+    apply.Font = Enum.Font.GothamBold
+    apply.TextSize = 11
+    apply.Parent = panel
+    apply.MouseButton1Click:Connect(function()
+        local number = tonumber(radiusBox.Text)
+        if not number then
+            notify("Masukkan radius berupa angka.")
+            return
+        end
+        AimAssist.SetRadius(number)
+        radiusBox.Text = tostring(AimAssist.Radius)
+        notify("Radius diperbarui: " .. tostring(AimAssist.Radius))
+    end)
+    return true
+end
+
 return AimAssist
