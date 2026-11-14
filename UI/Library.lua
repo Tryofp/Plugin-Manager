@@ -668,7 +668,7 @@ function TryoUI:CreateTab(name, icon)
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             ClipsDescendants = true
-        }, self.Page)
+        }, options.Parent or self.Page)
 
         local header = make("TextButton", {
             Name = "ToggleHeader",
@@ -856,6 +856,39 @@ function TryoUI:CreateTab(name, icon)
         return card
     end
 
+    function tab:CreateDropdown(options)
+        options = options or {}
+        local card = make("Frame", {Name = "Dropdown_" .. tostring(options.Name or "Menu"):gsub("%W", ""), Size = UDim2.new(1, -4, 0, 35), BackgroundTransparency = 1, ClipsDescendants = true}, self.Page)
+        local header = make("TextButton", {Name = "DropdownHeader", Text = "", BackgroundColor3 = COLORS.Surface, AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 35)}, card)
+        corner(header, 7)
+        local title = make("TextLabel", {Name = "DropdownTitle", BackgroundTransparency = 1, Text = options.Name or "Menu", TextSize = 12, Font = Enum.Font.GothamSemibold, TextColor3 = COLORS.Text, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(11, 0), Size = UDim2.new(1, -42, 1, 0), Active = false}, header)
+        local arrow = make("TextLabel", {Name = "DropdownArrow", BackgroundTransparency = 1, Text = "v", TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = COLORS.Muted, Position = UDim2.new(1, -28, 0, 0), Size = UDim2.fromOffset(18, 35), Active = false}, header)
+        local panel = make("Frame", {Name = "DropdownContent", Position = UDim2.fromOffset(0, 41), Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, Visible = false}, card)
+        local list = make("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, panel)
+        local expanded = false
+        local function resize()
+            local h = list.AbsoluteContentSize.Y
+            panel.Size = UDim2.new(1, 0, 0, h)
+            card.Size = UDim2.new(1, -4, 0, expanded and (41 + h + 5) or 35)
+        end
+        list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize)
+        header.MouseButton1Click:Connect(function()
+            expanded = not expanded
+            panel.Visible = expanded
+            arrow.Text = expanded and "^" or "v"
+            header.BackgroundColor3 = expanded and Color3.fromRGB(49, 65, 79) or COLORS.Surface
+            resize()
+        end)
+        header.MouseEnter:Connect(function() header.BackgroundColor3 = COLORS.SurfaceHover end)
+        header.MouseLeave:Connect(function() header.BackgroundColor3 = expanded and Color3.fromRGB(49, 65, 79) or COLORS.Surface end)
+        if type(options.Build) == "function" then
+            local ok, err = pcall(options.Build, panel)
+            if not ok then warn("[Tryo UI] Dropdown " .. tostring(options.Name) .. ": " .. tostring(err)) end
+        end
+        resize()
+        return {Card = card, Content = panel, SetExpanded = function(value) expanded = value == true; panel.Visible = expanded; arrow.Text = expanded and "^" or "v"; resize() end}
+    end
+
     function tab:CreateToggle(options)
         options = options or {}
         local state = options.Default == true
@@ -869,7 +902,7 @@ function TryoUI:CreateTab(name, icon)
             BorderSizePixel = 0,
             Size = UDim2.new(1, -4, 0, 35),
             ClipsDescendants = true
-        }, self.Page)
+        }, options.Parent or self.Page)
         corner(card, 7)
 
         local clickArea = make("TextButton", {
@@ -908,10 +941,10 @@ function TryoUI:CreateTab(name, icon)
             Active = false
         }, card)
 
-        local function set(value)
+        local function set(value, silent)
             state = value == true
             statusDot.BackgroundColor3 = state and COLORS.Success or COLORS.Muted
-            if type(options.Callback) == "function" then
+            if not silent and type(options.Callback) == "function" then
                 local ok, err = pcall(options.Callback, state)
                 if not ok then warn("[Tryo UI] " .. tostring(err)) end
             end
