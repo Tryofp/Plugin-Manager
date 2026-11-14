@@ -441,6 +441,14 @@ local ok, result = pcall(function()
         end
     })
     addFeatureToggle(mainTab, "WaypointManager", waypoint, "Waypoint")
+    mainTab:CreateDropdown({
+        Name = "TELEPORT",
+        Build = function(panel)
+            addFeatureToggle(mainTab, "TeleportToPlayer", teleportFeatures.PlayerTeleport, "TELEPORT TO PLAYER", panel)
+            addFeatureToggle(mainTab, "TeleportToItemUniversal", tpItem, "TELEPORT TO ITEM", panel)
+        end
+    })
+
     addFeatureToggle(mainTab, "PlayMusic", musicPlayer, "Play Music")
     mainTab:CreateDropdown({
         Name = "Rejoin",
@@ -501,14 +509,6 @@ local ok, result = pcall(function()
             markReleaseSeen("menu", "F1Lock")
         end
     end
-
-    mainTab:CreateDropdown({
-        Name = "TELEPORT",
-        Build = function(panel)
-            addFeatureToggle(mainTab, "TeleportToPlayer", teleportFeatures.PlayerTeleport, "TELEPORT TO PLAYER", panel)
-            addFeatureToggle(mainTab, "TeleportToItemUniversal", tpItem, "TELEPORT TO ITEM", panel)
-        end
-    })
 
     local mountainTab = window:CreateTab("Gunung", "▲")
     mountainTab:CreateSection("MOUNTAIN QUICK ACCESS")
