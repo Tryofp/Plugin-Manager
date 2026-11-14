@@ -178,28 +178,49 @@ function TryoUI.new(config)
         end
     end)
 
-    local close = make("TextButton", {
-        Name = "Close",
-        Text = "×",
-        TextSize = 22,
-        Font = Enum.Font.Gotham,
-        TextColor3 = COLORS.Muted,
-        BackgroundTransparency = 1,
-        Size = UDim2.fromOffset(34, 34),
-        Position = UDim2.new(1, -39, 0, 4)
+    local windowControls = make("Frame", {
+        Name = "WindowControls",
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -8, 0, 8),
+        Size = UDim2.fromOffset(76, 36),
+        BackgroundColor3 = Color3.fromRGB(23, 29, 43),
+        BackgroundTransparency = 0.08,
+        BorderSizePixel = 0,
+        ZIndex = 8
     }, top)
-    close.MouseButton1Click:Connect(function() self:Destroy() end)
+    corner(windowControls, 8)
+    stroke(windowControls, Color3.fromRGB(145, 160, 190), 0.72)
 
     local minimize = make("TextButton", {
         Name = "Minimize",
         Text = "−",
+        TextSize = 21,
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Color3.fromRGB(215, 230, 250),
+        BackgroundColor3 = Color3.fromRGB(62, 91, 125),
+        Size = UDim2.fromOffset(29, 28),
+        Position = UDim2.fromOffset(4, 4),
+        BorderSizePixel = 0,
+        AutoButtonColor = true,
+        ZIndex = 9
+    }, windowControls)
+    corner(minimize, 6)
+
+    local close = make("TextButton", {
+        Name = "Close",
+        Text = "×",
         TextSize = 20,
-        Font = Enum.Font.Gotham,
-        TextColor3 = COLORS.Muted,
-        BackgroundTransparency = 1,
-        Size = UDim2.fromOffset(30, 34),
-        Position = UDim2.new(1, -72, 0, 4)
-    }, top)
+        Font = Enum.Font.GothamBold,
+        TextColor3 = Color3.fromRGB(255, 225, 228),
+        BackgroundColor3 = Color3.fromRGB(145, 57, 70),
+        Size = UDim2.fromOffset(29, 28),
+        Position = UDim2.fromOffset(42, 4),
+        BorderSizePixel = 0,
+        AutoButtonColor = true,
+        ZIndex = 9
+    }, windowControls)
+    corner(close, 6)
+    close.MouseButton1Click:Connect(function() self:Destroy() end)
 
     local body = make("Frame", {
         Name = "Body",
@@ -1551,10 +1572,15 @@ function TryoUI:ShowReleaseDetails(titleText, bodyText)
     if old then old:Destroy() end
     local overlay = make("Frame", {Name = "ReleaseDetailsOverlay", Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.3,
-        BorderSizePixel = 0, ZIndex = 300}, self.Window)
+        BorderSizePixel = 0, Active = true, ZIndex = 300}, self.Window)
+    -- A full-screen input shield prevents taps from reaching controls behind the modal.
+    make("TextButton", {Name = "InputShield", Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+        Active = true, Selectable = false, ZIndex = 300}, overlay)
     local panel = make("Frame", {AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -34, 0, 190),
-        BackgroundColor3 = Color3.fromRGB(25, 32, 44), BorderSizePixel = 0, ZIndex = 301}, overlay)
+        BackgroundColor3 = Color3.fromRGB(25, 32, 44), BorderSizePixel = 0,
+        Active = true, ZIndex = 301}, overlay)
     corner(panel, 9)
     make("TextLabel", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 8),
         Size = UDim2.new(1, -48, 0, 24), Text = titleText or "RELEASE NOTES",
@@ -1565,11 +1591,30 @@ function TryoUI:ShowReleaseDetails(titleText, bodyText)
         BackgroundColor3 = Color3.fromRGB(150,55,65), Font = Enum.Font.GothamBold,
         TextSize = 15, BorderSizePixel = 0, ZIndex = 303}, panel)
     corner(close, 5)
-    make("TextLabel", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 39),
-        Size = UDim2.new(1, -24, 1, -50), Text = tostring(bodyText or ""),
-        TextColor3 = Color3.fromRGB(225, 232, 244), Font = Enum.Font.Gotham,
-        TextSize = 10, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 302}, panel)
+    local logScroll = make("ScrollingFrame", {
+        Name = "ReleaseLogScroll",
+        Position = UDim2.fromOffset(12, 39),
+        Size = UDim2.new(1, -24, 1, -50),
+        BackgroundColor3 = Color3.fromRGB(18, 24, 35),
+        BackgroundTransparency = 0.18,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = Color3.fromRGB(100, 190, 215),
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Active = true,
+        ScrollingEnabled = true,
+        ZIndex = 302
+    }, panel)
+    corner(logScroll, 5)
+    make("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, logScroll)
+    make("TextLabel", {Name = "ReleaseLogText", BackgroundTransparency = 1,
+        Size = UDim2.new(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        Text = tostring(bodyText or ""), TextColor3 = Color3.fromRGB(225, 232, 244),
+        Font = Enum.Font.Gotham, TextSize = 10, TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+        Active = false, ZIndex = 303}, logScroll)
     close.MouseButton1Click:Connect(function() overlay:Destroy() end)
 end
 
