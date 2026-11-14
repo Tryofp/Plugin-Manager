@@ -167,7 +167,7 @@ function TryoUI.new(config)
 
     local body = make("Frame", {
         Name = "Body",
-        Position = UDim2.fromOffset(54, 0),
+        Position = UDim2.fromOffset(0, 54),
         Size = UDim2.new(1, 0, 1, -54),
         BackgroundTransparency = 1
     }, self.Window)
