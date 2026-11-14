@@ -1007,7 +1007,9 @@ function TryoUI:CreateTab(name, icon)
         value.TextWrapped = true
 
         local function chooseAt(position)
-            local localPoint = position - wheel.AbsolutePosition
+            -- Roblox InputObject.Position is a Vector3; convert to Vector2 before GUI math.
+            local screenPoint = Vector2.new(position.X, position.Y)
+            local localPoint = screenPoint - wheel.AbsolutePosition
             local dx, dy = localPoint.X - center.X, localPoint.Y - center.Y
             local distance = math.sqrt(dx * dx + dy * dy)
             if distance > 54 then return end
