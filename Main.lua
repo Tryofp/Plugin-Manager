@@ -531,6 +531,30 @@ local ok, result = pcall(function()
     settingsTab:CreateGlassControl({ Name = "Glass transparency" })
     settingsTab:CreateColorWheel({ Name = "Custom theme color • Color wheel" })
 
+    local function applyMaintenanceSnapshot(metadata)
+        for id, entry in pairs(maintenanceEntries) do
+            local raw = metadata["FeatureMaintenance_" .. tostring(id)]
+            local locked = raw ~= nil and tostring(raw) ~= "ACTIVE"
+            maintenanceLocks[id] = locked
+            setMaintenanceLocked(id, locked)
+        end
+    end
+
+    local function refreshPublicMaintenance()
+        local okMeta, metadata = pcall(function()
+            local body = game:HttpGet(METADATA_URL .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
+            local decoded = HttpService:JSONDecode(body or "{}")
+            assert(type(decoded) == "table", "Invalid maintenance metadata")
+            return decoded
+        end)
+        if not okMeta then
+            warn("[Tryo Plugin Manager] Maintenance sync failed: " .. tostring(metadata))
+            return false
+        end
+        applyMaintenanceSnapshot(metadata)
+        return true
+    end
+
     -- Private Admin tab: only UserIds in ADMIN_USER_IDS receive the tab.
     if ADMIN_USER_IDS[LocalPlayer.UserId] then
         local adminTab = window:CreateTab("Admin", "🛡")
