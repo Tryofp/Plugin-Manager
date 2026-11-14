@@ -436,18 +436,24 @@ function TryoUI:CreateTab(name, icon)
     local tab = {}
     tab.Name = name
     tab.Elements = {}
-    tab.Button = make("TextButton", {
+    -- Use a Frame as the layout surface. A separate full-size click layer
+    -- handles input; icon and title are siblings with fixed coordinates.
+    tab.Button = make("Frame", {
         Name = name .. "Tab",
-        Text = "",
-        TextSize = 12,
-        Font = Enum.Font.GothamMedium,
-        TextColor3 = COLORS.Muted,
-        TextXAlignment = Enum.TextXAlignment.Left,
         BackgroundColor3 = COLORS.Sidebar,
-        AutoButtonColor = false,
-        Size = UDim2.new(1, 0, 0, 33)
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 33),
+        ClipsDescendants = true
     }, self.Nav)
     corner(tab.Button, 7)
+    tab.ClickArea = make("TextButton", {
+        Name = "ClickArea",
+        Text = "",
+        BackgroundTransparency = 1,
+        AutoButtonColor = false,
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = 2
+    }, tab.Button)
 
     -- Icon and title are independent children. Avoid TextButton text alignment
     -- and UIPadding: mobile rendering can center text despite those properties.
@@ -464,7 +470,7 @@ function TryoUI:CreateTab(name, icon)
         TextTruncate = Enum.TextTruncate.AtEnd,
         Position = UDim2.fromOffset(36, 0),
         Size = UDim2.new(1, -42, 1, 0),
-        ZIndex = tab.Button.ZIndex + 1,
+        ZIndex = 4,
         Active = false
     }, tab.Button)
 
@@ -473,7 +479,8 @@ function TryoUI:CreateTab(name, icon)
         Position = UDim2.fromOffset(9, 8),
         Size = UDim2.fromOffset(17, 17),
         BackgroundTransparency = 1,
-        BorderSizePixel = 0
+        BorderSizePixel = 0,
+        ZIndex = 4
     }, tab.Button)
 
     local function iconPart(name, size, position, color, rotation, radius)
@@ -484,6 +491,7 @@ function TryoUI:CreateTab(name, icon)
             BackgroundColor3 = color or COLORS.Muted,
             BorderSizePixel = 0,
             Rotation = rotation or 0
+            ZIndex = 5
         }, tabIcon)
         if radius then corner(part, radius) end
         return part
@@ -555,7 +563,7 @@ function TryoUI:CreateTab(name, icon)
         tabTitle.TextColor3 = Color3.new(1, 1, 1)
         self.ActiveTab = tab
     end
-    tab.Button.MouseButton1Click:Connect(activate)
+    tab.ClickArea.MouseButton1Click:Connect(activate)
     tab.Activate = activate
 
     function tab:CreateSection(text)
@@ -852,10 +860,37 @@ function TryoUI:CreateTab(name, icon)
         options = options or {}
         local state = options.Default == true
         local name = options.Name or "Toggle"
-        local button = self:CreateButton({ Name = name })
-        -- Fixed child layout: dot owns the left 18px, title starts at 30px.
-        -- The clickable TextButton itself carries no text, avoiding mobile centering.
-        button.Text = ""
+
+        -- Dedicated card + transparent click layer. Status and title never
+        -- participate in TextButton text layout, so they cannot overlap.
+        local card = make("Frame", {
+            Name = "Toggle_" .. name:gsub("%W", ""),
+            BackgroundColor3 = COLORS.Surface,
+            BorderSizePixel = 0,
+            Size = UDim2.new(1, -4, 0, 35),
+            ClipsDescendants = true
+        }, self.Page)
+        corner(card, 7)
+
+        local clickArea = make("TextButton", {
+            Name = "ClickArea",
+            Text = "",
+            BackgroundTransparency = 1,
+            AutoButtonColor = false,
+            Size = UDim2.fromScale(1, 1),
+            ZIndex = 2
+        }, card)
+
+        local statusDot = make("Frame", {
+            Name = "StatusDot",
+            BackgroundColor3 = state and COLORS.Success or COLORS.Muted,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(11, 14),
+            Size = UDim2.fromOffset(7, 7),
+            ZIndex = 4
+        }, card)
+        corner(statusDot, 4)
+
         local toggleTitle = make("TextLabel", {
             Name = "ToggleTitle",
             BackgroundTransparency = 1,
@@ -869,24 +904,21 @@ function TryoUI:CreateTab(name, icon)
             TextTruncate = Enum.TextTruncate.AtEnd,
             Position = UDim2.fromOffset(30, 0),
             Size = UDim2.new(1, -40, 1, 0),
-            ZIndex = button.ZIndex + 1,
+            ZIndex = 4,
             Active = false
-        }, button)
-        local statusDot = make("Frame", {
-            Name = "StatusDot",
-            BackgroundColor3 = state and COLORS.Success or COLORS.Muted,
-            BorderSizePixel = 0,
-            Position = UDim2.fromOffset(11, 14),
-            Size = UDim2.fromOffset(7, 7),
-            ZIndex = button.ZIndex + 1
-        }, button)
-        corner(statusDot, 4)
+        }, card)
+
         local function set(value)
             state = value == true
             statusDot.BackgroundColor3 = state and COLORS.Success or COLORS.Muted
-            if type(options.Callback) == "function" then options.Callback(state) end
+            if type(options.Callback) == "function" then
+                local ok, err = pcall(options.Callback, state)
+                if not ok then warn("[Tryo UI] " .. tostring(err)) end
+            end
         end
-        button.MouseButton1Click:Connect(function() set(not state) end)
+        clickArea.MouseButton1Click:Connect(function() set(not state) end)
+        clickArea.MouseEnter:Connect(function() card.BackgroundColor3 = COLORS.SurfaceHover end)
+        clickArea.MouseLeave:Connect(function() card.BackgroundColor3 = COLORS.Surface end)
         return { Set = set, Get = function() return state end }
     end
 
