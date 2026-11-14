@@ -494,7 +494,7 @@ local function buildUI()
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
-    reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-122,0,14),function()
+    reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-134,0,14),function()
         if reopenWasDragged then
             reopenWasDragged=false
             return
