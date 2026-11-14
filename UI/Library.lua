@@ -692,7 +692,8 @@ function TryoUI:CreateFeedbackButton(options)
                 local code = response and (response.StatusCode or response.Status or response.status_code)
                 local headers = response and (response.Headers or response.headers)
                 local redirect = headerValue(headers, "Location")
-                if requestOk and response and redirect and ({[301]=true,[302]=true,[303]=true,[307]=true,[308]=true})[tonumber(code)] then
+                local redirectCodes = {[301]=true,[302]=true,[303]=true,[307]=true,[308]=true}
+                if requestOk and response and redirect and redirectCodes[tonumber(code)] then
                     requestOk, response = pcall(function()
                         return req({Url = redirect, Method = "GET", FollowRedirects = true})
                     end)
