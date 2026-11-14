@@ -154,6 +154,18 @@ local function parseCheckpoint(object)
     end
     if not part then return nil end
 
+    -- Dedicated support for Workspace.CheckpointPart.Cp<number> touch checkpoints.
+    -- Keep the established Summit, named CP, and plain Checkpoint rules below unchanged.
+    local cpNumber = string.match(lowerName, "^cp(%d+)$")
+    local checkpointPartFolder = Workspace:FindFirstChild("CheckpointPart")
+    if cpNumber and object:IsA("BasePart") and parent == checkpointPartFolder
+        and (object:FindFirstChild("TouchInterest") or object:FindFirstChildOfClass("TouchTransmitter")) then
+        local number = tonumber(cpNumber)
+        if number and number <= 500 then
+            return number, "CheckpointPart - " .. object.Name, part, 3, false
+        end
+    end
+
     if lowerName=="text" or lowerParent=="text" or lowerName=="field" or lowerParent=="field"
         or lowerName=="base" or lowerParent=="base" or isIgnored(lowerName) or isIgnored(lowerParent) then return nil end
     if string.find(lowerName,"teleport",1,true) or string.find(lowerName,"tp",1,true)
