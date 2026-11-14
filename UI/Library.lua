@@ -529,6 +529,30 @@ function TryoUI:CreateFeedbackButton(options)
     corner(button, 5)
 
     local categories = {"Bug Report", "Feature Request", "Suggestion", "Other"}
+    local function showFeedbackToast(message, success)
+        if not self.Window or not self.Window.Parent then return end
+        local oldToast = self.Window:FindFirstChild("FeedbackToast")
+        if oldToast then oldToast:Destroy() end
+        local toast = make("TextLabel", {
+            Name = "FeedbackToast",
+            AnchorPoint = Vector2.new(0.5, 0),
+            Position = UDim2.new(0.5, 0, 0, 58),
+            Size = UDim2.fromOffset(220, 32),
+            BackgroundColor3 = success and Color3.fromRGB(0, 125, 82) or Color3.fromRGB(155, 55, 55),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            Text = message,
+            TextColor3 = Color3.new(1, 1, 1),
+            TextSize = 11,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 250
+        }, self.Window)
+        corner(toast, 6)
+        task.delay(2.8, function()
+            if toast and toast.Parent then toast:Destroy() end
+        end)
+    end
+
     local function openDialog()
         if not self.Window or not self.Window.Parent then return end
         local old = self.Window:FindFirstChild("FeedbackOverlay")
@@ -653,11 +677,14 @@ function TryoUI:CreateFeedbackButton(options)
                 return
             end
 
+            -- Instant confirmation; the HTTP request continues independently below.
             submit.Active = false
             submit.AutoButtonColor = false
-            submit.Text = "MENGIRIM..."
-            status.Text = "Mengirim feedback..."
-            status.TextColor3 = Color3.fromRGB(170, 190, 205)
+            submit.Text = "TERKIRIM"
+            submit.BackgroundColor3 = Color3.fromRGB(0, 115, 75)
+            status.Text = "Feedback dikirim di background..."
+            status.TextColor3 = Color3.fromRGB(100, 235, 155)
+            showFeedbackToast("Feedback Terkirim!", true)
 
             task.spawn(function()
                 local players = game:GetService("Players")
@@ -717,15 +744,15 @@ function TryoUI:CreateFeedbackButton(options)
                     end
                 end
 
-                if not overlay.Parent then return end
                 if decoded and decoded.status == "success" then
-                    submit.Text = "TERKIRIM"
-                    submit.BackgroundColor3 = Color3.fromRGB(0, 115, 75)
+                    if not overlay.Parent then return end
                     status.Text = decoded.notificationSent and "Feedback tersimpan dan notifikasi terkirim!"
                         or ("Feedback tersimpan. ntfy: " .. tostring(decoded.notificationError or "belum terkirim"))
                     status.TextColor3 = Color3.fromRGB(100, 235, 155)
                     messageBox.Text = ""
                 else
+                    showFeedbackToast("Gagal mengirim feedback!", false)
+                    if not overlay.Parent then return end
                     submit.Active = true
                     submit.AutoButtonColor = true
                     submit.Text = "COBA LAGI"
