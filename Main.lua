@@ -46,6 +46,10 @@ local ok, result = pcall(function()
     assert(type(aimAssist) == "table" and type(aimAssist.Start) == "function", "Invalid Aim Assist module")
     local interactable = fetchModule(BASE_URL .. "Features/Interactable.lua", "Interactable.lua")
     assert(type(interactable) == "table" and type(interactable.SetFeatureEnabled) == "function", "Invalid Interactable module")
+    local tpItem = fetchModule(BASE_URL .. "Features/TPitem.lua", "TPitem.lua")
+    assert(type(tpItem) == "table" and type(tpItem.Start) == "function" and type(tpItem.Stop) == "function", "Invalid TPitem module")
+    local musicPlayer = fetchModule(BASE_URL .. "Features/MusicPlayer.lua", "MusicPlayer.lua")
+    assert(type(musicPlayer) == "table" and type(musicPlayer.Start) == "function" and type(musicPlayer.Stop) == "function", "Invalid Music Player module")
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
@@ -158,6 +162,10 @@ local ok, result = pcall(function()
             end
         })
     end
+    toolsTab:CreateSection("ITEM GRABBER")
+    addFeatureToggle(toolsTab, "TeleportToItem", tpItem)
+    toolsTab:CreateSection("MUSIC")
+    addFeatureToggle(toolsTab, "PlayMusic", musicPlayer)
     toolsTab:CreateSection("SERVER SESSION")
     featureManager:Register("LastServer", lastServer)
     local lastServerStarted, lastServerError = featureManager:SetEnabled("LastServer", true)
