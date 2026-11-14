@@ -25,6 +25,30 @@ local ok, result = pcall(function()
     -- Reuse the owner allowlist already enforced by the legacy Developer Panel.
     -- Add additional trusted UserIds here when the private admin rollout is approved.
     local ADMIN_USER_IDS = { [6141017541] = true }
+
+    local function reportRuntimeError(command, source, message)
+        local req = request or http_request or (syn and syn.request)
+        if type(req) ~= "function" then return end
+        task.spawn(function()
+            pcall(function()
+                req({
+                    Url = METADATA_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = HttpService:JSONEncode({
+                        Type = "PluginRuntimeError",
+                        Plugin = "Standalone Script Hub",
+                        Command = tostring(command or "Runtime"),
+                        Source = tostring(source or "beta2/Main.lua"),
+                        Error = tostring(message or "Unknown error"):sub(1, 1500),
+                        PlaceId = tostring(game.PlaceId)
+                    }),
+                    FollowRedirects = true
+                })
+            end)
+        end)
+    end
+
     -- Public release manifest: only intentional user-facing changes create badges.
     local RELEASES = {{
         Version = "0.2", Date = "14/11/2026", Title = "Camera Tools Update",
@@ -321,7 +345,10 @@ local ok, result = pcall(function()
                     return
                 end
                 local success, err = featureManager:SetEnabled(featureId, enabled)
-                if not success then warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err)) end
+                if not success then
+                    warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
+                    reportRuntimeError(featureId, "beta2/Runtime/FeatureManager.lua", err)
+                end
                 syncFeature(featureId, featureManager:IsEnabled(featureId))
             end
         })
@@ -350,7 +377,10 @@ local ok, result = pcall(function()
                     return
                 end
                 local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
-                if not success then warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err)) end
+                if not success then
+                    warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err))
+                    reportRuntimeError("WalkSpeed", "beta2/Features/Tools.lua", err)
+                end
                 for _, item in ipairs(walkSpeedControllers) do item.Set(featureManager:IsEnabled("WalkSpeed"), true) end
             end
         })
@@ -371,7 +401,10 @@ local ok, result = pcall(function()
                     return
                 end
                 local success, err = interactable:SetFeatureEnabled(id, enabled)
-                if not success then warn("[Tryo Plugin Manager] " .. id .. ": " .. tostring(err)) end
+                if not success then
+                    warn("[Tryo Plugin Manager] " .. id .. ": " .. tostring(err))
+                    reportRuntimeError(id, "beta2/Features/Interactable.lua", err)
+                end
             end
         })
         registerMaintenanceControl(id, name, control, "interactable")
