@@ -30,10 +30,22 @@ local ok, result = pcall(function()
             return string.format("%s/%s/%s %s:%s", dd, mm, yyyy:sub(3), hh, mi)
         end
 
+        -- Accept both four-digit and two-digit years, then always display DD/MM/YY HH:MM.
         dd, mm, yyyy, hh, mi = raw:match("^(%d%d?)[/%-](%d%d?)[/%-](%d%d%d%d)[ T](%d%d?):(%d%d?)")
+        if not dd then
+            dd, mm, yyyy, hh, mi = raw:match("^(%d%d?)[/%-](%d%d?)[/%-](%d%d)[ T](%d%d?):(%d%d?)")
+        end
         if dd and mm and yyyy and hh and mi then
             return string.format("%02d/%02d/%s %02d:%02d",
-                tonumber(dd) or 0, tonumber(mm) or 0, yyyy:sub(3), tonumber(hh) or 0, tonumber(mi) or 0)
+                tonumber(dd) or 0, tonumber(mm) or 0, yyyy:sub(-2), tonumber(hh) or 0, tonumber(mi) or 0)
+        end
+
+        -- Also normalize compact values such as 141126 1830.
+        local compactDate, compactTime = raw:match("^(%d%d%d%d%d%d)%s+(%d%d%d%d)$")
+        if compactDate and compactTime then
+            return string.format("%s/%s/%s %s:%s",
+                compactDate:sub(1, 2), compactDate:sub(3, 4), compactDate:sub(5, 6),
+                compactTime:sub(1, 2), compactTime:sub(3, 4))
         end
 
         return raw
