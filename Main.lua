@@ -4,9 +4,11 @@
 local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta2/"
 local LIBRARY_URL = BASE_URL .. "UI/Library.lua"
 
+local loadedModuleSources = {}
 local function fetchModule(url, chunkName)
     local source = game:HttpGet(url)
     assert(type(source) == "string" and source ~= "", "Failed to download " .. chunkName)
+    loadedModuleSources[chunkName] = { Url = url, Source = source }
     local compiled, compileError = loadstring(source, chunkName)
     assert(type(compiled) == "function", tostring(compileError))
     return compiled()
@@ -20,6 +22,9 @@ local ok, result = pcall(function()
     -- The endpoint serves pluginMetadata.LastUpdate from Firestore.
     local HttpService = game:GetService("HttpService")
     local METADATA_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
+    -- Reuse the owner allowlist already enforced by the legacy Developer Panel.
+    -- Add additional trusted UserIds here when the private admin rollout is approved.
+    local ADMIN_USER_IDS = { [6141017541] = true }
     -- Public release manifest: only intentional user-facing changes create badges.
     local RELEASES = {{
         Version = "0.2", Date = "14/11/2026", Title = "Camera Tools Update",
@@ -267,6 +272,35 @@ local ok, result = pcall(function()
     featureManager.Context.FeatureManager = featureManager
     local featureControllers = {}
     local walkSpeedControllers = {}
+    local maintenanceEntries = {}
+    local maintenanceLocks = {}
+
+    local function registerMaintenanceControl(featureId, displayName, control, kind)
+        local entry = maintenanceEntries[featureId]
+        if not entry then
+            entry = { Id = featureId, Name = displayName or featureId, Kind = kind, Controls = {}, Locked = false }
+            maintenanceEntries[featureId] = entry
+        end
+        table.insert(entry.Controls, control)
+        if entry.Locked and control.SetMaintenance then control.SetMaintenance(true) end
+    end
+
+    local function setMaintenanceLocked(featureId, locked)
+        local entry = maintenanceEntries[featureId]
+        if not entry then return end
+        entry.Locked = locked == true
+        if entry.Locked then
+            if entry.Kind == "interactable" then
+                pcall(function() interactable:SetFeatureEnabled(featureId, false) end)
+            elseif featureManager.Registry[featureId] then
+                pcall(function() featureManager:SetEnabled(featureId, false) end)
+            end
+        end
+        for _, control in ipairs(entry.Controls) do
+            if control.SetMaintenance then control.SetMaintenance(entry.Locked) end
+            if entry.Locked and control.Set then control.Set(false, true) end
+        end
+    end
 
     local function syncFeature(featureId, enabled)
         for _, control in ipairs(featureControllers[featureId] or {}) do
@@ -282,6 +316,10 @@ local ok, result = pcall(function()
             Default = featureManager:IsEnabled(featureId),
             Parent = parent,
             Callback = function(enabled)
+                if enabled and maintenanceLocks[featureId] then
+                    syncFeature(featureId, false)
+                    return
+                end
                 local success, err = featureManager:SetEnabled(featureId, enabled)
                 if not success then warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err)) end
                 syncFeature(featureId, featureManager:IsEnabled(featureId))
@@ -289,6 +327,7 @@ local ok, result = pcall(function()
         })
         featureControllers[featureId] = featureControllers[featureId] or {}
         table.insert(featureControllers[featureId], control)
+        registerMaintenanceControl(featureId, displayName or definition.Name or featureId, control, "feature")
         return control
     end
 
@@ -321,10 +360,15 @@ local ok, result = pcall(function()
             Parent = parent,
             Default = false,
             Callback = function(enabled)
+                if enabled and maintenanceLocks[id] then
+                    control.Set(false, true)
+                    return
+                end
                 local success, err = interactable:SetFeatureEnabled(id, enabled)
                 if not success then warn("[Tryo Plugin Manager] " .. id .. ": " .. tostring(err)) end
             end
         })
+        registerMaintenanceControl(id, name, control, "interactable")
         return control
     end
 
@@ -480,6 +524,282 @@ local ok, result = pcall(function()
     settingsTab:CreateSizeControl({ Name = "Customize window size" })
     settingsTab:CreateGlassControl({ Name = "Glass transparency" })
     settingsTab:CreateColorWheel({ Name = "Custom theme color • Color wheel" })
+
+    -- Private Admin tab: only UserIds in ADMIN_USER_IDS receive the tab.
+    if ADMIN_USER_IDS[LocalPlayer.UserId] then
+        local adminTab = window:CreateTab("Admin", "🛡")
+        adminTab:CreateSection("ADMIN ACCESS")
+        local adminKeyInput = adminTab:CreateTextInput({
+            Name = "Apps Script Admin Key",
+            Placeholder = "Masukkan Admin Key (tidak disimpan)"
+        })
+        local adminStatus = adminTab:CreateInfo({
+            Name = "AdminStatus",
+            Height = 38,
+            Text = "Admin siap. Masukkan Admin Key untuk mengubah maintenance."
+        })
+
+        local function setAdminStatus(message, isError)
+            if adminStatus and adminStatus.Parent then
+                adminStatus.Text = tostring(message)
+                adminStatus.TextColor3 = isError and Color3.fromRGB(255, 145, 145) or Color3.fromRGB(125, 225, 185)
+            end
+        end
+
+        local function readAdminMetadata()
+            local response = game:HttpGet(METADATA_URL .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
+            local decoded = HttpService:JSONDecode(response or "{}")
+            assert(type(decoded) == "table", "Metadata server mengembalikan JSON tidak valid.")
+            return decoded
+        end
+
+        local function postAdmin(payload)
+            local req = request or http_request or (syn and syn.request)
+            if type(req) ~= "function" then return false, "Executor tidak menyediakan HTTP request." end
+            payload.AdminKey = tostring(adminKeyInput.Text or "")
+            if payload.AdminKey == "" then return false, "Masukkan Admin Key terlebih dahulu." end
+            local okPost, response = pcall(function()
+                return req({
+                    Url = METADATA_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = HttpService:JSONEncode(payload),
+                    FollowRedirects = true
+                })
+            end)
+            if not okPost or not response then return false, tostring(response or "Server tidak merespons.") end
+            local body = type(response) == "table" and (response.Body or response.body or response.ResponseBody) or nil
+            if type(body) == "string" and body ~= "" then
+                local decoded = nil
+                pcall(function() decoded = HttpService:JSONDecode(body) end)
+                if type(decoded) == "table" and decoded.status == "error" then
+                    return false, tostring(decoded.message or "Server menolak permintaan.")
+                end
+            end
+            return true, response
+        end
+
+        local maintenanceRows = {}
+        local function updateMaintenanceRow(entry)
+            local button = maintenanceRows[entry.Id]
+            if not button or not button.Parent then return end
+            button.Text = (entry.Locked and "🔴  " or "🟢  ") .. entry.Name ..
+                (entry.Locked and "  •  MAINTENANCE" or "  •  ACTIVE")
+            button.BackgroundColor3 = entry.Locked and Color3.fromRGB(92, 43, 52) or Color3.fromRGB(38, 76, 66)
+        end
+
+        local function applyMaintenanceSnapshot(metadata)
+            for id, entry in pairs(maintenanceEntries) do
+                local key = "FeatureMaintenance_" .. tostring(id)
+                local raw = metadata[key]
+                -- Missing keys are treated as ACTIVE for backward compatibility.
+                -- An explicitly empty value is the server's maintenance state.
+                local locked = raw ~= nil and tostring(raw) ~= "ACTIVE"
+                maintenanceLocks[id] = locked
+                setMaintenanceLocked(id, locked)
+                updateMaintenanceRow(entry)
+            end
+        end
+
+        local function refreshMaintenance()
+            local okMeta, metadata = pcall(readAdminMetadata)
+            if not okMeta then
+                setAdminStatus("Gagal membaca status maintenance: " .. tostring(metadata), true)
+                return false
+            end
+            applyMaintenanceSnapshot(metadata)
+            setAdminStatus("Status maintenance tersinkron • " .. tostring(#maintenanceEntries) .. " fitur.")
+            return true
+        end
+
+        adminTab:CreateSection("FEATURE MAINTENANCE")
+        adminTab:CreateInfo({
+            Height = 42,
+            Text = "Matikan fitur secara online. Pengguna akan melihat badge MAINTENANCE dan tidak dapat mengaktifkannya."
+        })
+        local maintenanceDropdown = adminTab:CreateDropdown({
+            Name = "MANAGE PUBLIC FEATURES",
+            Build = function(panel)
+                local entries = {}
+                for _, entry in pairs(maintenanceEntries) do table.insert(entries, entry) end
+                table.sort(entries, function(a, b) return string.lower(a.Name) < string.lower(b.Name) end)
+                for _, entry in ipairs(entries) do
+                    local row = adminTab:CreateButton({
+                        Name = entry.Name .. "  •  ACTIVE",
+                        Parent = panel,
+                        Callback = function()
+                            local targetEnabled = entry.Locked
+                            setAdminStatus("Mengirim perubahan maintenance: " .. entry.Name .. "...")
+                            task.spawn(function()
+                                local sent, response = postAdmin({
+                                    Type = "FeatureMaintenance",
+                                    FeatureId = entry.Id,
+                                    Enabled = targetEnabled
+                                })
+                                if not sent then
+                                    setAdminStatus("Gagal: " .. tostring(response), true)
+                                    return
+                                end
+                                local verified = false
+                                for attempt = 1, 5 do
+                                    task.wait(0.35)
+                                    local okMeta, metadata = pcall(readAdminMetadata)
+                                    if okMeta then
+                                        local key = "FeatureMaintenance_" .. tostring(entry.Id)
+                                        local actual = tostring(metadata[key] or "")
+                                        local expected = targetEnabled and "ACTIVE" or ""
+                                        if actual == expected then
+                                            applyMaintenanceSnapshot(metadata)
+                                            verified = true
+                                            break
+                                        end
+                                    end
+                                end
+                                if verified then
+                                    setAdminStatus(entry.Name .. (targetEnabled and " kembali ACTIVE." or " masuk MAINTENANCE."))
+                                else
+                                    setAdminStatus("Server belum mengonfirmasi perubahan " .. entry.Name .. ".", true)
+                                end
+                            end)
+                        end
+                    })
+                    maintenanceRows[entry.Id] = row
+                end
+            end
+        })
+
+        adminTab:CreateSection("DIAGNOSTICS")
+        adminTab:CreateInfo({
+            Height = 42,
+            Text = "Health Check memeriksa source yang digunakan hub. Runtime Error menampilkan laporan error yang tercatat di server."
+        })
+
+        local healthPanel
+        adminTab:CreateDropdown({
+            Name = "HEALTH CHECK RESULTS",
+            Build = function(panel) healthPanel = panel end
+        })
+        local runtimePanel
+        adminTab:CreateDropdown({
+            Name = "RUNTIME ERROR LOG",
+            Build = function(panel) runtimePanel = panel end
+        })
+
+        local function clearDiagnosticPanel(panel)
+            if not panel then return end
+            for _, child in ipairs(panel:GetChildren()) do
+                if child:IsA("GuiObject") and not child:IsA("UIListLayout") then child:Destroy() end
+            end
+        end
+
+        local function addDiagnosticInfo(panel, text, failed)
+            if not panel then return end
+            adminTab:CreateInfo({
+                Parent = panel,
+                Height = 43,
+                Text = text,
+                Color = failed and Color3.fromRGB(255, 145, 145) or Color3.fromRGB(135, 225, 185),
+                Background = failed and Color3.fromRGB(73, 39, 48) or Color3.fromRGB(34, 62, 57),
+                TextSize = 9
+            })
+        end
+
+        local function runHealthCheck()
+            clearDiagnosticPanel(healthPanel)
+            setAdminStatus("Menjalankan Health Check...")
+            local names = {}
+            for name in pairs(loadedModuleSources) do table.insert(names, name) end
+            table.sort(names)
+            local checks, errors = 0, 0
+            for _, name in ipairs(names) do
+                local item = loadedModuleSources[name]
+                local success, source = pcall(function()
+                    return game:HttpGet(item.Url .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis))
+                end)
+                checks = checks + 1
+                if not success or type(source) ~= "string" or source == "" then
+                    errors = errors + 1
+                    addDiagnosticInfo(healthPanel, "[ERROR] " .. name .. " • gagal diunduh: " .. tostring(source), true)
+                else
+                    local compiled, chunk = pcall(loadstring, source, "HealthCheck/" .. name)
+                    local valid = compiled and type(chunk) == "function"
+                    if not valid then errors = errors + 1 end
+                    addDiagnosticInfo(healthPanel,
+                        (valid and "[OK] " or "[ERROR] ") .. name .. (valid and (" • compile OK • " .. tostring(#source) .. " byte") or (" • compile gagal: " .. tostring(chunk))),
+                        not valid)
+                end
+                task.wait(0.04)
+            end
+            local mainOk, mainSource = pcall(function()
+                return game:HttpGet(BASE_URL .. "Main.lua?_=healthcheck")
+            end)
+            checks = checks + 1
+            if not mainOk or type(mainSource) ~= "string" or mainSource == "" then
+                errors = errors + 1
+                addDiagnosticInfo(healthPanel, "[ERROR] Main.lua • gagal diunduh: " .. tostring(mainSource), true)
+            else
+                local compiled, chunk = pcall(loadstring, mainSource, "HealthCheck/Main.lua")
+                local valid = compiled and type(chunk) == "function"
+                if not valid then errors = errors + 1 end
+                addDiagnosticInfo(healthPanel,
+                    (valid and "[OK] " or "[ERROR] ") .. "Main.lua" .. (valid and (" • compile OK • " .. tostring(#mainSource) .. " byte") or (" • compile gagal: " .. tostring(chunk))),
+                    not valid)
+            end
+            setAdminStatus("Health Check selesai • " .. tostring(checks) .. " pemeriksaan • " .. tostring(errors) .. " error.", errors > 0)
+        end
+
+        local function loadRuntimeErrors()
+            clearDiagnosticPanel(runtimePanel)
+            setAdminStatus("Mengambil Runtime Error terbaru...")
+            local okFetch, body = pcall(function()
+                return game:HttpGet(METADATA_URL .. "?action=PluginErrors&limit=50&_=" .. tostring(DateTime.now().UnixTimestampMillis))
+            end)
+            if not okFetch then
+                addDiagnosticInfo(runtimePanel, "[ERROR] Gagal mengambil log: " .. tostring(body), true)
+                setAdminStatus("Runtime Error gagal dimuat.", true)
+                return
+            end
+            local decoded
+            local okDecode = pcall(function() decoded = HttpService:JSONDecode(body) end)
+            if not okDecode or type(decoded) ~= "table" or decoded.status ~= "success" or type(decoded.records) ~= "table" then
+                addDiagnosticInfo(runtimePanel, "[ERROR] Respons log tidak valid: " .. tostring(body), true)
+                setAdminStatus("Respons Runtime Error tidak valid.", true)
+                return
+            end
+            if #decoded.records == 0 then
+                addDiagnosticInfo(runtimePanel, "Belum ada laporan runtime error.", false)
+            end
+            for index, record in ipairs(decoded.records) do
+                local title = tostring(record.Plugin or record.Command or "Plugin Error")
+                local command = tostring(record.Command or "")
+                local errorText = tostring(record.Error or "Tidak ada detail")
+                local source = tostring(record.Source or record.Timestamp or "")
+                addDiagnosticInfo(runtimePanel,
+                    string.format("[%02d] %s%s\n%s\n%s", index, title, command ~= "" and (" • " .. command) or "", errorText, source),
+                    true)
+            end
+            setAdminStatus("Runtime Error dimuat • " .. tostring(#decoded.records) .. " laporan.")
+        end
+
+        adminTab:CreateButton({Name = "RUN HEALTH CHECK", Callback = function()
+            task.spawn(runHealthCheck)
+        end})
+        adminTab:CreateButton({Name = "LOAD RUNTIME ERRORS", Callback = function()
+            task.spawn(loadRuntimeErrors)
+        end})
+        adminTab:CreateButton({Name = "REFRESH MAINTENANCE", Callback = function()
+            task.spawn(refreshMaintenance)
+        end})
+
+        task.spawn(refreshMaintenance)
+        task.spawn(function()
+            while window and not window.Destroyed do
+                task.wait(30)
+                if not window or window.Destroyed then break end
+                refreshMaintenance()
+            end
+        end)
+    end
 
     if window.Gui then
         window.Gui.Destroying:Connect(function()
