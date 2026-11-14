@@ -37,10 +37,13 @@ local function makeVisual(model,tag,color,label,depthMode)
     highlight.OutlineColor=color
 
     local billboard=model:FindFirstChild(tag.."_Name")
+    local adornee=model:FindFirstChild("Head",true) or rootOf(model)
+    if not adornee or not adornee:IsA("BasePart") then return end
+
     if not billboard then
         billboard=Instance.new("BillboardGui")
         billboard.Name=tag.."_Name"
-        billboard.Size=UDim2.fromOffset(150,24)
+        billboard.Size=UDim2.fromOffset(220,35)
         billboard.StudsOffset=Vector3.new(0,3,0)
         billboard.AlwaysOnTop=true
         billboard.Parent=model
@@ -48,14 +51,28 @@ local function makeVisual(model,tag,color,label,depthMode)
         text.Name="Label"
         text.Size=UDim2.fromScale(1,1)
         text.BackgroundTransparency=1
-        text.Font=Enum.Font.GothamSemibold
-        text.TextSize=13
-        text.TextStrokeTransparency=0.35
+        text.Font=Enum.Font.GothamBold
+        text.TextSize=14
+        text.TextStrokeTransparency=0.2
+        text.TextStrokeColor3=Color3.new(0,0,0)
         text.TextColor3=color
         text.Parent=billboard
     end
+
+    -- Match legacy ColorESP: explicitly anchor the name to the moving character
+    -- and remove BillboardGui's distance cutoff.
+    billboard.Adornee=adornee
+    billboard.MaxDistance=math.huge
+    billboard.AlwaysOnTop=true
+
     local text=billboard:FindFirstChild("Label")
-    if text then text.Text=label; text.TextColor3=color end
+    if text then
+        text.Text=label
+        text.TextColor3=color
+        text.Font=Enum.Font.GothamBold
+        text.TextStrokeTransparency=0.2
+        text.TextStrokeColor3=Color3.new(0,0,0)
+    end
 end
 
 local function removeVisual(model,tag)
