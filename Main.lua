@@ -104,6 +104,7 @@ local ok, result = pcall(function()
         LastUpdate = "Memuat...",
         Size = UDim2.fromOffset(590, 370)
     })
+    window:CreateFeedbackButton({ Endpoint = METADATA_URL })
 
     task.spawn(function()
         local ok, value = pcall(readLastUpdate)
