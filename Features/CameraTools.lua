@@ -76,48 +76,59 @@ end
 local UnlockCamera = { Name = "Force Unlock Camera" }
 local unlockActive = false
 local unlockConnection
+local cameraChangedConnection
 local originalCameraMode
-local originalCameraType
+local originalCameraTypes = {}
+
+local function rememberCamera(camera)
+    if camera and originalCameraTypes[camera] == nil then
+        originalCameraTypes[camera] = camera.CameraType
+    end
+end
 
 function UnlockCamera.Start()
     if unlockActive then return true end
     unlockActive = true
     originalCameraMode = LocalPlayer.CameraMode
-    local camera = workspace.CurrentCamera
-    originalCameraType = camera and camera.CameraType
+    table.clear(originalCameraTypes)
+    rememberCamera(workspace.CurrentCamera)
 
-    pcall(function()
-        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+    pcall(function() LocalPlayer.CameraMode = Enum.CameraMode.Classic end)
+
+    cameraChangedConnection = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        if unlockActive then rememberCamera(workspace.CurrentCamera) end
     end)
-
     unlockConnection = RunService.RenderStepped:Connect(function()
         if not unlockActive then return end
         pcall(function()
             LocalPlayer.CameraMode = Enum.CameraMode.Classic
             local currentCamera = workspace.CurrentCamera
-            if currentCamera and currentCamera.CameraType ~= Enum.CameraType.Custom then
-                currentCamera.CameraType = Enum.CameraType.Custom
+            if currentCamera then
+                rememberCamera(currentCamera)
+                if currentCamera.CameraType ~= Enum.CameraType.Custom then
+                    currentCamera.CameraType = Enum.CameraType.Custom
+                end
             end
         end)
     end)
 
-    notify("Force Unlock Camera aktif. Matikan toggle untuk memulihkan pengaturan kamera.")
+    notify("Force Unlock Camera aktif. Pergantian kamera ditangani; pengaturan asal dipulihkan saat OFF.")
     return true
 end
 
 function UnlockCamera.Stop()
     unlockActive = false
-    if unlockConnection then
-        unlockConnection:Disconnect()
-        unlockConnection = nil
-    end
+    if unlockConnection then unlockConnection:Disconnect(); unlockConnection = nil end
+    if cameraChangedConnection then cameraChangedConnection:Disconnect(); cameraChangedConnection = nil end
     pcall(function()
         if originalCameraMode then LocalPlayer.CameraMode = originalCameraMode end
-        local camera = workspace.CurrentCamera
-        if camera and originalCameraType then camera.CameraType = originalCameraType end
+        for camera, cameraType in pairs(originalCameraTypes) do
+            if camera and camera.Parent then camera.CameraType = cameraType end
+        end
     end)
-    originalCameraMode, originalCameraType = nil, nil
-    notify("Force Unlock Camera dihentikan.")
+    originalCameraMode = nil
+    table.clear(originalCameraTypes)
+    notify("Force Unlock Camera dihentikan; pengaturan kamera dipulihkan.")
     return true
 end
 
