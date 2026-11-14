@@ -670,6 +670,7 @@ local ok, result = pcall(function()
                                         local expected = targetEnabled and "ACTIVE" or ""
                                         if actual == expected then
                                             applyMaintenanceSnapshot(metadata)
+                                            for _, currentEntry in pairs(maintenanceEntries) do updateMaintenanceRow(currentEntry) end
                                             verified = true
                                             break
                                         end
