@@ -61,12 +61,12 @@ local function make(class, props, parent)
 end
 function Feature.Start()
     if gui and gui.Parent then gui.Enabled = true; return true end
-    local parent = CoreGui
-    local ok = pcall(function() local _ = CoreGui.Name end)
-    if not ok then parent = LocalPlayer:WaitForChild("PlayerGui") end
-    gui = make("ScreenGui", {
-        Name = "TryoBeta2MusicPlayer", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    }, parent)
+    gui = Instance.new("ScreenGui")
+    gui.Name = "TryoBeta2MusicPlayer"
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    local parentOk = pcall(function() gui.Parent = CoreGui end)
+    if not parentOk then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
     local panel = make("Frame", {
         Size = UDim2.fromOffset(270, 190), Position = UDim2.new(0.5, -135, 0.5, -95),
         BackgroundColor3 = Color3.fromRGB(39, 55, 79), BackgroundTransparency = 0.12,
