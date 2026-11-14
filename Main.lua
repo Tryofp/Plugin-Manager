@@ -394,7 +394,8 @@ local ok, result = pcall(function()
             end})
         end
     })
-    local f1Menu = mainTab:CreateDropdown({
+    local f1Menu
+    f1Menu = mainTab:CreateDropdown({
         Name = "F1Lock",
         Build = function(panel)
             addFeatureToggle(mainTab, "F1Lock", cameraTools.F1Lock, "F1 Toggle", panel)
