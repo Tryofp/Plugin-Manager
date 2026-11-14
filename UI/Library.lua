@@ -543,11 +543,12 @@ function TryoUI:CreateFeedbackButton(options)
         BackgroundColor3 = Color3.fromRGB(0, 125, 155),
         BorderSizePixel = 0,
         AutoButtonColor = true,
-        Size = UDim2.fromOffset(70, 23),
-        Position = UDim2.new(1, -150, 0, 5),
+        Size = UDim2.fromOffset(76, 36),
+        Position = UDim2.new(1, -92, 0, 8),
         ZIndex = 20
     }, top)
-    corner(button, 5)
+    corner(button, 8)
+    stroke(button, Color3.fromRGB(145, 190, 210), 0.68)
 
     local categories = {"Bug Report", "Feature Request", "Suggestion", "Other"}
     local function showFeedbackToast(message, success)
