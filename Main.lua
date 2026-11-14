@@ -19,7 +19,7 @@ local ok, result = pcall(function()
     -- Build the visible shell before downloading the feature modules.
     local window = TryoUI.new({
         Title = "PLUGIN MANAGER",
-        Subtitle = "Versi Window • V0.1 • Stable",
+        Subtitle = "V0.1 • Stable",
         LastUpdate = "14 Nov 2026",
         Size = UDim2.fromOffset(590, 370)
     })
