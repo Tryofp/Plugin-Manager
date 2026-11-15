@@ -8,6 +8,7 @@ local Feature = {Name = "Admin Detector", Description = "Mendeteksi owner, group
 local running = false
 local connections = {}
 local known = {}
+local chatDetected = {}
 local lastNotice = {}
 
 local ROLE_WORDS = {
@@ -106,6 +107,7 @@ end
 
 local function detectPlayer(player)
     if player == LocalPlayer then return nil end
+    if chatDetected[player.UserId] then return chatDetected[player.UserId] end
 
     local creatorId = tonumber(game.CreatorId) or 0
     local creatorType = tostring(game.CreatorType)
@@ -198,6 +200,7 @@ local function handleChatRole(player, prefixText, tags)
         end
     end
     if valid then
+        chatDetected[player.UserId] = role or "Chat Admin Tag"
         task.defer(scan)
     end
 end
@@ -243,6 +246,7 @@ function Feature.Start()
         task.delay(1.5, scan)
     end))
     table.insert(connections, Players.PlayerRemoving:Connect(function(player)
+        chatDetected[player.UserId] = nil
         if known[player.UserId] then
             known[player.UserId] = nil
             notify("Admin Detector", player.DisplayName .. " keluar dari server.", 4)
@@ -269,6 +273,7 @@ function Feature.Stop()
     end
     table.clear(connections)
     table.clear(known)
+    table.clear(chatDetected)
     notify("Admin Detector", "Pemantauan dinonaktifkan.", 3)
 end
 
