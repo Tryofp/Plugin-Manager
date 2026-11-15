@@ -379,7 +379,7 @@ function TryoUI.new(config)
     self.FloatingButton = make("TextButton", {
         Name = "TryoFloatingToggle",
         AnchorPoint = Vector2.new(0, 0),
-        Position = UDim2.new(1, -76, 0, 88),
+        Position = UDim2.new(1, -96, 0, 88),
         Size = UDim2.fromOffset(54, 54),
         BackgroundColor3 = COLORS.Surface,
         BackgroundTransparency = 0.16,
