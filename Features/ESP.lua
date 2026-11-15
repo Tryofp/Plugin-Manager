@@ -4,6 +4,8 @@ local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
 local RunService=game:GetService("RunService")
 local CollectionService=game:GetService("CollectionService")
+local Lighting=game:GetService("Lighting")
+local UserInputService=game:GetService("UserInputService")
 local LocalPlayer=Players.LocalPlayer
 
 local Features={}
@@ -12,11 +14,15 @@ local ENEMY_TAG="TryoBeta2_EnemyESP"
 
 local function rootOf(model)
     if not model then return nil end
-    local root=model:FindFirstChild("HumanoidRootPart")
-        or model:FindFirstChild("RootPart")
+    local root=model:FindFirstChild("HumanoidRootPart",true)
+        or model:FindFirstChild("RootPart",true)
+        or model:FindFirstChild("Root",true)
+        or model:FindFirstChild("PrimaryPart",true)
+        or model:FindFirstChild("UpperTorso",true)
+        or model:FindFirstChild("Torso",true)
+        or model:FindFirstChild("Body",true)
+        or model:FindFirstChild("Head",true)
         or model.PrimaryPart
-        or model:FindFirstChild("Torso")
-        or model:FindFirstChild("UpperTorso")
     return root and root:IsA("BasePart") and root or nil
 end
 
@@ -92,11 +98,23 @@ local function isEnemyCandidate(model)
     if model:FindFirstChildOfClass("Humanoid") or model:FindFirstChildOfClass("AnimationController") then
         return true
     end
-    for _,key in ipairs({"Enemy","IsEnemy","Hostile","IsHostile","Monster","IsMonster","NPCEnemy"}) do
+    local markerNames={"Enemy","IsEnemy","Hostile","IsHostile","IsMonster","Monster","IsNPCEnemy","NPCEnemy"}
+    for _,key in ipairs(markerNames) do
         local value=model:GetAttribute(key)
         if value==true or (type(value)=="number" and value>0) then return true end
+        if type(value)=="string" then
+            local text=string.lower(value)
+            if text=="enemy" or text=="hostile" or text=="monster" or text=="true" then return true end
+        end
         local child=model:FindFirstChild(key,true)
-        if child and child:IsA("BoolValue") and child.Value then return true end
+        if child then
+            if child:IsA("BoolValue") and child.Value then return true end
+            if child:IsA("NumberValue") and child.Value>0 then return true end
+            if child:IsA("StringValue") then
+                local text=string.lower(tostring(child.Value))
+                if text=="enemy" or text=="hostile" or text=="monster" or text=="true" then return true end
+            end
+        end
     end
     return CollectionService:HasTag(model,"Enemy")
         or CollectionService:HasTag(model,"Hostile")
@@ -187,10 +205,22 @@ local enemyModels={}
 local confirmedEnemies={}
 local damageConnection
 local characterConnection
+local enemyExtraConnections={}
+local watchedCamera
+local cameraChildConnection
+local lastThreatTime=0
+local effectSnapshot={}
+local previousCameraCFrame
+local shakeWindowStart=0
+local shakeSamples=0
+local lastManualCameraInput=-math.huge
+local previousFOV=70
 
 local NPC_COLOR=Color3.fromRGB(255,170,0)
 local ENEMY_COLOR=Color3.fromRGB(255,0,0)
 local DAMAGE_SEARCH_RADIUS=100
+local THREAT_SEARCH_RADIUS=150
+local THREAT_COOLDOWN=1.5
 
 local function findNearestEnemy(origin,radius)
     if not origin then return nil end
@@ -208,14 +238,48 @@ local function findNearestEnemy(origin,radius)
             end
         end
     end
+
+    -- Match Beta's nearby-world fallback so streamed/late-registered NPCs can
+    -- still be considered immediately when damage or a threat signal occurs.
+    local overlap=OverlapParams.new()
+    overlap.FilterType=Enum.RaycastFilterType.Exclude
+    if LocalPlayer.Character then overlap.FilterDescendantsInstances={LocalPlayer.Character} end
+    local ok,parts=pcall(function()
+        return Workspace:GetPartBoundsInRadius(origin,radius,overlap)
+    end)
+    if ok and parts then
+        for _,part in ipairs(parts) do
+            local model=part:FindFirstAncestorOfClass("Model")
+            if model and model.Parent and not isPlayerModel(model) and isEnemyCandidate(model) then
+                enemyModels[model]=true
+                local root=rootOf(model)
+                if root then
+                    local offset=root.Position-origin
+                    local distanceSquared=offset:Dot(offset)
+                    if distanceSquared<=nearestDistanceSquared then
+                        nearest=model
+                        nearestDistanceSquared=distanceSquared
+                    end
+                end
+            end
+        end
+    end
     return nearest
 end
 
-local function confirmNearestEnemy()
+local function confirmNearestEnemy(reason,radius)
     local localRoot=rootOf(LocalPlayer.Character)
     if not localRoot then return end
-    local enemy=findNearestEnemy(localRoot.Position,DAMAGE_SEARCH_RADIUS)
+    local enemy=findNearestEnemy(localRoot.Position,radius or DAMAGE_SEARCH_RADIUS)
     if enemy then confirmedEnemies[enemy]=true end
+end
+
+local function triggerThreat(reason)
+    if not enemyRunning then return end
+    local now=os.clock()
+    if now-lastThreatTime<THREAT_COOLDOWN then return end
+    lastThreatTime=now
+    confirmNearestEnemy("THREAT_"..tostring(reason),THREAT_SEARCH_RADIUS)
 end
 
 local function watchLocalCharacter(character)
@@ -226,7 +290,10 @@ local function watchLocalCharacter(character)
         local previousHealth=humanoid.Health
         damageConnection=humanoid.HealthChanged:Connect(function(newHealth)
             if not enemyRunning then return end
-            if newHealth<previousHealth then confirmNearestEnemy() end
+            if newHealth<previousHealth then
+                triggerThreat("DAMAGE")
+                confirmNearestEnemy("PLAYER_DAMAGE",DAMAGE_SEARCH_RADIUS)
+            end
             previousHealth=newHealth
         end)
     end)
@@ -238,6 +305,116 @@ local function registerEnemyModel(model)
     task.defer(function()
         if enemyRunning and model.Parent and isEnemyCandidate(model) then enemyModels[model]=true end
     end)
+end
+
+local function effectKey(object)
+    if object:IsA("BlurEffect") then return "Blur:"..object:GetFullName() end
+    if object:IsA("ColorCorrectionEffect") then return "Color:"..object:GetFullName() end
+    if object:IsA("DepthOfFieldEffect") then return "DOF:"..object:GetFullName() end
+    return nil
+end
+
+local function effectState(object)
+    if object:IsA("BlurEffect") then return tostring(object.Size) end
+    if object:IsA("ColorCorrectionEffect") then
+        return table.concat({tostring(object.Brightness),tostring(object.Contrast),tostring(object.Saturation),tostring(object.TintColor)},"|")
+    end
+    if object:IsA("DepthOfFieldEffect") then
+        return table.concat({tostring(object.FarIntensity),tostring(object.FocusDistance),tostring(object.InFocusRadius),tostring(object.NearIntensity)},"|")
+    end
+    return ""
+end
+
+local function scanPostEffects()
+    for _,container in ipairs({Lighting,watchedCamera}) do
+        if container then
+            for _,object in ipairs(container:GetChildren()) do
+                local key=effectKey(object)
+                if key then
+                    local state=effectState(object)
+                    local previous=effectSnapshot[key]
+                    if previous==nil then effectSnapshot[key]=state
+                    elseif previous~=state then
+                        effectSnapshot[key]=state
+                        triggerThreat(object.ClassName)
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function watchCurrentCamera()
+    if cameraChildConnection then cameraChildConnection:Disconnect(); cameraChildConnection=nil end
+    watchedCamera=Workspace.CurrentCamera
+    previousCameraCFrame=watchedCamera and watchedCamera.CFrame or nil
+    previousFOV=watchedCamera and watchedCamera.FieldOfView or 70
+    if watchedCamera then
+        cameraChildConnection=watchedCamera.ChildAdded:Connect(function(object)
+            if effectKey(object) then
+                task.delay(0.05,function()
+                    if enemyRunning then triggerThreat("CAMERA_"..object.ClassName) end
+                end)
+            end
+        end)
+    end
+end
+
+local function startThreatWatchers()
+    table.insert(enemyExtraConnections,Lighting.ChildAdded:Connect(function(object)
+        if effectKey(object) then
+            task.delay(0.05,function()
+                if enemyRunning then triggerThreat("NEW_"..object.ClassName) end
+            end)
+        end
+    end))
+    table.insert(enemyExtraConnections,Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(watchCurrentCamera))
+    table.insert(enemyExtraConnections,UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.Touch then lastManualCameraInput=os.clock() end
+    end))
+    table.insert(enemyExtraConnections,UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.Touch then lastManualCameraInput=os.clock() end
+    end))
+    table.insert(enemyExtraConnections,RunService.Heartbeat:Connect(function()
+        if not enemyRunning then return end
+        local now=os.clock()
+        local camera=Workspace.CurrentCamera
+        if not camera then return end
+        if now-(enemyExtraConnections._lastEffectScan or 0)>=0.15 then
+            enemyExtraConnections._lastEffectScan=now
+            scanPostEffects()
+        end
+        if now-(enemyExtraConnections._lastCameraScan or 0)>=0.1 then
+            enemyExtraConnections._lastCameraScan=now
+            local current=camera.CFrame
+            if UserInputService.TouchEnabled and now-lastManualCameraInput<0.4 then
+                previousCameraCFrame=current
+                shakeSamples=0
+                shakeWindowStart=now
+            elseif previousCameraCFrame then
+                local relative=previousCameraCFrame:ToObjectSpace(current)
+                local rx,ry,rz=relative:ToOrientation()
+                local angle=math.max(math.abs(rx),math.abs(ry),math.abs(rz))
+                if angle>=math.rad(7) then
+                    if now-shakeWindowStart>0.22 then
+                        shakeWindowStart=now
+                        shakeSamples=1
+                    else
+                        shakeSamples=shakeSamples+1
+                    end
+                    if shakeSamples>=3 then
+                        triggerThreat("CAMERA_SHAKE")
+                        shakeSamples=0
+                        shakeWindowStart=now
+                    end
+                end
+            end
+            previousCameraCFrame=current
+            if math.abs(camera.FieldOfView-previousFOV)>=4 then triggerThreat("FOV_CHANGE") end
+            previousFOV=camera.FieldOfView
+        end
+    end))
+    watchCurrentCamera()
 end
 
 local function scanEnemies()
@@ -280,10 +457,16 @@ Features.EnemyESP={
     Start=function()
         if enemyRunning then return true end
         enemyRunning=true
+        table.clear(enemyExtraConnections)
+        table.clear(effectSnapshot)
+        lastThreatTime=0
+        shakeSamples=0
+        lastManualCameraInput=-math.huge
         if LocalPlayer.Character then watchLocalCharacter(LocalPlayer.Character) end
         characterConnection=LocalPlayer.CharacterAdded:Connect(function(character)
             if enemyRunning then watchLocalCharacter(character) end
         end)
+        startThreatWatchers()
         for _,object in ipairs(Workspace:GetDescendants()) do
             if object:IsA("Model") and isEnemyCandidate(object) then
                 enemyModels[object]=true
@@ -310,6 +493,13 @@ Features.EnemyESP={
         if characterConnection then characterConnection:Disconnect(); characterConnection=nil end
         if enemyConnection then enemyConnection:Disconnect(); enemyConnection=nil end
         if enemyDescendantConnection then enemyDescendantConnection:Disconnect(); enemyDescendantConnection=nil end
+        if cameraChildConnection then cameraChildConnection:Disconnect(); cameraChildConnection=nil end
+        for _,connection in ipairs(enemyExtraConnections) do
+            if typeof(connection)=="RBXScriptConnection" then connection:Disconnect() end
+        end
+        table.clear(enemyExtraConnections)
+        watchedCamera=nil
+        table.clear(effectSnapshot)
         for model in pairs(enemyModels) do removeVisual(model,ENEMY_TAG) end
         table.clear(enemyModels)
         table.clear(confirmedEnemies)
