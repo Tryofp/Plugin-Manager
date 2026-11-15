@@ -581,13 +581,25 @@ local ok, result = pcall(function()
     local presetStore = { Version = 2, SlotCount = 5, Slots = {} }
     local presetRows = {}
     local presetControllers = {}
+    local PRESET_INFO_TEXT = "Aktifkan dahulu fitur yang ingin di tambahkan ke preset, lalu masukan nama dan klik SAVE"
+    local presetStatusRevision = 0
     local presetStatus = presetsTab:CreateInfo({
         Name = "PresetStatus", Height = 34,
-        Text = "Aktifkan dahulu fitur yang ingin di tambahkan ke preset, lalu masukan nama dan klik SAVE"
+        Text = PRESET_INFO_TEXT
     })
     local function setPresetStatus(message, isError)
+        presetStatusRevision = presetStatusRevision + 1
         presetStatus.Text = tostring(message)
         presetStatus.TextColor3 = isError and Color3.fromRGB(255, 145, 145) or Color3.fromRGB(125, 225, 185)
+    end
+    local function setPresetSuccess(message)
+        setPresetStatus(message, false)
+        local revision = presetStatusRevision
+        task.delay(3, function()
+            if presetStatusRevision == revision and presetStatus and presetStatus.Parent then
+                setPresetStatus(PRESET_INFO_TEXT, false)
+            end
+        end)
     end
     local function cleanPresetName(value)
         local name = tostring(value or ""):gsub("[%c]", ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -741,7 +753,7 @@ local ok, result = pcall(function()
             end
             editing = false
             updateVisual()
-            setPresetStatus("Preset '" .. name .. "' berhasil disimpan di slot " .. index .. ".")
+            setPresetSuccess('Preset "' .. name .. '" telah berhasil dimasukan ke slot "' .. index .. '"')
         end)
         slot.EditButton = makeAction("✏", 0.44, 0.14, Color3.fromRGB(83, 91, 119), function()
             local entry = presetStore.Slots[index]
