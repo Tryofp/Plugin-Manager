@@ -2,6 +2,7 @@
 -- Conservative client-side signals only; no Infinite Yield dependencies.
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
+local SoundService = game:GetService("SoundService")
 local LocalPlayer = Players.LocalPlayer
 local Feature = {Name = "Admin Detector", Description = "Mendeteksi owner, group owner, role overhead, dan tool moderasi dengan filter ketat."}
 
@@ -9,7 +10,25 @@ local running = false
 local connections = {}
 local known = {}
 local chatDetected = {}
-local lastNotice = {}
+local detectionCache = {}
+local scanning = false
+local scanQueued = false
+
+local alertSound = Instance.new("Sound")
+alertSound.Name = "TryoAdminDetectedBeep"
+alertSound.SoundId = "rbxassetid://9118823101"
+alertSound.Volume = 0.65
+alertSound.Parent = SoundService
+
+local function playAlertBeep()
+    pcall(function()
+        SoundService:PlayLocalSound(alertSound)
+    end)
+end
+
+local function invalidatePlayer(player)
+    if player then detectionCache[player.UserId] = nil end
+end
 
 local ROLE_WORDS = {
     "admin", "administrator", "moderator", "mod", "staff",
@@ -108,25 +127,28 @@ end
 local function detectPlayer(player)
     if player == LocalPlayer then return nil end
     if chatDetected[player.UserId] then return chatDetected[player.UserId] end
+    local cached = detectionCache[player.UserId]
+    if cached and cached.character == player.Character then return cached.role end
 
     local creatorId = tonumber(game.CreatorId) or 0
     local creatorType = tostring(game.CreatorType)
 
+    local role
     if creatorId > 1000 and (creatorType == "Enum.CreatorType.User" or creatorType == "0")
         and player.UserId == creatorId then
-        return "Game Owner"
-    end
-
-    if creatorId > 0 and (creatorType == "Enum.CreatorType.Group" or creatorType == "1") then
+        role = "Game Owner"
+    elseif creatorId > 0 and (creatorType == "Enum.CreatorType.Group" or creatorType == "1") then
         local ok, rank = pcall(function() return player:GetRankInGroup(creatorId) end)
-        if ok and rank == 255 then return "Group Owner (Rank 255)" end
+        if ok and rank == 255 then role = "Group Owner (Rank 255)" end
     end
-
-    return inspectOverhead(player) or detectTool(player)
+    role = role or inspectOverhead(player) or detectTool(player)
+    detectionCache[player.UserId] = {character = player.Character, role = role}
+    return role
 end
 
 local function scan()
-    if not running then return end
+    if not running or scanning then return end
+    scanning = true
     local current = {}
     for _, player in ipairs(Players:GetPlayers()) do
         local role = detectPlayer(player)
@@ -137,7 +159,6 @@ local function scan()
                 Role = role
             }
         end
-        task.wait()
     end
 
     local added = {}
@@ -161,12 +182,26 @@ end
 
 local function watchCharacter(player, character)
     if not character then return end
+    invalidatePlayer(player)
     table.insert(connections, character.DescendantAdded:Connect(function(object)
         if object:IsA("TextLabel") or object:IsA("TextBox") then
-            task.delay(0.25, scan)
+            invalidatePlayer(player)
+            table.insert(connections, object:GetPropertyChangedSignal("Text"):Connect(function()
+                invalidatePlayer(player)
+                queueScan()
+            end))
+            queueScan()
         end
     end))
-    task.delay(1, scan)
+    for _, object in ipairs(character:GetDescendants()) do
+        if object:IsA("TextLabel") or object:IsA("TextBox") then
+            table.insert(connections, object:GetPropertyChangedSignal("Text"):Connect(function()
+                invalidatePlayer(player)
+                queueScan()
+            end))
+        end
+    end
+    queueScan()
 end
 
 local function connectPlayer(player)
@@ -176,13 +211,16 @@ local function connectPlayer(player)
     local backpack = player:FindFirstChildOfClass("Backpack")
     if backpack then
         table.insert(connections, backpack.ChildAdded:Connect(function()
-            task.delay(0.25, scan)
+            invalidatePlayer(player)
+            queueScan()
         end))
     end
     table.insert(connections, player.ChildAdded:Connect(function(child)
         if child:IsA("Backpack") then
+            invalidatePlayer(player)
             table.insert(connections, child.ChildAdded:Connect(function()
-                task.delay(0.25, scan)
+                invalidatePlayer(player)
+                queueScan()
             end))
         end
     end))
@@ -201,7 +239,8 @@ local function handleChatRole(player, prefixText, tags)
     end
     if valid then
         chatDetected[player.UserId] = role or "Chat Admin Tag"
-        task.defer(scan)
+        invalidatePlayer(player)
+        queueScan()
     end
 end
 
@@ -210,6 +249,9 @@ function Feature.Start()
     running = true
     table.clear(connections)
     table.clear(known)
+    table.clear(detectionCache)
+    scanning = false
+    scanQueued = false
 
     -- Legacy chat pipeline: inspect PrefixText and explicit tag metadata.
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -247,6 +289,7 @@ function Feature.Start()
     end))
     table.insert(connections, Players.PlayerRemoving:Connect(function(player)
         chatDetected[player.UserId] = nil
+        invalidatePlayer(player)
         if known[player.UserId] then
             known[player.UserId] = nil
             notify("Admin Detector", player.DisplayName .. " keluar dari server.", 4)
@@ -274,6 +317,10 @@ function Feature.Stop()
     table.clear(connections)
     table.clear(known)
     table.clear(chatDetected)
+    table.clear(detectionCache)
+    scanning = false
+    scanQueued = false
+    pcall(function() alertSound:Destroy() end)
     notify("Admin Detector", "Pemantauan dinonaktifkan.", 3)
 end
 
