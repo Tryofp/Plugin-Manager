@@ -29,38 +29,173 @@ Features.AntiAFK={
     end
 }
 
-local originalLighting,removedAtmospheres,fullbrightConnection
-removedAtmospheres={}
-Features.Fullbright={
-    Name="Full Bright", Description="Menerangkan map dan mengurangi kabut secara lokal.",
-    Start=function()
-        if fullbrightConnection then return true end
-        originalLighting={Brightness=Lighting.Brightness,ClockTime=Lighting.ClockTime,FogEnd=Lighting.FogEnd,
-            GlobalShadows=Lighting.GlobalShadows,Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient}
-        table.clear(removedAtmospheres)
-        for _,child in ipairs(Lighting:GetChildren()) do
-            if child:IsA("Atmosphere") then table.insert(removedAtmospheres,child); child.Parent=nil end
-        end
-        fullbrightConnection=RunService.RenderStepped:Connect(function()
-            Lighting.Brightness=2; Lighting.ClockTime=14; Lighting.FogEnd=100000
-            Lighting.GlobalShadows=false
-            Lighting.Ambient=Color3.fromRGB(200,200,200)
-            Lighting.OutdoorAmbient=Color3.fromRGB(200,200,200)
+-- Visual Environment uses one-shot local overrides and restores only values it still owns.
+local function applyTracked(target, property, value, store)
+    local ok, original = pcall(function() return target[property] end)
+    if not ok then return end
+    local setOK = pcall(function() target[property] = value end)
+    if setOK then table.insert(store, {Target=target, Property=property, Original=original, Applied=value}) end
+end
+
+local function restoreTracked(store)
+    for index = #store, 1, -1 do
+        local item = store[index]
+        pcall(function()
+            if item.Target and item.Target.Parent ~= nil and item.Target[item.Property] == item.Applied then
+                item.Target[item.Property] = item.Original
+            elseif item.Target == Lighting and item.Target[item.Property] == item.Applied then
+                item.Target[item.Property] = item.Original
+            end
         end)
-        notify("Full Bright","Pencahayaan lokal diaktifkan.")
+    end
+    table.clear(store)
+end
+
+local visualStores = {}
+local function makeVisualFeature(id, name, description, apply)
+    local store
+    return {
+        Name=name,
+        Description=description,
+        Start=function()
+            if store then return true end
+            store={}
+            visualStores[id]=store
+            local ok,err=pcall(function() apply(store) end)
+            if not ok then
+                restoreTracked(store)
+                store=nil
+                visualStores[id]=nil
+                warn("[Tryo Visual] "..id..": "..tostring(err))
+                return false
+            end
+            notify(name,"Pengaturan visual lokal diaktifkan.")
+            return true
+        end,
+        Stop=function()
+            if store then restoreTracked(store); store=nil; visualStores[id]=nil end
+            notify(name,"Pengaturan visual dipulihkan.")
+        end
+    }
+end
+
+Features.Fullbright=makeVisualFeature(
+    "Fullbright","Brightness & Ambient",
+    "Meningkatkan pencahayaan lokal tanpa mengubah waktu atau menghapus efek map.",
+    function(store)
+        applyTracked(Lighting,"Brightness",2,store)
+        applyTracked(Lighting,"Ambient",Color3.fromRGB(200,200,200),store)
+        applyTracked(Lighting,"OutdoorAmbient",Color3.fromRGB(200,200,200),store)
+    end
+)
+
+Features.VisualFog=makeVisualFeature(
+    "VisualFog","No Fog",
+    "Mengurangi Fog dan Atmosphere secara lokal tanpa menghapus objeknya.",
+    function(store)
+        applyTracked(Lighting,"FogStart",0,store)
+        applyTracked(Lighting,"FogEnd",100000,store)
+        for _,effect in ipairs(Lighting:GetChildren()) do
+            if effect:IsA("Atmosphere") then
+                applyTracked(effect,"Density",0,store)
+                applyTracked(effect,"Haze",0,store)
+                applyTracked(effect,"Glare",0,store)
+            end
+        end
+    end
+)
+
+Features.VisualTime=makeVisualFeature(
+    "VisualTime","Daylight",
+    "Mengatur ClockTime lokal ke siang hari.",
+    function(store) applyTracked(Lighting,"ClockTime",14,store) end
+)
+
+Features.VisualShadows=makeVisualFeature(
+    "VisualShadows","Disable Shadows",
+    "Menonaktifkan GlobalShadows secara lokal.",
+    function(store) applyTracked(Lighting,"GlobalShadows",false,store) end
+)
+
+Features.VisualPostFX=makeVisualFeature(
+    "VisualPostFX","Disable Post FX",
+    "Menonaktifkan Bloom, Blur, Color Correction, Depth of Field, dan Sun Rays lokal.",
+    function(store)
+        local supported={
+            BloomEffect=true,BlurEffect=true,ColorCorrectionEffect=true,
+            DepthOfFieldEffect=true,SunRaysEffect=true
+        }
+        for _,effect in ipairs(Lighting:GetChildren()) do
+            if supported[effect.ClassName] then applyTracked(effect,"Enabled",false,store) end
+        end
+    end
+)
+
+local noFallConnection
+Features.NoFallDamage={
+    Name="No Fall Damage",
+    Description="Melindungi jatuh tinggi berdasarkan jarak turun dari titik puncak, tanpa memperlambat lompatan normal.",
+    Start=function()
+        if noFallConnection then return true end
+        local rayParams=RaycastParams.new()
+        rayParams.FilterType=Enum.RaycastFilterType.Exclude
+        local trackedCharacter=nil
+        local peakY=nil
+        local highFallActive=false
+        local FALL_DISTANCE_THRESHOLD=8
+        noFallConnection=RunService.Heartbeat:Connect(function()
+            local character=LocalPlayer.Character
+            if not character then
+                trackedCharacter=nil
+                peakY=nil
+                highFallActive=false
+                return
+            end
+            local humanoid=character:FindFirstChildOfClass("Humanoid")
+            local root=character:FindFirstChild("HumanoidRootPart")
+            if not humanoid or humanoid.Health<=0 or not root or not root:IsA("BasePart") then return end
+
+            if trackedCharacter~=character then
+                trackedCharacter=character
+                peakY=root.Position.Y
+                highFallActive=false
+            end
+
+            local grounded=humanoid.FloorMaterial~=Enum.Material.Air
+            if grounded then
+                peakY=root.Position.Y
+                highFallActive=false
+                return
+            end
+
+            local velocity=root.AssemblyLinearVelocity
+            -- Keep the highest airborne position as the reference point.
+            if not peakY or root.Position.Y>peakY then
+                peakY=root.Position.Y
+            end
+
+            if velocity.Y>=-1 then return end
+
+            -- A standard Roblox jump usually drops less than 8 studs from
+            -- its apex. Higher jumps and ledge falls cross this threshold.
+            if not highFallActive and peakY-root.Position.Y>=FALL_DISTANCE_THRESHOLD then
+                highFallActive=true
+            end
+            if not highFallActive then return end
+
+            rayParams.FilterDescendantsInstances={character}
+            local ground=workspace:Raycast(root.Position,Vector3.new(0,-12,0),rayParams)
+            local maxDownSpeed=ground and 16 or 35
+            if velocity.Y < -maxDownSpeed then
+                root.AssemblyLinearVelocity=Vector3.new(velocity.X,-maxDownSpeed,velocity.Z)
+            end
+        end)
+        notify("No Fall Damage","High Fall Protection aktif. Lompatan normal tetap normal.")
         return true
     end,
     Stop=function()
-        if fullbrightConnection then fullbrightConnection:Disconnect(); fullbrightConnection=nil end
-        if originalLighting then
-            for property,value in pairs(originalLighting) do pcall(function() Lighting[property]=value end) end
-            originalLighting=nil
-        end
-        for _,atmosphere in ipairs(removedAtmospheres) do
-            if atmosphere and not atmosphere.Parent then atmosphere.Parent=Lighting end
-        end
-        table.clear(removedAtmospheres)
-        notify("Full Bright","Pencahayaan awal dipulihkan.")
+        if noFallConnection then noFallConnection:Disconnect(); noFallConnection=nil end
+        notify("No Fall Damage","Perlindungan jatuh dinonaktifkan.")
     end
 }
 
@@ -118,64 +253,102 @@ Features.Noclip={
     end
 }
 
-local walkSpeedConnection
 local walkSpeedCharacterConnection
+local walkSpeedPropertyConnection
 local walkSpeedOriginals = {}
 local walkSpeedContext
+local walkSpeedActive = false
+local walkSpeedBindToken = 0
+local walkSpeedHumanoid
+
+local function disconnectWalkSpeedProperty()
+    if walkSpeedPropertyConnection then
+        walkSpeedPropertyConnection:Disconnect()
+        walkSpeedPropertyConnection=nil
+    end
+    walkSpeedHumanoid=nil
+end
+
+local function applyWalkSpeedTarget()
+    local context=walkSpeedContext
+    local humanoid=walkSpeedHumanoid
+    if not walkSpeedActive or not context or not humanoid or not humanoid.Parent then return end
+    local target=math.clamp(tonumber(context.WalkSpeedTarget) or 32,16,100)
+    if humanoid.WalkSpeed~=target then
+        pcall(function() humanoid.WalkSpeed=target end)
+    end
+end
+
+local function bindWalkSpeedCharacter(character, token)
+    task.spawn(function()
+        local humanoid=character and character:WaitForChild("Humanoid",10)
+        if not humanoid or not humanoid:IsA("Humanoid") then return end
+        if not walkSpeedActive or token~=walkSpeedBindToken or LocalPlayer.Character~=character then return end
+
+        disconnectWalkSpeedProperty()
+        if walkSpeedOriginals[humanoid]==nil then
+            walkSpeedOriginals[humanoid]=humanoid.WalkSpeed
+        end
+        walkSpeedHumanoid=humanoid
+        applyWalkSpeedTarget()
+
+        -- Match Infinite Yield loopws: react immediately whenever the game changes WalkSpeed.
+        walkSpeedPropertyConnection=humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if not walkSpeedActive or walkSpeedHumanoid~=humanoid then return end
+            applyWalkSpeedTarget()
+        end)
+    end)
+end
+
 local function restoreWalkSpeeds()
-    if walkSpeedConnection then walkSpeedConnection:Disconnect(); walkSpeedConnection=nil end
-    if walkSpeedCharacterConnection then walkSpeedCharacterConnection:Disconnect(); walkSpeedCharacterConnection=nil end
-    for humanoid, speed in pairs(walkSpeedOriginals) do
+    walkSpeedActive=false
+    walkSpeedBindToken=walkSpeedBindToken+1
+    if walkSpeedCharacterConnection then
+        walkSpeedCharacterConnection:Disconnect()
+        walkSpeedCharacterConnection=nil
+    end
+    disconnectWalkSpeedProperty()
+    for humanoid,speed in pairs(walkSpeedOriginals) do
         if humanoid and humanoid.Parent then
-            pcall(function() humanoid.WalkSpeed = speed end)
+            pcall(function() humanoid.WalkSpeed=speed end)
         end
     end
     table.clear(walkSpeedOriginals)
-    walkSpeedContext = nil
+    if walkSpeedContext then walkSpeedContext.WalkSpeedApply=nil end
+    walkSpeedContext=nil
 end
 
 Features.WalkSpeed = {
     Name = "WalkSpeed",
-    Description = "Atur kecepatan jalan lokal; nilai awal dipulihkan saat dimatikan.",
+    Description = "Mempertahankan kecepatan pilihan saat game mengubah WalkSpeed dan memasangnya kembali setelah respawn.",
     Start = function(context)
-        if walkSpeedConnection then return true end
-        walkSpeedContext = context
-        context.WalkSpeedTarget = math.clamp(tonumber(context.WalkSpeedTarget) or 32, 16, 100)
-
-        local function applyToCharacter(character)
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if not humanoid then return end
-            if walkSpeedOriginals[humanoid] == nil then
-                walkSpeedOriginals[humanoid] = humanoid.WalkSpeed
-            end
-            humanoid.WalkSpeed = context.WalkSpeedTarget
+        if walkSpeedActive then
+            walkSpeedContext=context
+            context.WalkSpeedApply=applyWalkSpeedTarget
+            applyWalkSpeedTarget()
+            return true
         end
+        walkSpeedActive=true
+        walkSpeedContext=context
+        context.WalkSpeedTarget=math.clamp(tonumber(context.WalkSpeedTarget) or 32,16,100)
+        context.WalkSpeedApply=applyWalkSpeedTarget
+        walkSpeedBindToken=walkSpeedBindToken+1
+        local token=walkSpeedBindToken
 
-        applyToCharacter(LocalPlayer.Character)
-        walkSpeedCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
-            task.wait(0.25)
-            applyToCharacter(character)
+        walkSpeedCharacterConnection=LocalPlayer.CharacterAdded:Connect(function(character)
+            bindWalkSpeedCharacter(character,token)
         end)
-        walkSpeedConnection = RunService.Stepped:Connect(function()
-            local character = LocalPlayer.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                if walkSpeedOriginals[humanoid] == nil then
-                    walkSpeedOriginals[humanoid] = humanoid.WalkSpeed
-                end
-                local target = math.clamp(tonumber(context.WalkSpeedTarget) or 32, 16, 100)
-                if humanoid.WalkSpeed ~= target then humanoid.WalkSpeed = target end
-            end
-        end)
-        notify("WalkSpeed", "Aktif: " .. tostring(context.WalkSpeedTarget))
+        if LocalPlayer.Character then
+            bindWalkSpeedCharacter(LocalPlayer.Character,token)
+        end
+        notify("WalkSpeed","Loop WalkSpeed aktif: "..tostring(context.WalkSpeedTarget))
         return true
     end,
     Stop = function()
         restoreWalkSpeeds()
-        notify("WalkSpeed", "Kecepatan karakter dipulihkan.")
+        notify("WalkSpeed","Kecepatan karakter dipulihkan.")
     end
 }
-
 
 local InspectorPlayers = game:GetService("Players")
 local InspectorWorkspace = game:GetService("Workspace")
