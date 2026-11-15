@@ -368,6 +368,7 @@ local ok, result = pcall(function()
                 local numeric = tonumber(value)
                 if not numeric then return false end
                 featureManager.Context.WalkSpeedTarget = math.clamp(numeric, 16, 100)
+                if featureManager.Context.WalkSpeedApply then featureManager.Context.WalkSpeedApply() end
                 for _, item in ipairs(walkSpeedControllers) do item.Refresh() end
                 return true
             end,
