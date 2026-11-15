@@ -67,30 +67,36 @@ local function escapePattern(value)
     return (tostring(value or ""):gsub("([^%w])", "%%%1"))
 end
 
-local function hasRole(text, player)
-    local raw = tostring(text or "")
-    if raw == "" or #raw > 128 then return false end
-    local value = normalize(raw)
-    if value == "" then return false end
+local function hasExplicitAdminRole(text)
+    local lowerText = string.lower(tostring(text or ""))
+    if lowerText == "" or #lowerText > 64 then return false end
+    return string.match(lowerText, "%f[%a]admin%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]administrator%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]moderator%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]mod%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]head%s+admin%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]super%s+admin%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]lead%s+developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]head%s+developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]senior%s+developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]game%s+developer%f[%A]") ~= nil
+        or string.match(lowerText, "%f[%a]staff%f[%A]") ~= nil
+end
 
-    -- Exclude common non-staff labels before checking role tokens.
-    for _, excluded in ipairs(EXCLUDED_TEXT) do
-        if string.find(value, excluded, 1, true) then return false end
+local function validateRoleText(text)
+    local lowerText = string.lower(tostring(text or ""))
+    if lowerText == "" or #lowerText > 128 then return false end
+    local excluded = {
+        "kekasih", "abang", "king", "princess", "pendaki",
+        "looking for more games", "kohl's admin", "vip",
+        "biduan", "member", "blonde", "summit", "checkpoint",
+        "papan", "peringkat", "owner pass", "admin pass",
+        "admin potion", "admin gamepass"
+    }
+    for _, word in ipairs(excluded) do
+        if string.find(lowerText, word, 1, true) then return false end
     end
-
-    -- Remove player names from formatted chat prefixes so a username such as
-    -- "AdminFan" or a display name cannot become an accidental role signal.
-    local playerName = normalize(player.Name)
-    local displayName = normalize(player.DisplayName)
-    if playerName ~= "" then value = value:gsub(escapePattern(playerName), " ") end
-    if displayName ~= "" then value = value:gsub(escapePattern(displayName), " ") end
-    value = value:gsub("%s+", " ")
-
-    for _, role in ipairs(ROLE_WORDS) do
-        local pattern = "%f[%a]" .. role:gsub(" ", "%%s+") .. "%f[%A]"
-        if string.find(value, pattern) then return true, raw end
-    end
-    return false
+    return hasExplicitAdminRole(lowerText)
 end
 
 local function detectTool(player)
@@ -112,12 +118,20 @@ end
 local function inspectOverhead(player)
     local character = player.Character
     if not character then return nil end
+    local playerName = string.lower(player.Name)
+    local displayName = string.lower(player.DisplayName)
     for _, object in ipairs(character:GetDescendants()) do
         if object:IsA("TextLabel") or object:IsA("TextBox") then
-            local ok, text = pcall(function() return object.Text end)
-            if ok then
-                local valid, role = hasRole(text, player)
-                if valid then return "Role: " .. role end
+            local ok, rawText = pcall(function() return object.Text end)
+            if ok and rawText and rawText ~= "" then
+                local lowerText = string.lower(rawText)
+                local isJustPlayerName = lowerText == playerName
+                    or lowerText == displayName
+                    or string.find(lowerText, playerName, 1, true) ~= nil
+                    or string.find(lowerText, displayName, 1, true) ~= nil
+                if not isJustPlayerName and validateRoleText(rawText) then
+                    return "Role: " .. rawText
+                end
             end
         end
     end
@@ -165,7 +179,6 @@ local function scan()
     for userId, entry in pairs(current) do
         if not known[userId] then
             table.insert(added, entry)
-            lastNotice[userId] = os.clock()
         end
     end
 
@@ -240,11 +253,11 @@ end
 
 local function handleChatRole(player, prefixText, tags)
     if not running or not player or player == LocalPlayer then return end
-    local valid, role = hasRole(prefixText, player)
+    local valid, role = validateRoleText(prefixText)
     if not valid and type(tags) == "table" then
         for _, tag in ipairs(tags) do
             local tagText = tag.TagText or tag.Text or ""
-            local tagValid, tagRole = hasRole(tagText, player)
+            local tagValid, tagRole = validateRoleText(tagText)
             if tagValid then valid, role = true, "[ " .. tagText .. " ] Chat Tag"; break end
         end
     end
