@@ -449,6 +449,7 @@ local ok, result = pcall(function()
         end
     })
 
+    addWalkSpeed(mainTab)
     addFeatureToggle(mainTab, "PlayMusic", musicPlayer, "Play Music")
     mainTab:CreateDropdown({
         Name = "Rejoin",
