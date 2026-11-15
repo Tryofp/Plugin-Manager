@@ -165,6 +165,15 @@ local ok, result = pcall(function()
 
         local yyyy, mm, dd, hh, mi = raw:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d)")
         if yyyy and mm and dd and hh and mi then
+            -- GitHub commit dates are UTC. Display them in WIB (UTC+7).
+            local parsedOk, parsedDate = pcall(function()
+                return DateTime.fromIsoDate(raw)
+            end)
+            if parsedOk and parsedDate then
+                local jakartaTimestamp = parsedDate.UnixTimestamp + (7 * 60 * 60)
+                local formatted = os.date("!%d/%m/%y %H:%M", jakartaTimestamp)
+                if formatted then return formatted end
+            end
             return string.format("%s/%s/%s %s:%s", dd, mm, yyyy:sub(3), hh, mi)
         end
 
@@ -205,33 +214,19 @@ local ok, result = pcall(function()
     end
 
     local function readLastUpdate()
-        local url = METADATA_URL .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis)
+        -- Read the latest commit directly from the public main branch.
+        -- This keeps the label tied to actual Script Hub releases, not Firestore metadata.
+        local url = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits/main?_=" ..
+            tostring(DateTime.now().UnixTimestampMillis)
         local response = game:HttpGet(url)
         local decoded = HttpService:JSONDecode(response or "{}")
-        assert(type(decoded) == "table", "Metadata response is not a JSON object")
+        assert(type(decoded) == "table" and type(decoded.commit) == "table",
+            "GitHub did not return valid main branch commit metadata")
 
-        -- The public endpoint normally returns a flat { LastUpdate = value } map.
-        -- Accept common casing/nesting variants too, so a wrapper response does not
-        -- silently turn a valid Firestore value into a dash.
-        local raw = decoded.LastUpdate or decoded.lastUpdate or decoded.last_update
-        local containers = { decoded.metadata, decoded.Metadata, decoded.data, decoded.Data }
-        for _, container in ipairs(containers) do
-            if raw == nil and type(container) == "table" then
-                raw = container.LastUpdate or container.lastUpdate or container.last_update
-            end
-        end
-        if raw == nil then
-            for key, value in pairs(decoded) do
-                if tostring(key):lower():gsub("[^a-z]", "") == "lastupdate" then
-                    raw = value
-                    break
-                end
-            end
-        end
-        if type(raw) == "table" then
-            raw = raw.Value or raw.value or raw.Timestamp or raw.timestamp or raw.updatedAt
-        end
-        assert(raw ~= nil and tostring(raw) ~= "", "LastUpdate key is missing or empty in metadata response")
+        local commit = decoded.commit
+        local raw = (commit.committer and commit.committer.date) or
+            (commit.author and commit.author.date)
+        assert(raw ~= nil and tostring(raw) ~= "", "Latest main commit date is missing")
         return formatLastUpdate(raw)
     end
 
