@@ -115,6 +115,7 @@ local ok, result = pcall(function()
     local function isReleaseSeen(scope, id) return releaseState.Seen[releaseKey(scope, id)] == true end
     local function markReleaseSeen(scope, id) releaseState.Seen[releaseKey(scope, id)] = true; saveReleaseState() end
 
+    local featureControllers
     local RELEASE_FEATURE_BADGES = {
         WaypointManager = "UPDATE",
         WalkSpeed = "UPDATE",
@@ -363,7 +364,7 @@ local ok, result = pcall(function()
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
-    local featureControllers = {}
+    featureControllers = {}
     local walkSpeedControllers = {}
     local maintenanceEntries = {}
     local maintenanceLocks = {}
