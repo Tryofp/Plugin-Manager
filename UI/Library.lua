@@ -1010,6 +1010,10 @@ function TryoUI:CreateTab(name, icon)
         iconPart("MountainBase", UDim2.fromOffset(15, 3), UDim2.fromOffset(1, 13), iconColor, 0, 2)
         iconPart("PeakLeft", UDim2.fromOffset(9, 9), UDim2.fromOffset(2, 5), iconColor, 45, 1)
         iconPart("PeakRight", UDim2.fromOffset(9, 9), UDim2.fromOffset(8, 5), Color3.fromRGB(190, 205, 245), -45, 1)
+    elseif name == "Presets" then
+        iconPart("PresetLayerBack", UDim2.fromOffset(12, 12), UDim2.fromOffset(1, 1), iconColor, 0, 3)
+        iconPart("PresetLayerFront", UDim2.fromOffset(12, 12), UDim2.fromOffset(4, 4), Color3.fromRGB(235, 240, 255), 0, 3)
+        iconPart("PresetLine", UDim2.fromOffset(7, 2), UDim2.fromOffset(6, 9), COLORS.Sidebar, 0, 1)
     elseif name == "Main" then
         iconPart("HomeBase", UDim2.fromOffset(11, 9), UDim2.fromOffset(3, 7), iconColor, 0, 2)
         iconPart("RoofLeft", UDim2.fromOffset(10, 3), UDim2.fromOffset(1, 5), iconColor, -38, 1)
