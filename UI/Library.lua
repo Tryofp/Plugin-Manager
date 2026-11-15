@@ -1829,6 +1829,141 @@ function TryoUI:CreateTab(name, icon)
     return tab
 end
 
+function TryoUI:ShowChangelog(releases)
+    if not self.Window or not self.Window.Parent then return end
+    local old = self.Window:FindFirstChild("ChangelogOverlay")
+    if old then old:Destroy() end
+
+    local overlay = make("Frame", {
+        Name = "ChangelogOverlay", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.28,
+        BorderSizePixel = 0, Active = true, ZIndex = 300
+    }, self.Window)
+    make("TextButton", {
+        Name = "InputShield", Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+        Active = true, Selectable = false, ZIndex = 300
+    }, overlay)
+
+    local panel = make("Frame", {
+        Name = "ChangelogPanel", AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -28, 1, -30),
+        BackgroundColor3 = Color3.fromRGB(24, 31, 44), BorderSizePixel = 0,
+        Active = true, ZIndex = 301
+    }, overlay)
+    corner(panel, 10)
+    stroke(panel, Color3.fromRGB(95, 130, 165), 0.35)
+
+    make("TextLabel", {
+        Name = "ChangelogTitle", BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(13, 8), Size = UDim2.new(1, -58, 0, 26),
+        Text = "CHANGELOG", TextColor3 = Color3.fromRGB(100, 220, 240),
+        Font = Enum.Font.GothamBlack, TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 302
+    }, panel)
+    make("TextLabel", {
+        Name = "ChangelogSubtitle", BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(14, 32), Size = UDim2.new(1, -28, 0, 16),
+        Text = "Riwayat pembaruan Script Hub", TextColor3 = COLORS.Muted,
+        Font = Enum.Font.Gotham, TextSize = 9,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 302
+    }, panel)
+    local close = make("TextButton", {
+        Name = "CloseChangelog", Position = UDim2.new(1, -38, 0, 8),
+        Size = UDim2.fromOffset(27, 25), Text = "×",
+        TextColor3 = Color3.new(1, 1, 1),
+        BackgroundColor3 = Color3.fromRGB(150, 55, 65),
+        Font = Enum.Font.GothamBold, TextSize = 16,
+        BorderSizePixel = 0, ZIndex = 304
+    }, panel)
+    corner(close, 6)
+
+    local scroll = make("ScrollingFrame", {
+        Name = "ChangelogScroll", Position = UDim2.fromOffset(10, 55),
+        Size = UDim2.new(1, -20, 1, -65),
+        BackgroundColor3 = Color3.fromRGB(17, 23, 34),
+        BackgroundTransparency = 0.12, BorderSizePixel = 0,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = Color3.fromRGB(100, 190, 215),
+        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Active = true, ScrollingEnabled = true, ZIndex = 302
+    }, panel)
+    corner(scroll, 7)
+    make("UIPadding", {
+        PaddingTop = UDim.new(0, 9), PaddingBottom = UDim.new(0, 9),
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)
+    }, scroll)
+    make("UIListLayout", {
+        Name = "VersionCardsLayout", Padding = UDim.new(0, 9),
+        SortOrder = Enum.SortOrder.LayoutOrder
+    }, scroll)
+
+    local function addText(parent, name, text, height, size, color, font)
+        local item = make("TextLabel", {
+            Name = name, BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, height or 0),
+            AutomaticSize = height and Enum.AutomaticSize.None or Enum.AutomaticSize.Y,
+            Text = tostring(text or ""), TextColor3 = color or COLORS.Text,
+            Font = font or Enum.Font.Gotham, TextSize = size or 10,
+            TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            Active = false, ZIndex = 304
+        }, parent)
+        return item
+    end
+
+    for index, version in ipairs(releases or {}) do
+        local card = make("Frame", {
+            Name = "VersionCard_" .. tostring(version.Version or index),
+            Size = UDim2.new(1, -2, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = Color3.fromRGB(29, 38, 54),
+            BorderSizePixel = 0, LayoutOrder = index, ZIndex = 303
+        }, scroll)
+        corner(card, 8)
+        stroke(card, Color3.fromRGB(82, 105, 139), 0.38)
+        make("UIPadding", {
+            PaddingTop = UDim.new(0, 9), PaddingBottom = UDim.new(0, 9),
+            PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)
+        }, card)
+        make("UIListLayout", {
+            Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder
+        }, card)
+
+        addText(card, "VersionHeading",
+            "V" .. tostring(version.Version or "?") .. "  •  " ..
+            tostring(version.Date or "") .. "  •  " .. tostring(version.Title or "Update"),
+            18, 11, Color3.fromRGB(110, 220, 240), Enum.Font.GothamBold)
+        addText(card, "VersionSummary", version.Summary or "", nil, 10, COLORS.Text, Enum.Font.Gotham)
+
+        for changeIndex, change in ipairs(version.Changes or {}) do
+            local changeCard = make("Frame", {
+                Name = "Change_" .. tostring(changeIndex),
+                Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundColor3 = Color3.fromRGB(20, 27, 40),
+                BorderSizePixel = 0, LayoutOrder = changeIndex, ZIndex = 304
+            }, card)
+            corner(changeCard, 5)
+            make("UIPadding", {
+                PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6),
+                PaddingLeft = UDim.new(0, 7), PaddingRight = UDim.new(0, 7)
+            }, changeCard)
+            make("UIListLayout", {
+                Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder
+            }, changeCard)
+            local changeType = tostring(change.Type or "UPDATE"):upper()
+            local typeColor = changeType == "NEW" and Color3.fromRGB(100, 225, 165)
+                or Color3.fromRGB(245, 190, 95)
+            addText(changeCard, "ChangeHeading", changeType .. "  •  " .. tostring(change.Feature or change.Id or "Feature"),
+                15, 9, typeColor, Enum.Font.GothamBold)
+            addText(changeCard, "ChangeDetails", change.Details or "", nil, 9, Color3.fromRGB(210, 218, 232), Enum.Font.Gotham)
+        end
+    end
+
+    close.MouseButton1Click:Connect(function()
+        if overlay and overlay.Parent then overlay:Destroy() end
+    end)
+end
+
 function TryoUI:ShowReleaseDetails(titleText, bodyText)
     if not self.Window or not self.Window.Parent then return end
     local old = self.Window:FindFirstChild("ReleaseDetailsOverlay")
