@@ -134,22 +134,20 @@ Features.VisualPostFX=makeVisualFeature(
 local noFallConnection
 Features.NoFallDamage={
     Name="No Fall Damage",
-    Description="Melindungi dari jatuh tinggi tanpa memperlambat lompatan normal; efektivitas bergantung pada sistem damage map.",
+    Description="Melindungi jatuh tinggi berdasarkan jarak turun dari titik puncak, tanpa memperlambat lompatan normal.",
     Start=function()
         if noFallConnection then return true end
         local rayParams=RaycastParams.new()
         rayParams.FilterType=Enum.RaycastFilterType.Exclude
         local trackedCharacter=nil
-        local lastGroundY=nil
-        local fallStartY=nil
+        local peakY=nil
         local highFallActive=false
-        local FALL_DISTANCE_THRESHOLD=12
+        local FALL_DISTANCE_THRESHOLD=8
         noFallConnection=RunService.Heartbeat:Connect(function()
             local character=LocalPlayer.Character
             if not character then
                 trackedCharacter=nil
-                lastGroundY=nil
-                fallStartY=nil
+                peakY=nil
                 highFallActive=false
                 return
             end
@@ -159,29 +157,28 @@ Features.NoFallDamage={
 
             if trackedCharacter~=character then
                 trackedCharacter=character
-                lastGroundY=root.Position.Y
-                fallStartY=nil
+                peakY=root.Position.Y
                 highFallActive=false
             end
 
             local grounded=humanoid.FloorMaterial~=Enum.Material.Air
             if grounded then
-                lastGroundY=root.Position.Y
-                fallStartY=nil
+                peakY=root.Position.Y
                 highFallActive=false
                 return
             end
 
-            if not fallStartY then
-                fallStartY=lastGroundY or root.Position.Y
+            local velocity=root.AssemblyLinearVelocity
+            -- Keep the highest airborne position as the reference point.
+            if not peakY or root.Position.Y>peakY then
+                peakY=root.Position.Y
             end
 
-            local velocity=root.AssemblyLinearVelocity
             if velocity.Y>=-1 then return end
 
-            -- Ignore ordinary jumps: protection starts only after dropping
-            -- farther than the threshold below the last grounded height.
-            if not highFallActive and root.Position.Y<=fallStartY-FALL_DISTANCE_THRESHOLD then
+            -- A standard Roblox jump usually drops less than 8 studs from
+            -- its apex. Higher jumps and ledge falls cross this threshold.
+            if not highFallActive and peakY-root.Position.Y>=FALL_DISTANCE_THRESHOLD then
                 highFallActive=true
             end
             if not highFallActive then return end
