@@ -583,7 +583,7 @@ local ok, result = pcall(function()
     local presetControllers = {}
     local presetStatus = presetsTab:CreateInfo({
         Name = "PresetStatus", Height = 34,
-        Text = "Lima slot tersedia. Simpan konfigurasi fitur dan WalkSpeed ke slot pilihan."
+        Text = "Aktifkan dahulu fitur yang ingin di tambahkan ke preset, lalu masukan nama dan klik SAVE"
     })
     local function setPresetStatus(message, isError)
         presetStatus.Text = tostring(message)
