@@ -331,7 +331,7 @@ function Feature.Stop()
     table.clear(detectionCache)
     scanning = false
     scanQueued = false
-    pcall(function() alertSound:Destroy() end)
+    pcall(function() alertSound:Stop() end)
     notify("Admin Detector", "Pemantauan dinonaktifkan.", 3)
 end
 
