@@ -156,7 +156,7 @@ Features.WalkSpeed = {
             task.wait(0.25)
             applyToCharacter(character)
         end)
-        walkSpeedConnection = RunService.Heartbeat:Connect(function()
+        walkSpeedConnection = RunService.Stepped:Connect(function()
             local character = LocalPlayer.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             if humanoid then
