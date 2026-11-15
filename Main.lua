@@ -797,9 +797,12 @@ local ok, result = pcall(function()
             end)
         end)
         slot.DeleteButton = makeAction("DELETE", 0.79, 0.21, Color3.fromRGB(145, 63, 72), function()
+            local previousEntry = presetStore.Slots[index]
             presetStore.Slots[index] = nil
             local okSave, errSave = savePresetStore()
             if not okSave then
+                presetStore.Slots[index] = previousEntry
+                updateVisual()
                 setPresetStatus("Gagal menghapus preset: " .. tostring(errSave), true)
                 return
             end
@@ -834,6 +837,7 @@ local ok, result = pcall(function()
         Callback = function()
             presetStore.SlotCount = presetStore.SlotCount + 1
             refreshPresetSlots()
+            addPresetSlotButton.LayoutOrder = presetStore.SlotCount + 1
             local okSave, errSave = savePresetStore()
             if not okSave then
                 setPresetStatus("Slot ditambahkan untuk sesi ini, tetapi gagal disimpan: " .. tostring(errSave), true)
@@ -842,6 +846,7 @@ local ok, result = pcall(function()
             end
         end
     })
+    addPresetSlotButton.LayoutOrder = presetStore.SlotCount + 1
     addPresetSlotButton.TextXAlignment = Enum.TextXAlignment.Center
     addPresetSlotButton.TextSize = 20
     addPresetSlotButton.Font = Enum.Font.GothamBold
