@@ -43,22 +43,32 @@ local function normalize(text)
     return text:match("^%s*(.-)%s*$") or ""
 end
 
+local function escapePattern(value)
+    return (tostring(value or ""):gsub("([^%w])", "%%%1"))
+end
+
 local function hasRole(text, player)
     local raw = tostring(text or "")
-    if raw == "" or #raw > 48 then return false end
+    if raw == "" or #raw > 128 then return false end
     local value = normalize(raw)
     if value == "" then return false end
+
+    -- Exclude common non-staff labels before checking role tokens.
     for _, excluded in ipairs(EXCLUDED_TEXT) do
         if string.find(value, excluded, 1, true) then return false end
     end
+
+    -- Remove player names from formatted chat prefixes so a username such as
+    -- "AdminFan" or a display name cannot become an accidental role signal.
     local playerName = normalize(player.Name)
     local displayName = normalize(player.DisplayName)
-    if value == playerName or value == displayName then return false end
+    if playerName ~= "" then value = value:gsub(escapePattern(playerName), " ") end
+    if displayName ~= "" then value = value:gsub(escapePattern(displayName), " ") end
+    value = value:gsub("%s+", " ")
+
     for _, role in ipairs(ROLE_WORDS) do
-        if value == role then return true, raw end
-        if string.match(value, "^" .. role:gsub(" ", "%s+") .. "%s*[:%-]?$") then
-            return true, raw
-        end
+        local pattern = "%f[%a]" .. role:gsub(" ", "%%s+") .. "%f[%A]"
+        if string.find(value, pattern) then return true, raw end
     end
     return false
 end
@@ -147,9 +157,19 @@ local function scan()
     end
 end
 
+local function watchCharacter(player, character)
+    if not character then return end
+    table.insert(connections, character.DescendantAdded:Connect(function(object)
+        if object:IsA("TextLabel") or object:IsA("TextBox") then
+            task.delay(0.25, scan)
+        end
+    end))
+    task.delay(1, scan)
+end
+
 local function connectPlayer(player)
-    table.insert(connections, player.CharacterAdded:Connect(function()
-        task.delay(1, scan)
+    table.insert(connections, player.CharacterAdded:Connect(function(character)
+        watchCharacter(player, character)
     end))
     local backpack = player:FindFirstChildOfClass("Backpack")
     if backpack then
@@ -157,12 +177,28 @@ local function connectPlayer(player)
             task.delay(0.25, scan)
         end))
     end
-    if player.Character then
-        table.insert(connections, player.Character.DescendantAdded:Connect(function(object)
-            if object:IsA("TextLabel") or object:IsA("TextBox") then
+    table.insert(connections, player.ChildAdded:Connect(function(child)
+        if child:IsA("Backpack") then
+            table.insert(connections, child.ChildAdded:Connect(function()
                 task.delay(0.25, scan)
-            end
-        end))
+            end))
+        end
+    end))
+    if player.Character then watchCharacter(player, player.Character) end
+end
+
+local function handleChatRole(player, prefixText, tags)
+    if not running or not player or player == LocalPlayer then return end
+    local valid, role = hasRole(prefixText, player)
+    if not valid and type(tags) == "table" then
+        for _, tag in ipairs(tags) do
+            local tagText = tag.TagText or tag.Text or ""
+            local tagValid, tagRole = hasRole(tagText, player)
+            if tagValid then valid, role = true, "[ " .. tagText .. " ] Chat Tag"; break end
+        end
+    end
+    if valid then
+        task.defer(scan)
     end
 end
 
@@ -171,6 +207,34 @@ function Feature.Start()
     running = true
     table.clear(connections)
     table.clear(known)
+
+    -- Legacy chat pipeline: inspect PrefixText and explicit tag metadata.
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    pcall(function()
+        local legacy = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        local remote = legacy and legacy:FindFirstChild("OnMessageDoneFiltering")
+        if remote and remote:IsA("RemoteEvent") then
+            table.insert(connections, remote.OnClientEvent:Connect(function(messageData)
+                if type(messageData) ~= "table" then return end
+                local speaker = messageData.FromSpeaker
+                local player = type(speaker) == "string" and Players:FindFirstChild(speaker) or nil
+                local extra = messageData.ExtraData or {}
+                handleChatRole(player, extra.PrefixText or "", extra.Tags)
+            end))
+        end
+    end)
+
+    -- Modern TextChatService event (does not replace OnIncomingMessage).
+    pcall(function()
+        local TextChatService = game:GetService("TextChatService")
+        table.insert(connections, TextChatService.MessageReceived:Connect(function(message)
+            local source = message and message.TextSource
+            if not source then return end
+            local player = Players:GetPlayerByUserId(source.UserId)
+            if player then handleChatRole(player, message.PrefixText or "", nil) end
+        end))
+    end)
+
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then connectPlayer(player) end
     end
