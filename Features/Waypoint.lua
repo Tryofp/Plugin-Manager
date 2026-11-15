@@ -452,7 +452,7 @@ local function buildUI()
     if not parent then parent = LocalPlayer:WaitForChild("PlayerGui") end
     gui = make("ScreenGui",{Name="TryoWaypointManager",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},parent)
     panel = make("Frame",{
-        Name="Panel",Size=UDim2.fromOffset(310,285),Position=UDim2.new(0.5,-155,0.35,0),
+        Name="Panel",Size=UDim2.fromOffset(290,265),Position=UDim2.new(0.5,-145,0.35,0),
         BackgroundColor3=Color3.fromRGB(25,32,46),BackgroundTransparency=0.16,BorderSizePixel=0,ClipsDescendants=true
     },gui)
     corner(panel,10)
@@ -521,7 +521,7 @@ local function buildUI()
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
-    reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-134,0,14),function()
+    reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-154,0,14),function()
         if reopenWasDragged then
             reopenWasDragged=false
             return
