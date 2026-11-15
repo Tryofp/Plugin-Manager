@@ -1424,6 +1424,7 @@ function TryoUI:CreateTab(name, icon)
             panel.Visible = expanded
             updateValue()
         end
+        local control
         header.MouseButton1Click:Connect(function()
             if maintenanceLocked then return end
             enabled = not enabled
@@ -1438,7 +1439,7 @@ function TryoUI:CreateTab(name, icon)
         header.MouseEnter:Connect(function() header.BackgroundColor3 = COLORS.SurfaceHover end)
         header.MouseLeave:Connect(function() header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface end)
         refresh()
-        local control = {
+        control = {
             SetBadge = function(kind)
                 if kind == nil then releaseBadge.Visible = false; return end
                 releaseBadge.Text = tostring(kind):upper()
