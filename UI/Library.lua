@@ -74,7 +74,7 @@ function TryoUI.new(config)
     end
     local initialWidth = tonumber(savedSettings and savedSettings.Width) or (config.Size and config.Size.X.Offset) or 590
     local initialHeight = tonumber(savedSettings and savedSettings.Height) or (config.Size and config.Size.Y.Offset) or 370
-    self.Size = UDim2.fromOffset(math.clamp(initialWidth, 480, 820), math.clamp(initialHeight, 300, 600))
+    self.Size = UDim2.fromOffset(math.clamp(initialWidth, 320, 820), math.clamp(initialHeight, 220, 600))
     self.Transparency = math.clamp(tonumber(savedSettings and savedSettings.Transparency) or 0.34, 0.15, 0.60)
     if type(savedSettings) == "table" and type(savedSettings.Accent) == "table" then
         local r = math.clamp(tonumber(savedSettings.Accent.R) or 139, 0, 255)
@@ -113,6 +113,37 @@ function TryoUI.new(config)
         BorderSizePixel = 0,
         ClipsDescendants = true
     }, self.Gui)
+
+    -- Scale the complete window to fit the current device viewport.
+    -- This keeps the layout proportions intact on phones with different
+    -- resolutions, display scaling, and landscape/portrait orientations.
+    self.ResponsiveScale = make("UIScale", {Scale = 1}, self.Window)
+    local function updateResponsiveScale()
+        if self.Destroyed or not self.Window or not self.Window.Parent then return end
+        local camera = workspace.CurrentCamera
+        local viewport = camera and camera.ViewportSize
+        if not viewport or viewport.X <= 0 or viewport.Y <= 0 then return end
+        local width = math.max(1, self.Size.X.Offset)
+        local height = math.max(1, self.Size.Y.Offset)
+        local fitX = math.max(0.4, (viewport.X - 24) / width)
+        local fitY = math.max(0.4, (viewport.Y - 24) / height)
+        self.ResponsiveScale.Scale = math.min(1, fitX, fitY)
+    end
+    local function bindViewportCamera(camera)
+        if self.ViewportChangedConnection then
+            self.ViewportChangedConnection:Disconnect()
+            self.ViewportChangedConnection = nil
+        end
+        if camera then
+            self.ViewportChangedConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)
+        end
+        updateResponsiveScale()
+    end
+    self.CameraChangedConnection = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        bindViewportCamera(workspace.CurrentCamera)
+    end)
+    bindViewportCamera(workspace.CurrentCamera)
+
     corner(self.Window, 11)
     stroke(self.Window, Color3.fromRGB(115, 125, 180), 0.28)
     make("UIGradient", {
@@ -347,7 +378,7 @@ function TryoUI.new(config)
     self.FloatingButton = make("TextButton", {
         Name = "TryoFloatingToggle",
         AnchorPoint = Vector2.new(0, 0),
-        Position = UDim2.new(1, -76, 0, 88),
+        Position = UDim2.new(1, -96, 0, 88),
         Size = UDim2.fromOffset(54, 54),
         BackgroundColor3 = COLORS.Surface,
         BackgroundTransparency = 0.16,
@@ -455,11 +486,22 @@ function TryoUI.new(config)
     end
 
     function self:SetSize(width, height)
-        width = math.clamp(math.floor(tonumber(width) or self.Size.X.Offset), 480, 820)
-        height = math.clamp(math.floor(tonumber(height) or self.Size.Y.Offset), 300, 600)
+        width = math.clamp(math.floor(tonumber(width) or self.Size.X.Offset), 320, 820)
+        height = math.clamp(math.floor(tonumber(height) or self.Size.Y.Offset), 220, 600)
         self.Size = UDim2.fromOffset(width, height)
         self.ExpandedSize = self.Size
-        if self.Window and self.Window.Parent then self.Window.Size = self.Size end
+        if self.Window and self.Window.Parent then
+            self.Window.Size = self.Size
+            if self.ResponsiveScale then
+                local camera = workspace.CurrentCamera
+                local viewport = camera and camera.ViewportSize
+                if viewport and viewport.X > 0 and viewport.Y > 0 then
+                    local fitX = math.max(0.4, (viewport.X - 24) / width)
+                    local fitY = math.max(0.4, (viewport.Y - 24) / height)
+                    self.ResponsiveScale.Scale = math.min(1, fitX, fitY)
+                end
+            end
+        end
         self:SaveSettings()
         return width, height
     end
@@ -1830,6 +1872,8 @@ function TryoUI:Destroy()
     self.Destroyed = true
     if self.DragConnection then self.DragConnection:Disconnect() end
     if self.BubbleDragConnection then self.BubbleDragConnection:Disconnect() end
+    if self.CameraChangedConnection then self.CameraChangedConnection:Disconnect() end
+    if self.ViewportChangedConnection then self.ViewportChangedConnection:Disconnect() end
     ContextActionService:UnbindAction("TryoWindowDrag_" .. tostring(Players.LocalPlayer and Players.LocalPlayer.UserId or 0))
     ContextActionService:UnbindAction("TryoBubbleDrag_" .. tostring(Players.LocalPlayer and Players.LocalPlayer.UserId or 0))
     if self.Gui then self.Gui:Destroy() end
