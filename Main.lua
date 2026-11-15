@@ -115,7 +115,7 @@ local ok, result = pcall(function()
     local function isReleaseSeen(scope, id) return releaseState.Seen[releaseKey(scope, id)] == true end
     local function markReleaseSeen(scope, id) releaseState.Seen[releaseKey(scope, id)] = true; saveReleaseState() end
 
-    local featureControllers
+    local featureControllers, walkSpeedControllers
     local RELEASE_FEATURE_BADGES = {
         WaypointManager = "UPDATE",
         WalkSpeed = "UPDATE",
@@ -137,6 +137,11 @@ local ok, result = pcall(function()
             markReleaseSeen("feature", featureId)
             for _, other in ipairs(featureControllers[featureId] or {}) do
                 if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
+            end
+            if featureId == "WalkSpeed" then
+                for _, other in ipairs(walkSpeedControllers or {}) do
+                    if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
+                end
             end
         end
     end
@@ -365,7 +370,7 @@ local ok, result = pcall(function()
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
     featureControllers = {}
-    local walkSpeedControllers = {}
+    walkSpeedControllers = {}
     local maintenanceEntries = {}
     local maintenanceLocks = {}
 
