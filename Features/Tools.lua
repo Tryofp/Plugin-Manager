@@ -253,64 +253,102 @@ Features.Noclip={
     end
 }
 
-local walkSpeedConnection
 local walkSpeedCharacterConnection
+local walkSpeedPropertyConnection
 local walkSpeedOriginals = {}
 local walkSpeedContext
+local walkSpeedActive = false
+local walkSpeedBindToken = 0
+local walkSpeedHumanoid
+
+local function disconnectWalkSpeedProperty()
+    if walkSpeedPropertyConnection then
+        walkSpeedPropertyConnection:Disconnect()
+        walkSpeedPropertyConnection=nil
+    end
+    walkSpeedHumanoid=nil
+end
+
+local function applyWalkSpeedTarget()
+    local context=walkSpeedContext
+    local humanoid=walkSpeedHumanoid
+    if not walkSpeedActive or not context or not humanoid or not humanoid.Parent then return end
+    local target=math.clamp(tonumber(context.WalkSpeedTarget) or 32,16,100)
+    if humanoid.WalkSpeed~=target then
+        pcall(function() humanoid.WalkSpeed=target end)
+    end
+end
+
+local function bindWalkSpeedCharacter(character, token)
+    task.spawn(function()
+        local humanoid=character and character:WaitForChild("Humanoid",10)
+        if not humanoid or not humanoid:IsA("Humanoid") then return end
+        if not walkSpeedActive or token~=walkSpeedBindToken or LocalPlayer.Character~=character then return end
+
+        disconnectWalkSpeedProperty()
+        if walkSpeedOriginals[humanoid]==nil then
+            walkSpeedOriginals[humanoid]=humanoid.WalkSpeed
+        end
+        walkSpeedHumanoid=humanoid
+        applyWalkSpeedTarget()
+
+        -- Match Infinite Yield loopws: react immediately whenever the game changes WalkSpeed.
+        walkSpeedPropertyConnection=humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if not walkSpeedActive or walkSpeedHumanoid~=humanoid then return end
+            applyWalkSpeedTarget()
+        end)
+    end)
+end
+
 local function restoreWalkSpeeds()
-    if walkSpeedConnection then walkSpeedConnection:Disconnect(); walkSpeedConnection=nil end
-    if walkSpeedCharacterConnection then walkSpeedCharacterConnection:Disconnect(); walkSpeedCharacterConnection=nil end
-    for humanoid, speed in pairs(walkSpeedOriginals) do
+    walkSpeedActive=false
+    walkSpeedBindToken=walkSpeedBindToken+1
+    if walkSpeedCharacterConnection then
+        walkSpeedCharacterConnection:Disconnect()
+        walkSpeedCharacterConnection=nil
+    end
+    disconnectWalkSpeedProperty()
+    for humanoid,speed in pairs(walkSpeedOriginals) do
         if humanoid and humanoid.Parent then
-            pcall(function() humanoid.WalkSpeed = speed end)
+            pcall(function() humanoid.WalkSpeed=speed end)
         end
     end
     table.clear(walkSpeedOriginals)
-    walkSpeedContext = nil
+    if walkSpeedContext then walkSpeedContext.WalkSpeedApply=nil end
+    walkSpeedContext=nil
 end
 
 Features.WalkSpeed = {
     Name = "WalkSpeed",
-    Description = "Atur kecepatan jalan lokal; nilai awal dipulihkan saat dimatikan.",
+    Description = "Mempertahankan kecepatan pilihan saat game mengubah WalkSpeed dan memasangnya kembali setelah respawn.",
     Start = function(context)
-        if walkSpeedConnection then return true end
-        walkSpeedContext = context
-        context.WalkSpeedTarget = math.clamp(tonumber(context.WalkSpeedTarget) or 32, 16, 100)
-
-        local function applyToCharacter(character)
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if not humanoid then return end
-            if walkSpeedOriginals[humanoid] == nil then
-                walkSpeedOriginals[humanoid] = humanoid.WalkSpeed
-            end
-            humanoid.WalkSpeed = context.WalkSpeedTarget
+        if walkSpeedActive then
+            walkSpeedContext=context
+            context.WalkSpeedApply=applyWalkSpeedTarget
+            applyWalkSpeedTarget()
+            return true
         end
+        walkSpeedActive=true
+        walkSpeedContext=context
+        context.WalkSpeedTarget=math.clamp(tonumber(context.WalkSpeedTarget) or 32,16,100)
+        context.WalkSpeedApply=applyWalkSpeedTarget
+        walkSpeedBindToken=walkSpeedBindToken+1
+        local token=walkSpeedBindToken
 
-        applyToCharacter(LocalPlayer.Character)
-        walkSpeedCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
-            task.wait(0.25)
-            applyToCharacter(character)
+        walkSpeedCharacterConnection=LocalPlayer.CharacterAdded:Connect(function(character)
+            bindWalkSpeedCharacter(character,token)
         end)
-        walkSpeedConnection = RunService.Stepped:Connect(function()
-            local character = LocalPlayer.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                if walkSpeedOriginals[humanoid] == nil then
-                    walkSpeedOriginals[humanoid] = humanoid.WalkSpeed
-                end
-                local target = math.clamp(tonumber(context.WalkSpeedTarget) or 32, 16, 100)
-                if humanoid.WalkSpeed ~= target then humanoid.WalkSpeed = target end
-            end
-        end)
-        notify("WalkSpeed", "Aktif: " .. tostring(context.WalkSpeedTarget))
+        if LocalPlayer.Character then
+            bindWalkSpeedCharacter(LocalPlayer.Character,token)
+        end
+        notify("WalkSpeed","Loop WalkSpeed aktif: "..tostring(context.WalkSpeedTarget))
         return true
     end,
     Stop = function()
         restoreWalkSpeeds()
-        notify("WalkSpeed", "Kecepatan karakter dipulihkan.")
+        notify("WalkSpeed","Kecepatan karakter dipulihkan.")
     end
 }
-
 
 local InspectorPlayers = game:GetService("Players")
 local InspectorWorkspace = game:GetService("Workspace")
