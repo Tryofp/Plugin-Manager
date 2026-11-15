@@ -868,8 +868,13 @@ local ok, result = pcall(function()
 
     if window.Gui then
         window.Gui.Destroying:Connect(function()
-            featureManager:Destroy()
-            interactable:Stop()
+            -- Do not synchronously stop every enabled feature inside the GUI
+            -- destruction event; that creates a visible close-button hitch.
+            task.spawn(function()
+                featureManager:DestroyAsync()
+                task.wait()
+                pcall(function() interactable:Stop() end)
+            end)
         end)
     end
 
