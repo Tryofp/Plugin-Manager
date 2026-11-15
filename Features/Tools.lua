@@ -152,7 +152,7 @@ Features.NoFallDamage={
 
             rayParams.FilterDescendantsInstances={character}
             local ground=workspace:Raycast(root.Position,Vector3.new(0,-12,0),rayParams)
-            local maxDownSpeed=ground and 18 or 52
+            local maxDownSpeed=ground and 16 or 35
             if velocity.Y < -maxDownSpeed then
                 root.AssemblyLinearVelocity=Vector3.new(velocity.X,-maxDownSpeed,velocity.Z)
             end
