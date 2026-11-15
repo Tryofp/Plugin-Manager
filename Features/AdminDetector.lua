@@ -176,8 +176,19 @@ local function scan()
         for _, entry in ipairs(added) do
             table.insert(lines, entry.Name .. " (@" .. entry.Username .. ") — " .. entry.Role)
         end
+        playAlertBeep()
         notify("⚠ Admin / Staff terdeteksi", table.concat(lines, "\n"), 8)
     end
+    scanning = false
+end
+
+local function queueScan()
+    if not running or scanQueued then return end
+    scanQueued = true
+    task.delay(0.35, function()
+        scanQueued = false
+        if running then scan() end
+    end)
 end
 
 local function watchCharacter(player, character)
