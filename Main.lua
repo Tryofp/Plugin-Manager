@@ -52,6 +52,18 @@ local ok, result = pcall(function()
     -- Public release manifest: only intentional user-facing changes create badges.
     local RELEASES = {
         {
+            Version = "0.7", Date = "15/11/2026", Title = "Changelog & Tab Organization",
+            Summary = "Penyempurnaan navigasi fitur dan riwayat pembaruan Script Hub.",
+            Changes = {
+                {Id = "ScrollableChangelog", Type = "NEW", Tab = "Main", Feature = "Changelog!",
+                    Details = "Riwayat versi kini dibuka melalui jendela khusus yang dapat di-scroll, dengan kartu terpisah untuk setiap versi dan rincian perubahannya."},
+                {Id = "NoFallDamageTab", FeatureId = "NoFallDamage", Type = "UPDATE", Tab = "Tools", Feature = "No Fall Damage",
+                    Details = "No Fall Damage dipindahkan dari tab Horor ke Tools agar lebih mudah ditemukan."},
+                {Id = "VisualEnvironmentMountain", Type = "UPDATE", Tab = "Gunung", Feature = "Visual Environment",
+                    Details = "Visual Environment kini tersedia di tab Gunung dan tetap tersedia di tab Horor."}
+            }
+        },
+        {
             Version = "0.6", Date = "15/11/2026", Title = "Movement & Visual Update",
             Summary = "Peningkatan sistem WalkSpeed, perlindungan jatuh, dan kontrol lingkungan visual.",
             Changes = {
@@ -117,15 +129,7 @@ local ok, result = pcall(function()
 
     local featureControllers, walkSpeedControllers
     local RELEASE_FEATURE_BADGES = {
-        WaypointManager = "UPDATE",
-        WalkSpeed = "UPDATE",
-        NoFallDamage = "NEW",
-        Fullbright = "UPDATE",
-        VisualFog = "NEW",
-        VisualTime = "NEW",
-        VisualShadows = "NEW",
-        VisualPostFX = "NEW",
-        AdminDetector = "UPDATE"
+        NoFallDamage = "UPDATE"
     }
     local function attachFeatureReleaseBadge(control, featureId)
         local kind = RELEASE_FEATURE_BADGES[featureId]
@@ -491,29 +495,14 @@ local ok, result = pcall(function()
 
     -- Preset Manager is the first standalone navigation tab.
     local presetsTab = window:CreateTab("Presets", "▣")
-    attachTabReleaseBadge(presetsTab, "Presets", "NEW")
 
     local mainTab = window:CreateTab("Main", "⌂")
     attachTabReleaseBadge(mainTab, "Main", "UPDATE")
     mainTab:CreateSection("QUICK ACCESS")
-    mainTab:CreateDropdown({
-        Name = "VERSION HISTORY",
-        Build = function(panel)
-            for _, item in ipairs(RELEASES) do
-                mainTab:CreateButton({
-                    Name = "V" .. item.Version .. "  •  " .. item.Date .. "  •  " .. item.Title,
-                    Parent = panel,
-                    Callback = function()
-                        local details = item.Summary
-                        for _, change in ipairs(item.Changes or {}) do
-                            details = details .. "\n\n" .. change.Type .. " • " .. change.Feature .. "\n" .. change.Details
-                        end
-                        if window and not window.Destroyed then
-                            window:ShowReleaseDetails("LOG VERSION", "V" .. item.Version .. "\n\n" .. details)
-                        end
-                    end
-                })
-            end
+    mainTab:CreateButton({
+        Name = "Changelog!",
+        Callback = function()
+            if window and not window.Destroyed then window:ShowChangelog(RELEASES) end
         end
     })
     addFeatureToggle(mainTab, "WaypointManager", waypoint, "Waypoint")
@@ -580,6 +569,26 @@ local ok, result = pcall(function()
     addFeatureToggle(mountainTab, "InfiniteJump", toolFeatures.InfiniteJump)
     addFeatureToggle(mountainTab, "InstantPrompt", instantPrompt, "Instant Prompt")
     addWalkSpeed(mountainTab)
+    local mountainVisualEnvironmentMenu
+    mountainVisualEnvironmentMenu = mountainTab:CreateDropdown({
+        Name = "Visual Environment",
+        OnExpanded = function(expanded)
+            if expanded and mountainVisualEnvironmentMenu then
+                mountainVisualEnvironmentMenu.SetBadge(nil)
+                markReleaseSeen("menu", "VisualEnvironmentGunung")
+            end
+        end,
+        Build = function(panel)
+            addFeatureToggle(mountainTab, "Fullbright", toolFeatures.Fullbright, "Brightness & Ambient", panel)
+            addFeatureToggle(mountainTab, "VisualFog", toolFeatures.VisualFog, "No Fog", panel)
+            addFeatureToggle(mountainTab, "VisualTime", toolFeatures.VisualTime, "Daylight", panel)
+            addFeatureToggle(mountainTab, "VisualShadows", toolFeatures.VisualShadows, "Disable Shadows", panel)
+            addFeatureToggle(mountainTab, "VisualPostFX", toolFeatures.VisualPostFX, "Disable Post FX", panel)
+        end
+    })
+    if not isReleaseSeen("menu", "VisualEnvironmentGunung") then
+        mountainVisualEnvironmentMenu.SetBadge("UPDATE")
+    end
     addInteractableToggle(mountainTab, "PPESP", "PPESP")
     addFeatureToggle(mountainTab, "Spectate", soundViewFeatures.Spectate, "Spectator")
 
@@ -608,15 +617,8 @@ local ok, result = pcall(function()
             addFeatureToggle(horrorTab, "EnemyESP", espFeatures.EnemyESP, "Enemy ESP", panel)
         end
     })
-    local visualEnvironmentMenu
-    visualEnvironmentMenu = horrorTab:CreateDropdown({
+    horrorTab:CreateDropdown({
         Name = "Visual Environment",
-        OnExpanded = function(expanded)
-            if expanded and visualEnvironmentMenu then
-                visualEnvironmentMenu.SetBadge(nil)
-                markReleaseSeen("menu", "VisualEnvironment")
-            end
-        end,
         Build = function(panel)
             addFeatureToggle(horrorTab, "Fullbright", toolFeatures.Fullbright, "Brightness & Ambient", panel)
             addFeatureToggle(horrorTab, "VisualFog", toolFeatures.VisualFog, "No Fog", panel)
@@ -625,8 +627,6 @@ local ok, result = pcall(function()
             addFeatureToggle(horrorTab, "VisualPostFX", toolFeatures.VisualPostFX, "Disable Post FX", panel)
         end
     })
-    addFeatureToggle(horrorTab, "NoFallDamage", toolFeatures.NoFallDamage, "No Fall Damage")
-    if not isReleaseSeen("menu", "VisualEnvironment") then visualEnvironmentMenu.SetBadge("UPDATE") end
     addFeatureToggle(horrorTab, "InstantPrompt", instantPrompt, "Instant Prompt")
     addFeatureToggle(horrorTab, "InfiniteJump", toolFeatures.InfiniteJump)
     addWalkSpeed(horrorTab)
@@ -638,6 +638,7 @@ local ok, result = pcall(function()
     attachTabReleaseBadge(toolsTab, "Tools", "UPDATE")
     toolsTab:CreateSection("UTILITY")
     addFeatureToggle(toolsTab, "AdminDetector", adminDetector, "Admin Detect")
+    addFeatureToggle(toolsTab, "NoFallDamage", toolFeatures.NoFallDamage, "No Fall Damage")
     addFeatureToggle(toolsTab, "AntiAFK", toolFeatures.AntiAFK)
     addFeatureToggle(toolsTab, "MobileInspector", toolFeatures.MobileInspector, "Inspector")
     toolsTab:CreateDropdown({
