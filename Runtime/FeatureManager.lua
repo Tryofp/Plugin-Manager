@@ -43,11 +43,39 @@ function FeatureManager:IsEnabled(id)
     return self.States[id]==true
 end
 
+-- Shutdown active features gradually so closing the hub does not run every
+-- cleanup routine in the same frame. The UI can disappear immediately while
+-- feature resources are released one feature at a time.
+function FeatureManager:DestroyAsync()
+    if self.Destroyed then return end
+    self.Destroyed = true
+
+    local queue = {}
+    for id, enabled in pairs(self.States) do
+        if enabled then
+            table.insert(queue, {Id = id, Definition = self.Registry[id]})
+            self.States[id] = false
+        end
+    end
+
+    for index, item in ipairs(queue) do
+        local stop = item.Definition and item.Definition.Stop
+        if type(stop) == "function" then
+            local ok, err = pcall(stop, self.Context)
+            if not ok then
+                warn("[Tryo Feature] " .. item.Id .. " shutdown failed: " .. tostring(err))
+            end
+        end
+        -- Yield between feature cleanups to spread their work across frames.
+        if index < #queue then task.wait() end
+    end
+end
+
 function FeatureManager:Destroy()
     if self.Destroyed then return end
-    for id,enabled in pairs(self.States) do
-        if enabled then self:SetEnabled(id,false) end
+    for id, enabled in pairs(self.States) do
+        if enabled then self:SetEnabled(id, false) end
     end
-    self.Destroyed=true
+    self.Destroyed = true
 end
 return FeatureManager
