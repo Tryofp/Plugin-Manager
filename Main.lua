@@ -1,7 +1,7 @@
--- Tryo Plugin Manager - Standalone beta2
+-- Tryo Plugin Manager - Standalone Script Hub
 -- Compact UI bootstrap. Independent from Infinite Yield.
 
-local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta2/"
+local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/"
 local LIBRARY_URL = BASE_URL .. "UI/Library.lua"
 
 local loadedModuleSources = {}
@@ -39,7 +39,7 @@ local ok, result = pcall(function()
                         Type = "PluginRuntimeError",
                         Plugin = "Standalone Script Hub",
                         Command = tostring(command or "Runtime"),
-                        Source = tostring(source or "beta2/Main.lua"),
+                        Source = tostring(source or "main/Main.lua"),
                         Error = tostring(message or "Unknown error"):sub(1, 1500),
                         PlaceId = tostring(game.PlaceId)
                     }),
@@ -238,7 +238,7 @@ local ok, result = pcall(function()
     -- Build the visible shell immediately; metadata loads asynchronously.
     local window = TryoUI.new({
         Title = "PLUGIN MANAGER",
-        Subtitle = "V" .. RELEASES[1].Version .. " • BETA",
+        Subtitle = "V" .. RELEASES[1].Version .. " • STABLE",
         LastUpdate = "Memuat...",
         Size = UDim2.fromOffset(590, 370)
     })
@@ -347,7 +347,7 @@ local ok, result = pcall(function()
                 local success, err = featureManager:SetEnabled(featureId, enabled)
                 if not success then
                     warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
-                    reportRuntimeError(featureId, "beta2/Runtime/FeatureManager.lua", err)
+                    reportRuntimeError(featureId, "main/Runtime/FeatureManager.lua", err)
                 end
                 syncFeature(featureId, featureManager:IsEnabled(featureId))
             end
@@ -379,7 +379,7 @@ local ok, result = pcall(function()
                 local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
                 if not success then
                     warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err))
-                    reportRuntimeError("WalkSpeed", "beta2/Features/Tools.lua", err)
+                    reportRuntimeError("WalkSpeed", "main/Features/Tools.lua", err)
                 end
                 for _, item in ipairs(walkSpeedControllers) do item.Set(featureManager:IsEnabled("WalkSpeed"), true) end
             end
@@ -403,7 +403,7 @@ local ok, result = pcall(function()
                 local success, err = interactable:SetFeatureEnabled(id, enabled)
                 if not success then
                     warn("[Tryo Plugin Manager] " .. id .. ": " .. tostring(err))
-                    reportRuntimeError(id, "beta2/Features/Interactable.lua", err)
+                    reportRuntimeError(id, "main/Features/Interactable.lua", err)
                 end
             end
         })
@@ -890,5 +890,5 @@ local ok, result = pcall(function()
 end)
 
 if not ok then
-    warn("[Tryo Plugin Manager beta2] " .. tostring(result))
+    warn("[Tryo Script Hub] " .. tostring(result))
 end

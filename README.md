@@ -1,54 +1,23 @@
-<h1 align="center">
-	Plugin Manager
-</h1>
+# Tryo Script Hub
 
-<p align="center">
-<em></em> Hanya seorang yang membuat Plugin untuk Infinite Yield!
-</p>
+Standalone Roblox Script Hub — tidak membutuhkan Infinite Yield.
 
-<p align="center">
-	<a href="https://discord.com/users/Tryofp">
-		<img alt="Discord" src="https://img.shields.io/badge/chat-Tryofp-%235865F2?style=flat-square&logo=discord&logoColor=%23DCDDDE">
-	</a>
-	<a href="https://github.com/Senpai723/Plugin-Manager/issues">
-		<img alt="Issues" src="https://img.shields.io/github/issues/Senpai723/Plugin-Manager?color=0088ff&style=flat-square"/>
-	</a>
-	<a href="https://github.com/Senpai723/Plugin-Manager/pulls">
-		<img alt="Pulls" src="https://img.shields.io/github/issues-pr/Senpai723/Plugin-Manager?color=0088ff&style=flat-square"/>
-	</a>
-	<a href="https://github.com/Senpai723/Plugin-Manager/blob/main/LICENSE">
-		<img alt="License" src="https://img.shields.io/badge/license-MIT-red?style=flat-square"/>
-	</a>
-</p>
+## Loader (Stable)
 
-(Hati hati terhadap penipuan akun discord, akun asli saya hanya ada di README))
-
-## Usage
-
-Skrip Plugin di sini selalu Up to date tanpa perlu mendownload ulang!
+Jalankan script berikut melalui executor Roblox yang mendukung `game:HttpGet` dan `loadstring`:
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Main.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/Main.lua"))()
 ```
 
-## Infinite Yield Plugin
-
-Untuk memasang Plugin Manager sebagai plugin Infinite Yield:
-
-```text
-;addplugin https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta/Pluginmaster.iy
-```
-
-Setelah plugin berhasil dimuat, jalankan:
-
-```text
-;hub
-```
-
-Alias: `;masterhub`.
+Script Hub memuat UI, Runtime, dan seluruh fitur langsung dari branch `main`, sehingga pembaruan tidak memerlukan penggantian loader.
 
 ## Branch
 
-- `main` — versi publik/stable.
-- `beta` — branch eksperimen dan pengujian sebelum perubahan dirilis ke `main`.
-- `stable` — alamat kompatibilitas lama untuk pluginmaster yang sudah terpasang sebelumnya; bootstrap-nya meneruskan pemuatan ke `main`.
+- `main` — rilis stable Tryo Script Hub (standalone).
+- `beta2` — staging/pengembangan Script Hub; perubahan diuji di sini sebelum dipromosikan.
+- `beta` — jalur legacy Plugin Manager untuk Infinite Yield.
+
+## Catatan kompatibilitas
+
+Aset Plugin Manager lama masih dipertahankan di repository untuk kompatibilitas dan referensi. Loader stable di atas menggunakan `Main.lua`, `UI/Library.lua`, `Runtime/FeatureManager.lua`, dan modul di `Features/`; tidak bergantung pada Infinite Yield.
