@@ -352,7 +352,7 @@ function TryoUI.new(config)
         BackgroundColor3 = COLORS.Surface,
         BackgroundTransparency = 0.16,
         BorderSizePixel = 0,
-        Text = "T",
+        Text = "",
         TextColor3 = COLORS.Text,
         TextSize = 25,
         Font = Enum.Font.GothamBlack,
@@ -370,6 +370,74 @@ function TryoUI.new(config)
         }),
         Rotation = 35
     }, self.FloatingButton)
+
+    -- Compact TPM Neon Core mark, built natively so it renders without an uploaded asset ID.
+    local bubbleRing = make("Frame", {
+        Name = "TPMNeonRing",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.48),
+        Size = UDim2.fromOffset(43, 43),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 21
+    }, self.FloatingButton)
+    corner(bubbleRing, 24)
+    stroke(bubbleRing, Color3.fromRGB(65, 220, 255), 0.08)
+    make("Frame", {
+        Name = "TPMOrbit",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.49),
+        Size = UDim2.fromOffset(48, 5),
+        Rotation = -34,
+        BackgroundColor3 = Color3.fromRGB(35, 190, 255),
+        BorderSizePixel = 0,
+        ZIndex = 22
+    }, self.FloatingButton)
+    local bubbleT = make("TextLabel", {
+        Name = "TPMMark",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.43),
+        Size = UDim2.fromOffset(34, 30),
+        BackgroundTransparency = 1,
+        Text = "T",
+        TextColor3 = Color3.fromRGB(240, 250, 255),
+        TextSize = 29,
+        Font = Enum.Font.GothamBlack,
+        TextStrokeColor3 = Color3.fromRGB(0, 145, 220),
+        TextStrokeTransparency = 0.35,
+        ZIndex = 23
+    }, self.FloatingButton)
+    make("TextLabel", {
+        Name = "TPMSubMark",
+        AnchorPoint = Vector2.new(0.5, 1),
+        Position = UDim2.new(0.5, 0, 1, -5),
+        Size = UDim2.fromOffset(38, 12),
+        BackgroundTransparency = 1,
+        Text = "TPM",
+        TextColor3 = Color3.fromRGB(110, 225, 255),
+        TextSize = 9,
+        Font = Enum.Font.GothamBlack,
+        ZIndex = 24
+    }, self.FloatingButton)
+    local pluginSquares = make("Frame", {
+        Name = "PluginGlyph",
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -8, 0, 8),
+        Size = UDim2.fromOffset(9, 9),
+        BackgroundTransparency = 1,
+        ZIndex = 24
+    }, self.FloatingButton)
+    for index = 0, 3 do
+        local square = make("Frame", {
+            Name = "PluginNode" .. tostring(index + 1),
+            Position = UDim2.fromOffset((index % 2) * 5, math.floor(index / 2) * 5),
+            Size = UDim2.fromOffset(4, 4),
+            BackgroundColor3 = Color3.fromRGB(75, 230, 255),
+            BorderSizePixel = 0,
+            ZIndex = 24
+        }, pluginSquares)
+        corner(square, 1)
+    end
 
     self.ExpandedSize = self.Size
     self.Minimized = false
