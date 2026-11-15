@@ -59,8 +59,7 @@ local function makeVisual(model,tag,color,label,depthMode)
         text.Parent=billboard
     end
 
-    -- Match legacy ColorESP: explicitly anchor the name to the moving character
-    -- and remove BillboardGui's distance cutoff.
+    -- Rebind on every pass: character parts can stream in or be replaced.
     billboard.Adornee=adornee
     billboard.MaxDistance=math.huge
     billboard.AlwaysOnTop=true
@@ -107,16 +106,36 @@ end
 local playerRunning=false
 local playerConnections={}
 local playerCharacterConnections={}
+local PLAYER_COLOR=Color3.fromRGB(35,235,125)
+
+local function applyPlayerVisual(player)
+    if not playerRunning or player==LocalPlayer then return end
+    local character=player.Character
+    if not character or not character.Parent then return end
+    -- This is intentionally safe to call repeatedly. If Head/root has not
+    -- replicated yet, the next reconciliation pass will attach the ESP.
+    makeVisual(character,PLAYER_TAG,PLAYER_COLOR,player.DisplayName)
+end
+
 local function addPlayer(player)
     if player==LocalPlayer or playerCharacterConnections[player] then return end
     playerCharacterConnections[player]=player.CharacterAdded:Connect(function(character)
-        task.wait(0.2)
-        if playerRunning and character and character.Parent then
-            makeVisual(character,PLAYER_TAG,Color3.fromRGB(35,235,125),player.DisplayName)
-        end
+        -- Remove stale visuals from the previous character, then retry after
+        -- Roblox has had time to replicate the new character's body parts.
+        task.defer(function()
+            if playerRunning and character then
+                applyPlayerVisual(player)
+            end
+        end)
+        task.delay(0.35,function()
+            if playerRunning and player.Character==character and character.Parent then
+                applyPlayerVisual(player)
+            end
+        end)
     end)
-    if player.Character then makeVisual(player.Character,PLAYER_TAG,Color3.fromRGB(35,235,125),player.DisplayName) end
+    applyPlayerVisual(player)
 end
+
 local function clearPlayers()
     for _,player in ipairs(Players:GetPlayers()) do
         if player.Character then removeVisual(player.Character,PLAYER_TAG) end
@@ -137,13 +156,26 @@ Features.PlayerESP={
                 if player.Character then removeVisual(player.Character,PLAYER_TAG) end
                 local connection=playerCharacterConnections[player]
                 if connection then connection:Disconnect(); playerCharacterConnections[player]=nil end
+            end),
+            -- Reconcile periodically so late/streamed body parts, replaced
+            -- heads, and transient character replication cannot leave gaps.
+            RunService.Heartbeat:Connect(function(dt)
+                playerConnections._elapsed=(playerConnections._elapsed or 0)+dt
+                if playerConnections._elapsed>=0.75 then
+                    playerConnections._elapsed=0
+                    for _,player in ipairs(Players:GetPlayers()) do
+                        if player~=LocalPlayer then applyPlayerVisual(player) end
+                    end
+                end
             end)
         }
         return true
     end,
     Stop=function()
         playerRunning=false
-        for _,connection in ipairs(playerConnections) do connection:Disconnect() end
+        for _,connection in pairs(playerConnections) do
+            if typeof(connection)=="RBXScriptConnection" then connection:Disconnect() end
+        end
         table.clear(playerConnections)
         clearPlayers()
     end
