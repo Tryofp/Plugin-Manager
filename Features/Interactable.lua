@@ -3138,7 +3138,14 @@ end
 
 function Feature:Start() return self:OpenMenu() end
 function Feature:Stop()
-    for _,info in ipairs(ORDER) do stopFeature(info.id) end
+    -- Only stop interactable commands that are actually running.
+    -- Calling every stop routine unconditionally performs several full-game
+    -- GetDescendants scans even when all interactable toggles are already OFF.
+    for _,info in ipairs(ORDER) do
+        if isRunning(info.id) then
+            stopFeature(info.id)
+        end
+    end
     if menuGui then menuGui:Destroy(); menuGui=nil end
     table.clear(menuButtons)
     return true
