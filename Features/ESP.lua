@@ -155,11 +155,25 @@ local function addPlayer(player)
 end
 
 local function clearPlayers()
-    for _,player in ipairs(Players:GetPlayers()) do
-        if player.Character then removeVisual(player.Character,PLAYER_TAG) end
+    -- Disconnect watchers immediately; destroy visuals in small batches so
+    -- closing the hub does not delete every player's ESP instance in one frame.
+    for _,connection in pairs(playerCharacterConnections) do
+        pcall(function() connection:Disconnect() end)
     end
-    for _,connection in pairs(playerCharacterConnections) do connection:Disconnect() end
     table.clear(playerCharacterConnections)
+
+    local characters = {}
+    for _,player in ipairs(Players:GetPlayers()) do
+        if player.Character then table.insert(characters, player.Character) end
+    end
+    task.spawn(function()
+        for index, character in ipairs(characters) do
+            if character and character.Parent then
+                pcall(removeVisual, character, PLAYER_TAG)
+            end
+            if index < #characters then task.wait(0.04) end
+        end
+    end)
 end
 
 Features.PlayerESP={
@@ -516,9 +530,21 @@ Features.EnemyESP={
         table.clear(enemyExtraConnections)
         watchedCamera=nil
         table.clear(effectSnapshot)
-        for model in pairs(enemyModels) do removeVisual(model,ENEMY_TAG) end
+
+        -- Snapshot tracked NPCs, then remove their ESP in paced batches.
+        -- This keeps the Stop callback short even in maps with many NPCs.
+        local models = {}
+        for model in pairs(enemyModels) do table.insert(models, model) end
         table.clear(enemyModels)
         table.clear(confirmedEnemies)
+        task.spawn(function()
+            for index, model in ipairs(models) do
+                if model and model.Parent then
+                    pcall(removeVisual, model, ENEMY_TAG)
+                end
+                if index < #models then task.wait(0.04) end
+            end
+        end)
     end
 }
 return Features
