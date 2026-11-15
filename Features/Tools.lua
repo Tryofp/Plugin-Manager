@@ -134,21 +134,57 @@ Features.VisualPostFX=makeVisualFeature(
 local noFallConnection
 Features.NoFallDamage={
     Name="No Fall Damage",
-    Description="Fall Guard + Landing Protection lokal; efektivitas bergantung pada sistem damage map.",
+    Description="Melindungi dari jatuh tinggi tanpa memperlambat lompatan normal; efektivitas bergantung pada sistem damage map.",
     Start=function()
         if noFallConnection then return true end
         local rayParams=RaycastParams.new()
         rayParams.FilterType=Enum.RaycastFilterType.Exclude
+        local trackedCharacter=nil
+        local lastGroundY=nil
+        local fallStartY=nil
+        local highFallActive=false
+        local FALL_DISTANCE_THRESHOLD=12
         noFallConnection=RunService.Heartbeat:Connect(function()
             local character=LocalPlayer.Character
-            if not character then return end
+            if not character then
+                trackedCharacter=nil
+                lastGroundY=nil
+                fallStartY=nil
+                highFallActive=false
+                return
+            end
             local humanoid=character:FindFirstChildOfClass("Humanoid")
             local root=character:FindFirstChild("HumanoidRootPart")
             if not humanoid or humanoid.Health<=0 or not root or not root:IsA("BasePart") then return end
+
+            if trackedCharacter~=character then
+                trackedCharacter=character
+                lastGroundY=root.Position.Y
+                fallStartY=nil
+                highFallActive=false
+            end
+
+            local grounded=humanoid.FloorMaterial~=Enum.Material.Air
+            if grounded then
+                lastGroundY=root.Position.Y
+                fallStartY=nil
+                highFallActive=false
+                return
+            end
+
+            if not fallStartY then
+                fallStartY=lastGroundY or root.Position.Y
+            end
+
             local velocity=root.AssemblyLinearVelocity
-            if velocity.Y>=-12 then return end
-            local state=humanoid:GetState()
-            if state~=Enum.HumanoidStateType.Freefall and state~=Enum.HumanoidStateType.Jumping then return end
+            if velocity.Y>=-1 then return end
+
+            -- Ignore ordinary jumps: protection starts only after dropping
+            -- farther than the threshold below the last grounded height.
+            if not highFallActive and root.Position.Y<=fallStartY-FALL_DISTANCE_THRESHOLD then
+                highFallActive=true
+            end
+            if not highFallActive then return end
 
             rayParams.FilterDescendantsInstances={character}
             local ground=workspace:Raycast(root.Position,Vector3.new(0,-12,0),rayParams)
@@ -157,7 +193,7 @@ Features.NoFallDamage={
                 root.AssemblyLinearVelocity=Vector3.new(velocity.X,-maxDownSpeed,velocity.Z)
             end
         end)
-        notify("No Fall Damage","Fall Guard + Landing Protection aktif (lokal).")
+        notify("No Fall Damage","High Fall Protection aktif. Lompatan normal tetap normal.")
         return true
     end,
     Stop=function()
