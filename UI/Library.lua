@@ -74,7 +74,7 @@ function TryoUI.new(config)
     end
     local initialWidth = tonumber(savedSettings and savedSettings.Width) or (config.Size and config.Size.X.Offset) or 590
     local initialHeight = tonumber(savedSettings and savedSettings.Height) or (config.Size and config.Size.Y.Offset) or 370
-    self.Size = UDim2.fromOffset(math.clamp(initialWidth, 480, 820), math.clamp(initialHeight, 300, 600))
+    self.Size = UDim2.fromOffset(math.clamp(initialWidth, 320, 820), math.clamp(initialHeight, 220, 600))
     self.Transparency = math.clamp(tonumber(savedSettings and savedSettings.Transparency) or 0.34, 0.15, 0.60)
     if type(savedSettings) == "table" and type(savedSettings.Accent) == "table" then
         local r = math.clamp(tonumber(savedSettings.Accent.R) or 139, 0, 255)
@@ -487,8 +487,8 @@ function TryoUI.new(config)
     end
 
     function self:SetSize(width, height)
-        width = math.clamp(math.floor(tonumber(width) or self.Size.X.Offset), 480, 820)
-        height = math.clamp(math.floor(tonumber(height) or self.Size.Y.Offset), 300, 600)
+        width = math.clamp(math.floor(tonumber(width) or self.Size.X.Offset), 320, 820)
+        height = math.clamp(math.floor(tonumber(height) or self.Size.Y.Offset), 220, 600)
         self.Size = UDim2.fromOffset(width, height)
         self.ExpandedSize = self.Size
         if self.Window and self.Window.Parent then
