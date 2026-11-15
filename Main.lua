@@ -411,6 +411,9 @@ local ok, result = pcall(function()
         return control
     end
 
+    -- Preset Manager is the first standalone navigation tab.
+    local presetsTab = window:CreateTab("Presets", "▣")
+
     local mainTab = window:CreateTab("Main", "⌂")
     local release = RELEASES[1]
     local cameraChange = release.Changes[1]
@@ -572,6 +575,202 @@ local ok, result = pcall(function()
     settingsTab:CreateSizeControl({ Name = "Customize window size" })
     settingsTab:CreateGlassControl({ Name = "Glass transparency" })
     settingsTab:CreateColorWheel({ Name = "Custom theme color • Color wheel" })
+
+    -- Preset Manager stores only registered FeatureManager toggles and WalkSpeed.
+    -- Interactable sub-features and temporary UI state are intentionally excluded.
+    local PRESET_FILE = "TryoScriptHub_Presets.json"
+    local presetStore = { Version = 1, Presets = {} }
+    local selectedPresetName = nil
+    local presetRows = {}
+    local function loadPresetStore()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then
+            return false, "Executor tidak menyediakan readfile/isfile."
+        end
+        if not isfile(PRESET_FILE) then return true end
+        local okRead, decoded = pcall(function() return HttpService:JSONDecode(readfile(PRESET_FILE)) end)
+        if not okRead or type(decoded) ~= "table" or type(decoded.Presets) ~= "table" then
+            return false, "File preset tidak valid atau rusak."
+        end
+        presetStore = { Version = 1, Presets = decoded.Presets }
+        return true
+    end
+    local function savePresetStore()
+        if type(writefile) ~= "function" then return false, "Executor tidak menyediakan writefile." end
+        local okWrite, errWrite = pcall(function()
+            writefile(PRESET_FILE, HttpService:JSONEncode(presetStore))
+        end)
+        return okWrite, okWrite and nil or tostring(errWrite)
+    end
+    local function cleanPresetName(value)
+        local name = tostring(value or ""):gsub("[%c]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if #name > 32 then name = name:sub(1, 32) end
+        return name
+    end
+    local presetStatus = presetsTab:CreateInfo({
+        Name = "PresetStatus", Height = 42,
+        Text = "Simpan kombinasi toggle fitur dan nilai WalkSpeed. Data tersimpan lokal di executor."
+    })
+    local presetNameInput = presetsTab:CreateTextInput({
+        Name = "PRESET NAME",
+        Placeholder = "Nama preset (maks. 32 karakter)"
+    })
+    local selectedPresetInfo = presetsTab:CreateInfo({
+        Name = "SelectedPreset", Height = 32,
+        Text = "Belum ada preset dipilih."
+    })
+    local presetListSection = presetsTab:CreateSection("SAVED PRESETS")
+    local function setPresetStatus(message, isError)
+        presetStatus.Text = tostring(message)
+        presetStatus.TextColor3 = isError and Color3.fromRGB(255, 145, 145) or Color3.fromRGB(125, 225, 185)
+    end
+    local function refreshPresetList()
+        for _, row in ipairs(presetRows) do
+            if row and row.Parent then row:Destroy() end
+        end
+        table.clear(presetRows)
+        local names = {}
+        for name, data in pairs(presetStore.Presets) do
+            if type(name) == "string" and type(data) == "table" then table.insert(names, name) end
+        end
+        table.sort(names, function(a, b) return string.lower(a) < string.lower(b) end)
+        if #names == 0 then
+            presetsTab:CreateInfo({ Height = 38, Text = "Belum ada preset. Simpan konfigurasi pertama lu di bawah." })
+            return
+        end
+        for _, name in ipairs(names) do
+            local data = presetStore.Presets[name]
+            local count = 0
+            for _ in pairs(type(data.Features) == "table" and data.Features or {}) do count = count + 1 end
+            local row = presetsTab:CreateButton({
+                Name = (selectedPresetName == name and "✓  " or "◇  ") .. name .. "  •  " .. tostring(count) .. " fitur",
+                Callback = function()
+                    selectedPresetName = name
+                    presetNameInput.Text = name
+                    selectedPresetInfo.Text = "Dipilih: " .. name .. " • " .. tostring(count) .. " fitur"
+                    refreshPresetList()
+                end
+            })
+            table.insert(presetRows, row)
+        end
+    end
+    local function snapshotPreset()
+        local features = {}
+        for id in pairs(featureManager.Registry) do
+            features[id] = featureManager:IsEnabled(id)
+        end
+        return {
+            Features = features,
+            WalkSpeedTarget = math.clamp(tonumber(featureManager.Context.WalkSpeedTarget) or 16, 16, 100),
+            SavedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            PlaceId = tostring(game.PlaceId)
+        }
+    end
+    presetsTab:CreateButton({
+        Name = "SAVE CURRENT CONFIGURATION",
+        Callback = function()
+            local name = cleanPresetName(presetNameInput.Text)
+            if name == "" then setPresetStatus("Masukkan nama preset terlebih dahulu.", true); return end
+            presetStore.Presets[name] = snapshotPreset()
+            local okSave, errSave = savePresetStore()
+            if not okSave then
+                setPresetStatus("Gagal menyimpan: " .. tostring(errSave), true)
+                return
+            end
+            selectedPresetName = name
+            selectedPresetInfo.Text = "Dipilih: " .. name
+            refreshPresetList()
+            setPresetStatus("Preset '" .. name .. "' berhasil disimpan.")
+        end
+    })
+    presetsTab:CreateButton({
+        Name = "LOAD SELECTED PRESET",
+        Callback = function()
+            local name = selectedPresetName
+            local data = name and presetStore.Presets[name]
+            if type(data) ~= "table" or type(data.Features) ~= "table" then
+                setPresetStatus("Pilih preset yang valid terlebih dahulu.", true)
+                return
+            end
+            task.spawn(function()
+                local applied, skipped = 0, 0
+                for id, definition in pairs(featureManager.Registry) do
+                    local target = data.Features[id]
+                    if type(target) == "boolean" then
+                        if target and maintenanceLocks[id] then
+                            skipped = skipped + 1
+                        else
+                            local okSet, errSet = featureManager:SetEnabled(id, target)
+                            if okSet then
+                                syncFeature(id, featureManager:IsEnabled(id))
+                                applied = applied + 1
+                            else
+                                skipped = skipped + 1
+                                warn("[Tryo Plugin Manager] Preset load " .. tostring(id) .. ": " .. tostring(errSet))
+                            end
+                        end
+                        task.wait(0.035)
+                    end
+                end
+                if data.WalkSpeedTarget ~= nil then
+                    local targetSpeed = tonumber(data.WalkSpeedTarget)
+                    if targetSpeed then
+                        featureManager.Context.WalkSpeedTarget = math.clamp(targetSpeed, 16, 100)
+                        for _, item in ipairs(walkSpeedControllers) do item.Refresh() end
+                    end
+                end
+                setPresetStatus("Preset '" .. name .. "' dimuat • " .. tostring(applied) .. " pengaturan diterapkan" ..
+                    (skipped > 0 and (" • " .. tostring(skipped) .. " dilewati") or "") .. ".")
+            end)
+        end
+    })
+    presetsTab:CreateButton({
+        Name = "RENAME SELECTED PRESET",
+        Callback = function()
+            local oldName = selectedPresetName
+            local newName = cleanPresetName(presetNameInput.Text)
+            if not oldName or type(presetStore.Presets[oldName]) ~= "table" then
+                setPresetStatus("Pilih preset yang ingin diganti namanya.", true)
+                return
+            end
+            if newName == "" then setPresetStatus("Nama baru tidak boleh kosong.", true); return end
+            if newName ~= oldName and presetStore.Presets[newName] then
+                setPresetStatus("Nama preset tersebut sudah digunakan.", true)
+                return
+            end
+            presetStore.Presets[newName] = presetStore.Presets[oldName]
+            if newName ~= oldName then presetStore.Presets[oldName] = nil end
+            local okSave, errSave = savePresetStore()
+            if not okSave then setPresetStatus("Gagal menyimpan perubahan: " .. tostring(errSave), true); return end
+            selectedPresetName = newName
+            selectedPresetInfo.Text = "Dipilih: " .. newName
+            refreshPresetList()
+            setPresetStatus("Nama preset berhasil diperbarui.")
+        end
+    })
+    presetsTab:CreateButton({
+        Name = "DELETE SELECTED PRESET",
+        Callback = function()
+            local name = selectedPresetName
+            if not name or not presetStore.Presets[name] then
+                setPresetStatus("Pilih preset yang ingin dihapus.", true)
+                return
+            end
+            presetStore.Presets[name] = nil
+            local okSave, errSave = savePresetStore()
+            if not okSave then setPresetStatus("Gagal menyimpan perubahan: " .. tostring(errSave), true); return end
+            selectedPresetName = nil
+            presetNameInput.Text = ""
+            selectedPresetInfo.Text = "Belum ada preset dipilih."
+            refreshPresetList()
+            setPresetStatus("Preset '" .. name .. "' berhasil dihapus.")
+        end
+    })
+    local presetLoadOk, presetLoadError = loadPresetStore()
+    if presetLoadOk then
+        refreshPresetList()
+    else
+        setPresetStatus("Penyimpanan preset tidak tersedia: " .. tostring(presetLoadError), true)
+    end
 
     local function applyMaintenanceSnapshot(metadata)
         for id, entry in pairs(maintenanceEntries) do
