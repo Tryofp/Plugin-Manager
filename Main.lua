@@ -837,7 +837,8 @@ local ok, result = pcall(function()
         Callback = function()
             presetStore.SlotCount = presetStore.SlotCount + 1
             refreshPresetSlots()
-            addPresetSlotButton.LayoutOrder = presetStore.SlotCount + 1
+            -- Keep the add control after every slot, including newly-created rows.
+            addPresetSlotButton.LayoutOrder = 100000
             local okSave, errSave = savePresetStore()
             if not okSave then
                 setPresetStatus("Slot ditambahkan untuk sesi ini, tetapi gagal disimpan: " .. tostring(errSave), true)
@@ -846,7 +847,8 @@ local ok, result = pcall(function()
             end
         end
     })
-    addPresetSlotButton.LayoutOrder = presetStore.SlotCount + 1
+    -- A high order value prevents the + control from being trapped above future slots.
+    addPresetSlotButton.LayoutOrder = 100000
     addPresetSlotButton.TextXAlignment = Enum.TextXAlignment.Center
     addPresetSlotButton.TextSize = 20
     addPresetSlotButton.Font = Enum.Font.GothamBold
