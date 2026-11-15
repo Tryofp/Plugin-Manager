@@ -593,7 +593,7 @@ local ok, result = pcall(function()
     addFeatureToggle(mountainTab, "Spectate", soundViewFeatures.Spectate, "Spectator")
 
     local horrorTab = window:CreateTab("Horor", "◈")
-    attachTabReleaseBadge(horrorTab, "Horor", "NEW")
+    attachTabReleaseBadge(horrorTab, "Horor", "UPDATE")
     horrorTab:CreateSection("HORROR QUICK ACCESS")
     horrorTab:CreateDropdown({
         Name = "Interactable",
