@@ -496,10 +496,25 @@ local function buildUI()
         if savedTab then savedTab.BackgroundColor3 = page == "SAVED" and activeColor or inactiveColor end
         Feature.RefreshUI()
     end
-    radarTab = button(panel,"RADAR",UDim2.fromOffset(62,25),UDim2.fromOffset(8,42),function() selectPage("RADAR") end,page=="RADAR")
-    savedTab = button(panel,"SAVED",UDim2.fromOffset(62,25),UDim2.fromOffset(74,42),function() selectPage("SAVED") end,page=="SAVED")
-    button(panel,"REFRESH",UDim2.fromOffset(68,25),UDim2.fromOffset(140,42),function() Feature.Scan(); Feature.RefreshUI() end,false)
-    button(panel,"SAVE HERE",UDim2.fromOffset(86,25),UDim2.new(1,-94,0,42),showNamePrompt,true)
+    local tabBar = make("Frame",{
+        Name="TabBar",Position=UDim2.fromOffset(8,42),Size=UDim2.new(1,-16,0,25),
+        BackgroundTransparency=1,BorderSizePixel=0
+    },panel)
+    local tabLayout = make("UIListLayout",{
+        FillDirection=Enum.FillDirection.Horizontal,HorizontalAlignment=Enum.HorizontalAlignment.Left,
+        VerticalAlignment=Enum.VerticalAlignment.Center,Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder
+    },tabBar)
+    radarTab = button(tabBar,"RADAR",UDim2.new(0.20,0,1,0),UDim2.new(),function() selectPage("RADAR") end,page=="RADAR")
+    radarTab.LayoutOrder=1
+    radarTab.TextSize=10
+    savedTab = button(tabBar,"SAVED",UDim2.new(0.20,0,1,0),UDim2.new(),function() selectPage("SAVED") end,page=="SAVED")
+    savedTab.LayoutOrder=2
+    local refreshTab = button(tabBar,"REFRESH",UDim2.new(0.25,0,1,0),UDim2.new(),function() Feature.Scan(); Feature.RefreshUI() end,false)
+    refreshTab.LayoutOrder=3
+    refreshTab.TextSize=9
+    local saveHereTab = button(tabBar,"SAVE HERE",UDim2.new(0.31,0,1,0),UDim2.new(),showNamePrompt,true)
+    saveHereTab.LayoutOrder=4
+    saveHereTab.TextSize=9
 
     list=make("ScrollingFrame",{
         Name="WaypointList",Position=UDim2.fromOffset(8,75),Size=UDim2.new(1,-16,1,-83),
