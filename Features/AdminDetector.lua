@@ -16,8 +16,8 @@ local scanQueued = false
 
 local alertSound = Instance.new("Sound")
 alertSound.Name = "TryoAdminDetectedBeep"
-alertSound.SoundId = "rbxassetid://9118823101"
-alertSound.Volume = 0.65
+alertSound.SoundId = "rbxassetid://4590657391"
+alertSound.Volume = 3
 alertSound.Parent = SoundService
 
 local function playAlertBeep()
