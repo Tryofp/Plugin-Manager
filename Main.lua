@@ -49,16 +49,51 @@ local ok, result = pcall(function()
         end)
     end
 
-    -- Public release manifest: only intentional user-facing changes create badges.
-    local RELEASES = {{
-        Version = "0.2", Date = "14/11/2026", Title = "Camera Tools Update",
-        Summary = "Peningkatan Force Unlock Camera dan sistem navigasi rilis publik.",
-        Changes = {{
-            Id = "ForceUnlockCamera", Type = "UPDATE", Tab = "Main", Menu = "F1Lock",
-            Feature = "Lock Kamera",
-            Details = "Force Unlock Camera kini menangani pergantian CurrentCamera dan memulihkan tipe kamera asal saat fitur dimatikan."
-        }}
-    }}
+    -- Public changelog manifest: keep this history current before every stable release.
+    local RELEASES = {
+        {
+            Version = "0.6", Date = "15/11/2026", Title = "Movement & Visual Update",
+            Summary = "Pembaruan sistem gerakan, perlindungan jatuh, dan pengaturan visual lingkungan.",
+            Changes = {
+                {Id="WalkSpeed", Type="UPDATE", Feature="WalkSpeed", Details="WalkSpeed menggunakan pemantauan GetPropertyChangedSignal seperti loopws dan otomatis dipasang kembali setelah respawn."},
+                {Id="NoFallDamage", Type="NEW", Feature="No Fall Damage", Details="Perlindungan jatuh tinggi berdasarkan jarak turun dari titik puncak, tanpa memperlambat lompatan normal."},
+                {Id="Fullbright", Type="UPDATE", Feature="Brightness & Ambient", Details="Pengaturan brightness dan ambient lokal digabung dalam satu kontrol."},
+                {Id="VisualFog", Type="NEW", Feature="No Fog", Details="Mengurangi fog dan efek Atmosphere yang sudah ada secara lokal."},
+                {Id="VisualTime", Type="NEW", Feature="Daylight", Details="Mengatur waktu lingkungan ke siang hari secara lokal."},
+                {Id="VisualShadows", Type="NEW", Feature="Disable Shadows", Details="Menonaktifkan GlobalShadows secara lokal."},
+                {Id="VisualPostFX", Type="NEW", Feature="Disable Post FX", Details="Menonaktifkan efek Bloom, Blur, Color Correction, Depth of Field, dan Sun Rays yang sudah ada."}
+            }
+        },
+        {
+            Version = "0.5", Date = "15/11/2026", Title = "Admin Detector Status Update",
+            Summary = "Peningkatan kejelasan hasil pemeriksaan awal Admin Detector.",
+            Changes = {
+                {Id="AdminDetector", Type="UPDATE", Feature="Admin Detector", Details="Setelah pemindaian awal selesai tanpa menemukan admin atau staff, hub menampilkan notifikasi status aman."}
+            }
+        },
+        {
+            Version = "0.4", Date = "15/11/2026", Title = "Preset Manager",
+            Summary = "Sistem preset berbasis slot untuk menyimpan dan memulihkan konfigurasi fitur.",
+            Changes = {
+                {Id="Presets", Type="NEW", Feature="Preset Manager", Details="Mendukung penyimpanan, pemuatan, pengeditan nama, dan penghapusan preset. Lima slot tersedia di awal dan slot tambahan dapat dibuat tanpa batas."}
+            }
+        },
+        {
+            Version = "0.3", Date = "15/11/2026", Title = "UI & Waypoint Improvements",
+            Summary = "Penyempurnaan tampilan agar lebih nyaman digunakan di perangkat mobile.",
+            Changes = {
+                {Id="ResponsiveUI", Type="UPDATE", Feature="Responsive UI", Details="Skala dan tata letak window menyesuaikan ukuran viewport perangkat."},
+                {Id="WaypointManager", Type="UPDATE", Feature="Waypoint", Details="Tampilan waypoint dibuat lebih ringkas dan responsif, termasuk penyesuaian bubble dan penomoran checkpoint biasa."}
+            }
+        },
+        {
+            Version = "0.2", Date = "14/11/2026", Title = "Camera Tools Update",
+            Summary = "Peningkatan Force Unlock Camera dan sistem navigasi rilis publik.",
+            Changes = {
+                {Id="ForceUnlockCamera", Type="UPDATE", Feature="Lock Kamera", Details="Force Unlock Camera menangani pergantian CurrentCamera dan memulihkan tipe kamera asal saat fitur dimatikan."}
+            }
+        }
+    }
     local RELEASE_STATE_FILE = "TryoPluginManager_Releases.json"
     local releaseState = {Seen = {}}
     if type(readfile) == "function" and type(isfile) == "function" then
@@ -417,31 +452,24 @@ local ok, result = pcall(function()
 
     local mainTab = window:CreateTab("Main", "⌂")
     local release = RELEASES[1]
-    local cameraChange = release.Changes[1]
+    local cameraChange
+    for _, version in ipairs(RELEASES) do
+        for _, change in ipairs(version.Changes or {}) do
+            if change.Id == "ForceUnlockCamera" then cameraChange = change; break end
+        end
+        if cameraChange then break end
+    end
+    cameraChange = cameraChange or {Type = "UPDATE"}
     if not isReleaseSeen("tab", "Main") then mainTab:SetBadge(cameraChange.Type) end
     mainTab.OnActivated = function()
         mainTab:SetBadge(nil)
         markReleaseSeen("tab", "Main")
     end
     mainTab:CreateSection("QUICK ACCESS")
-    mainTab:CreateDropdown({
-        Name = "VERSION HISTORY",
-        Build = function(panel)
-            for _, item in ipairs(RELEASES) do
-                mainTab:CreateButton({
-                    Name = "V" .. item.Version .. "  •  " .. item.Date .. "  •  " .. item.Title,
-                    Parent = panel,
-                    Callback = function()
-                        local details = item.Summary
-                        for _, change in ipairs(item.Changes or {}) do
-                            details = details .. "\n\n" .. change.Type .. " • " .. change.Feature .. "\n" .. change.Details
-                        end
-                        if window and not window.Destroyed then
-                            window:ShowReleaseDetails("LOG VERSION", "V" .. item.Version .. "\n\n" .. details)
-                        end
-                    end
-                })
-            end
+    mainTab:CreateButton({
+        Name = "Changelog!",
+        Callback = function()
+            if window and not window.Destroyed then window:ShowChangelog(RELEASES) end
         end
     })
     addFeatureToggle(mainTab, "WaypointManager", waypoint, "Waypoint")
@@ -522,6 +550,16 @@ local ok, result = pcall(function()
     addFeatureToggle(mountainTab, "InfiniteJump", toolFeatures.InfiniteJump)
     addFeatureToggle(mountainTab, "InstantPrompt", instantPrompt, "Instant Prompt")
     addWalkSpeed(mountainTab)
+    mountainTab:CreateDropdown({
+        Name = "Visual Environment",
+        Build = function(panel)
+            addFeatureToggle(mountainTab, "Fullbright", toolFeatures.Fullbright, "Brightness & Ambient", panel)
+            addFeatureToggle(mountainTab, "VisualFog", toolFeatures.VisualFog, "No Fog", panel)
+            addFeatureToggle(mountainTab, "VisualTime", toolFeatures.VisualTime, "Daylight", panel)
+            addFeatureToggle(mountainTab, "VisualShadows", toolFeatures.VisualShadows, "Disable Shadows", panel)
+            addFeatureToggle(mountainTab, "VisualPostFX", toolFeatures.VisualPostFX, "Disable Post FX", panel)
+        end
+    })
     addInteractableToggle(mountainTab, "PPESP", "PPESP")
     addFeatureToggle(mountainTab, "Spectate", soundViewFeatures.Spectate, "Spectator")
 
@@ -559,7 +597,6 @@ local ok, result = pcall(function()
             addFeatureToggle(horrorTab, "VisualPostFX", toolFeatures.VisualPostFX, "Disable Post FX", panel)
         end
     })
-    addFeatureToggle(horrorTab, "NoFallDamage", toolFeatures.NoFallDamage, "No Fall Damage")
     addFeatureToggle(horrorTab, "InstantPrompt", instantPrompt, "Instant Prompt")
     addFeatureToggle(horrorTab, "InfiniteJump", toolFeatures.InfiniteJump)
     addWalkSpeed(horrorTab)
@@ -570,6 +607,7 @@ local ok, result = pcall(function()
     local toolsTab = window:CreateTab("Tools", "⚒")
     toolsTab:CreateSection("UTILITY")
     addFeatureToggle(toolsTab, "AdminDetector", adminDetector, "Admin Detect")
+    addFeatureToggle(toolsTab, "NoFallDamage", toolFeatures.NoFallDamage, "No Fall Damage")
     addFeatureToggle(toolsTab, "AntiAFK", toolFeatures.AntiAFK)
     addFeatureToggle(toolsTab, "MobileInspector", toolFeatures.MobileInspector, "Inspector")
     toolsTab:CreateDropdown({
