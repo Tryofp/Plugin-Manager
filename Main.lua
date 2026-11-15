@@ -548,7 +548,17 @@ local ok, result = pcall(function()
             addFeatureToggle(horrorTab, "EnemyESP", espFeatures.EnemyESP, "Enemy ESP", panel)
         end
     })
-    addFeatureToggle(horrorTab, "Fullbright", toolFeatures.Fullbright, "Full Bright")
+    horrorTab:CreateDropdown({
+        Name = "Visual Environment",
+        Build = function(panel)
+            addFeatureToggle(horrorTab, "Fullbright", toolFeatures.Fullbright, "Brightness & Ambient", panel)
+            addFeatureToggle(horrorTab, "VisualFog", toolFeatures.VisualFog, "No Fog", panel)
+            addFeatureToggle(horrorTab, "VisualTime", toolFeatures.VisualTime, "Daylight", panel)
+            addFeatureToggle(horrorTab, "VisualShadows", toolFeatures.VisualShadows, "Disable Shadows", panel)
+            addFeatureToggle(horrorTab, "VisualPostFX", toolFeatures.VisualPostFX, "Disable Post FX", panel)
+        end
+    })
+    addFeatureToggle(horrorTab, "NoFallDamage", toolFeatures.NoFallDamage, "No Fall Damage")
     addFeatureToggle(horrorTab, "InstantPrompt", instantPrompt, "Instant Prompt")
     addFeatureToggle(horrorTab, "InfiniteJump", toolFeatures.InfiniteJump)
     addWalkSpeed(horrorTab)
