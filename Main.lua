@@ -576,24 +576,23 @@ local ok, result = pcall(function()
     settingsTab:CreateGlassControl({ Name = "Glass transparency" })
     settingsTab:CreateColorWheel({ Name = "Custom theme color • Color wheel" })
 
-    -- Preset Manager stores only registered FeatureManager toggles and WalkSpeed.
-    -- Interactable sub-features and temporary UI state are intentionally excluded.
+    -- Slot-based Preset Manager. Five slots are shown initially; users can add more.
     local PRESET_FILE = "TryoScriptHub_Presets.json"
-    local presetStore = { Version = 1, Presets = {} }
-    local selectedPresetName = nil
+    local presetStore = { Version = 2, SlotCount = 5, Slots = {} }
     local presetRows = {}
-    local presetEmptyInfo = nil
-    local function loadPresetStore()
-        if type(readfile) ~= "function" or type(isfile) ~= "function" then
-            return false, "Executor tidak menyediakan readfile/isfile."
-        end
-        if not isfile(PRESET_FILE) then return true end
-        local okRead, decoded = pcall(function() return HttpService:JSONDecode(readfile(PRESET_FILE)) end)
-        if not okRead or type(decoded) ~= "table" or type(decoded.Presets) ~= "table" then
-            return false, "File preset tidak valid atau rusak."
-        end
-        presetStore = { Version = 1, Presets = decoded.Presets }
-        return true
+    local presetControllers = {}
+    local presetStatus = presetsTab:CreateInfo({
+        Name = "PresetStatus", Height = 34,
+        Text = "Lima slot tersedia. Simpan konfigurasi fitur dan WalkSpeed ke slot pilihan."
+    })
+    local function setPresetStatus(message, isError)
+        presetStatus.Text = tostring(message)
+        presetStatus.TextColor3 = isError and Color3.fromRGB(255, 145, 145) or Color3.fromRGB(125, 225, 185)
+    end
+    local function cleanPresetName(value)
+        local name = tostring(value or ""):gsub("[%c]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if #name > 32 then name = name:sub(1, 32) end
+        return name
     end
     local function savePresetStore()
         if type(writefile) ~= "function" then return false, "Executor tidak menyediakan writefile." end
@@ -601,63 +600,6 @@ local ok, result = pcall(function()
             writefile(PRESET_FILE, HttpService:JSONEncode(presetStore))
         end)
         return okWrite, okWrite and nil or tostring(errWrite)
-    end
-    local function cleanPresetName(value)
-        local name = tostring(value or ""):gsub("[%c]", ""):gsub("^%s+", ""):gsub("%s+$", "")
-        if #name > 32 then name = name:sub(1, 32) end
-        return name
-    end
-    local presetStatus = presetsTab:CreateInfo({
-        Name = "PresetStatus", Height = 42,
-        Text = "Simpan kombinasi toggle fitur dan nilai WalkSpeed. Data tersimpan lokal di executor."
-    })
-    local presetNameInput = presetsTab:CreateTextInput({
-        Name = "PRESET NAME",
-        Placeholder = "Nama preset (maks. 32 karakter)"
-    })
-    local selectedPresetInfo = presetsTab:CreateInfo({
-        Name = "SelectedPreset", Height = 32,
-        Text = "Belum ada preset dipilih."
-    })
-    local presetListSection = presetsTab:CreateSection("SAVED PRESETS")
-    local function setPresetStatus(message, isError)
-        presetStatus.Text = tostring(message)
-        presetStatus.TextColor3 = isError and Color3.fromRGB(255, 145, 145) or Color3.fromRGB(125, 225, 185)
-    end
-    local function refreshPresetList()
-        for _, row in ipairs(presetRows) do
-            if row and row.Parent then row:Destroy() end
-        end
-        table.clear(presetRows)
-        if presetEmptyInfo and presetEmptyInfo.Parent then presetEmptyInfo:Destroy() end
-        presetEmptyInfo = nil
-        local names = {}
-        for name, data in pairs(presetStore.Presets) do
-            if type(name) == "string" and type(data) == "table" then table.insert(names, name) end
-        end
-        table.sort(names, function(a, b) return string.lower(a) < string.lower(b) end)
-        if #names == 0 then
-            presetEmptyInfo = presetsTab:CreateInfo({
-                Height = 38,
-                Text = "Belum ada preset. Simpan konfigurasi pertama lu di bawah."
-            })
-            return
-        end
-        for _, name in ipairs(names) do
-            local data = presetStore.Presets[name]
-            local count = 0
-            for _ in pairs(type(data.Features) == "table" and data.Features or {}) do count = count + 1 end
-            local row = presetsTab:CreateButton({
-                Name = (selectedPresetName == name and "✓  " or "◇  ") .. name .. "  •  " .. tostring(count) .. " fitur",
-                Callback = function()
-                    selectedPresetName = name
-                    presetNameInput.Text = name
-                    selectedPresetInfo.Text = "Dipilih: " .. name .. " • " .. tostring(count) .. " fitur"
-                    refreshPresetList()
-                end
-            })
-            table.insert(presetRows, row)
-        end
     end
     local function snapshotPreset()
         local features = {}
@@ -671,35 +613,163 @@ local ok, result = pcall(function()
             PlaceId = tostring(game.PlaceId)
         }
     end
-    presetsTab:CreateButton({
-        Name = "SAVE CURRENT CONFIGURATION",
-        Callback = function()
-            local name = cleanPresetName(presetNameInput.Text)
-            if name == "" then setPresetStatus("Masukkan nama preset terlebih dahulu.", true); return end
-            presetStore.Presets[name] = snapshotPreset()
+    local function loadPresetStore()
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then
+            return false, "Executor tidak menyediakan readfile/isfile."
+        end
+        if not isfile(PRESET_FILE) then return true end
+        local okRead, decoded = pcall(function() return HttpService:JSONDecode(readfile(PRESET_FILE)) end)
+        if not okRead or type(decoded) ~= "table" then
+            return false, "File preset tidak valid atau rusak."
+        end
+        if type(decoded.Slots) == "table" then
+            presetStore = {
+                Version = 2,
+                SlotCount = math.max(5, math.floor(tonumber(decoded.SlotCount) or #decoded.Slots)),
+                Slots = decoded.Slots
+            }
+        elseif type(decoded.Presets) == "table" then
+            -- Migrate the earlier named-preset format into numbered slots.
+            local names = {}
+            for name, data in pairs(decoded.Presets) do
+                if type(name) == "string" and type(data) == "table" then table.insert(names, name) end
+            end
+            table.sort(names, function(a, b) return string.lower(a) < string.lower(b) end)
+            presetStore.SlotCount = math.max(5, #names)
+            for index, name in ipairs(names) do
+                presetStore.Slots[index] = { Name = name, Data = decoded.Presets[name] }
+            end
+        end
+        return true
+    end
+
+    local function createPresetRow(index)
+        local row = Instance.new("Frame")
+        row.Name = "PresetSlot_" .. tostring(index)
+        row.Size = UDim2.new(1, -4, 0, 39)
+        row.BackgroundColor3 = Color3.fromRGB(35, 42, 57)
+        row.BorderSizePixel = 0
+        row.LayoutOrder = index
+        row.Parent = presetsTab.Page
+        local rowCorner = Instance.new("UICorner")
+        rowCorner.CornerRadius = UDim.new(0, 7)
+        rowCorner.Parent = row
+
+        local function makeText(className, properties)
+            local object = Instance.new(className)
+            for property, value in pairs(properties) do object[property] = value end
+            object.Parent = row
+            return object
+        end
+        local function makeAction(text, xScale, widthScale, color, callback)
+            local button = makeText("TextButton", {
+                Text = text, Position = UDim2.new(xScale, 0, 0, 5),
+                Size = UDim2.new(widthScale, -4, 0, 29),
+                BackgroundColor3 = color, BorderSizePixel = 0,
+                TextColor3 = Color3.fromRGB(245, 248, 255),
+                Font = Enum.Font.GothamBold, TextSize = 10,
+                AutoButtonColor = true
+            })
+            local cr = Instance.new("UICorner")
+            cr.CornerRadius = UDim.new(0, 5)
+            cr.Parent = button
+            button.MouseButton1Click:Connect(callback)
+            return button
+        end
+        local nameLabel = makeText("TextLabel", {
+            Name = "PresetName", BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(10, 0), Size = UDim2.new(0.43, -10, 1, 0),
+            Text = "Slot " .. tostring(index), TextColor3 = Color3.fromRGB(225, 232, 244),
+            Font = Enum.Font.GothamSemibold, TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd
+        })
+        local nameInput = makeText("TextBox", {
+            Name = "PresetNameInput", Visible = false,
+            Position = UDim2.fromOffset(8, 5), Size = UDim2.new(0.43, -8, 0, 29),
+            BackgroundColor3 = Color3.fromRGB(20, 26, 37), BorderSizePixel = 0,
+            Text = "", PlaceholderText = "Nama preset", ClearTextOnFocus = false,
+            TextColor3 = Color3.fromRGB(245, 248, 255),
+            PlaceholderColor3 = Color3.fromRGB(135, 147, 168),
+            Font = Enum.Font.Gotham, TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left
+        })
+        local inputCorner = Instance.new("UICorner")
+        inputCorner.CornerRadius = UDim.new(0, 5)
+        inputCorner.Parent = nameInput
+        local inputPadding = Instance.new("UIPadding")
+        inputPadding.PaddingLeft = UDim.new(0, 7)
+        inputPadding.Parent = nameInput
+
+        local slot = { Index = index, Frame = row }
+        local editing = false
+        local function updateVisual()
+            local entry = presetStore.Slots[index]
+            local saved = type(entry) == "table" and type(entry.Data) == "table"
+            nameLabel.Visible = saved and not editing
+            nameInput.Visible = (not saved) or editing
+            if saved and not editing then
+                nameLabel.Text = tostring(entry.Name or ("Slot " .. index))
+                nameInput.Text = tostring(entry.Name or "")
+            elseif not saved then
+                nameInput.Text = ""
+                nameInput.PlaceholderText = "Nama preset..."
+            end
+            if saved then
+                slot.EditButton.Visible = true
+                slot.LoadButton.Visible = true
+                slot.DeleteButton.Visible = true
+                slot.SaveButton.Visible = false
+                slot.EditButton.Text = editing and "✓" or "✏"
+            else
+                slot.EditButton.Visible = false
+                slot.LoadButton.Visible = false
+                slot.DeleteButton.Visible = false
+                slot.SaveButton.Visible = true
+            end
+        end
+        slot.SaveButton = makeAction("SAVE", 0.76, 0.24, Color3.fromRGB(30, 130, 105), function()
+            local name = cleanPresetName(nameInput.Text)
+            if name == "" then setPresetStatus("Isi nama preset pada slot " .. index .. " terlebih dahulu.", true); return end
+            presetStore.Slots[index] = { Name = name, Data = snapshotPreset() }
             local okSave, errSave = savePresetStore()
             if not okSave then
+                presetStore.Slots[index] = nil
+                updateVisual()
                 setPresetStatus("Gagal menyimpan: " .. tostring(errSave), true)
                 return
             end
-            selectedPresetName = name
-            selectedPresetInfo.Text = "Dipilih: " .. name
-            refreshPresetList()
-            setPresetStatus("Preset '" .. name .. "' berhasil disimpan.")
-        end
-    })
-    presetsTab:CreateButton({
-        Name = "LOAD SELECTED PRESET",
-        Callback = function()
-            local name = selectedPresetName
-            local data = name and presetStore.Presets[name]
-            if type(data) ~= "table" or type(data.Features) ~= "table" then
-                setPresetStatus("Pilih preset yang valid terlebih dahulu.", true)
-                return
+            editing = false
+            updateVisual()
+            setPresetStatus("Preset '" .. name .. "' berhasil disimpan di slot " .. index .. ".")
+        end)
+        slot.EditButton = makeAction("✏", 0.44, 0.14, Color3.fromRGB(83, 91, 119), function()
+            local entry = presetStore.Slots[index]
+            if not entry then return end
+            if editing then
+                local newName = cleanPresetName(nameInput.Text)
+                if newName == "" then setPresetStatus("Nama preset tidak boleh kosong.", true); return end
+                local oldName = entry.Name
+                entry.Name = newName
+                local okSave, errSave = savePresetStore()
+                if not okSave then entry.Name = oldName; setPresetStatus("Gagal mengganti nama: " .. tostring(errSave), true); return end
+                editing = false
+                updateVisual()
+                setPresetStatus("Nama preset berhasil diperbarui.")
+            else
+                editing = true
+                nameInput.Text = tostring(entry.Name or "")
+                updateVisual()
+                nameInput:CaptureFocus()
             end
+        end)
+        slot.LoadButton = makeAction("LOAD", 0.59, 0.19, Color3.fromRGB(35, 105, 155), function()
+            local entry = presetStore.Slots[index]
+            local data = entry and entry.Data
+            if type(data) ~= "table" or type(data.Features) ~= "table" then return end
             task.spawn(function()
                 local applied, skipped = 0, 0
-                for id, definition in pairs(featureManager.Registry) do
+                for id in pairs(featureManager.Registry) do
                     local target = data.Features[id]
                     if type(target) == "boolean" then
                         if target and maintenanceLocks[id] then
@@ -717,66 +787,65 @@ local ok, result = pcall(function()
                         task.wait(0.035)
                     end
                 end
-                if data.WalkSpeedTarget ~= nil then
-                    local targetSpeed = tonumber(data.WalkSpeedTarget)
-                    if targetSpeed then
-                        featureManager.Context.WalkSpeedTarget = math.clamp(targetSpeed, 16, 100)
-                        for _, item in ipairs(walkSpeedControllers) do item.Refresh() end
-                    end
+                local speed = tonumber(data.WalkSpeedTarget)
+                if speed then
+                    featureManager.Context.WalkSpeedTarget = math.clamp(speed, 16, 100)
+                    for _, item in ipairs(walkSpeedControllers) do item.Refresh() end
                 end
-                setPresetStatus("Preset '" .. name .. "' dimuat • " .. tostring(applied) .. " pengaturan diterapkan" ..
-                    (skipped > 0 and (" • " .. tostring(skipped) .. " dilewati") or "") .. ".")
+                setPresetStatus("Preset '" .. tostring(entry.Name) .. "' dimuat • " .. applied .. " diterapkan" ..
+                    (skipped > 0 and (" • " .. skipped .. " dilewati") or "") .. ".")
             end)
-        end
-    })
-    presetsTab:CreateButton({
-        Name = "RENAME SELECTED PRESET",
-        Callback = function()
-            local oldName = selectedPresetName
-            local newName = cleanPresetName(presetNameInput.Text)
-            if not oldName or type(presetStore.Presets[oldName]) ~= "table" then
-                setPresetStatus("Pilih preset yang ingin diganti namanya.", true)
-                return
-            end
-            if newName == "" then setPresetStatus("Nama baru tidak boleh kosong.", true); return end
-            if newName ~= oldName and presetStore.Presets[newName] then
-                setPresetStatus("Nama preset tersebut sudah digunakan.", true)
-                return
-            end
-            presetStore.Presets[newName] = presetStore.Presets[oldName]
-            if newName ~= oldName then presetStore.Presets[oldName] = nil end
+        end)
+        slot.DeleteButton = makeAction("DELETE", 0.79, 0.21, Color3.fromRGB(145, 63, 72), function()
+            presetStore.Slots[index] = nil
             local okSave, errSave = savePresetStore()
-            if not okSave then setPresetStatus("Gagal menyimpan perubahan: " .. tostring(errSave), true); return end
-            selectedPresetName = newName
-            selectedPresetInfo.Text = "Dipilih: " .. newName
-            refreshPresetList()
-            setPresetStatus("Nama preset berhasil diperbarui.")
-        end
-    })
-    presetsTab:CreateButton({
-        Name = "DELETE SELECTED PRESET",
-        Callback = function()
-            local name = selectedPresetName
-            if not name or not presetStore.Presets[name] then
-                setPresetStatus("Pilih preset yang ingin dihapus.", true)
+            if not okSave then
+                setPresetStatus("Gagal menghapus preset: " .. tostring(errSave), true)
                 return
             end
-            presetStore.Presets[name] = nil
-            local okSave, errSave = savePresetStore()
-            if not okSave then setPresetStatus("Gagal menyimpan perubahan: " .. tostring(errSave), true); return end
-            selectedPresetName = nil
-            presetNameInput.Text = ""
-            selectedPresetInfo.Text = "Belum ada preset dipilih."
-            refreshPresetList()
-            setPresetStatus("Preset '" .. name .. "' berhasil dihapus.")
-        end
-    })
+            editing = false
+            updateVisual()
+            setPresetStatus("Slot " .. index .. " berhasil dikosongkan.")
+        end)
+        slot.SaveButton.Position = UDim2.new(0.76, 0, 0, 5)
+        slot.EditButton.Position = UDim2.new(0.44, 0, 0, 5)
+        slot.LoadButton.Position = UDim2.new(0.59, 0, 0, 5)
+        slot.DeleteButton.Position = UDim2.new(0.79, 0, 0, 5)
+        presetControllers[index] = slot
+        updateVisual()
+        return slot
+    end
+
     local presetLoadOk, presetLoadError = loadPresetStore()
-    if presetLoadOk then
-        refreshPresetList()
-    else
+    if not presetLoadOk then
         setPresetStatus("Penyimpanan preset tidak tersedia: " .. tostring(presetLoadError), true)
     end
+    presetStore.SlotCount = math.max(5, math.floor(tonumber(presetStore.SlotCount) or 5))
+    local function refreshPresetSlots()
+        for index = 1, presetStore.SlotCount do
+            if not presetControllers[index] or not presetControllers[index].Frame.Parent then
+                createPresetRow(index)
+            end
+        end
+    end
+    refreshPresetSlots()
+    local addPresetSlotButton = presetsTab:CreateButton({
+        Name = "+",
+        Callback = function()
+            presetStore.SlotCount = presetStore.SlotCount + 1
+            refreshPresetSlots()
+            local okSave, errSave = savePresetStore()
+            if not okSave then
+                setPresetStatus("Slot ditambahkan untuk sesi ini, tetapi gagal disimpan: " .. tostring(errSave), true)
+            else
+                setPresetStatus("Slot " .. presetStore.SlotCount .. " berhasil ditambahkan.")
+            end
+        end
+    })
+    addPresetSlotButton.TextXAlignment = Enum.TextXAlignment.Center
+    addPresetSlotButton.TextSize = 20
+    addPresetSlotButton.Font = Enum.Font.GothamBold
+    addPresetSlotButton.BackgroundColor3 = Color3.fromRGB(42, 55, 76)
 
     local function applyMaintenanceSnapshot(metadata)
         for id, entry in pairs(maintenanceEntries) do
