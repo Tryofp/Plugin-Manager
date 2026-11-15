@@ -299,6 +299,7 @@ local function watchLocalCharacter(character)
     end)
 end
 local enemyDescendantConnection
+local enemyRemovingConnection
 
 local function registerEnemyModel(model)
     if not enemyRunning or not model or not model:IsA("Model") then return end
@@ -430,14 +431,21 @@ local function scanEnemies()
                 local offset=root.Position-localRoot.Position
                 local distanceSquared=offset:Dot(offset)
                 if distanceSquared<=180*180 then
-                    table.insert(candidates,{model=model,distanceSquared=distanceSquared})
+                    table.insert(candidates,{
+                        model=model,
+                        distanceSquared=distanceSquared,
+                        confirmed=confirmedEnemies[model]==true
+                    })
                 end
             end
         else
             enemyModels[model]=nil
         end
     end
-    table.sort(candidates,function(a,b) return a.distanceSquared<b.distanceSquared end)
+    table.sort(candidates,function(a,b)
+        if a.confirmed~=b.confirmed then return a.confirmed end
+        return a.distanceSquared<b.distanceSquared
+    end)
     local active={}
     for i=1,math.min(#candidates,12) do
         local model=candidates[i].model
@@ -479,6 +487,13 @@ Features.EnemyESP={
                 if model then registerEnemyModel(model) end
             end
         end)
+        enemyRemovingConnection=Workspace.DescendantRemoving:Connect(function(object)
+            if object:IsA("Model") then
+                enemyModels[object]=nil
+                confirmedEnemies[object]=nil
+                removeVisual(object,ENEMY_TAG)
+            end
+        end)
         local elapsed=0
         enemyConnection=RunService.Heartbeat:Connect(function(dt)
             elapsed=elapsed+dt
@@ -493,6 +508,7 @@ Features.EnemyESP={
         if characterConnection then characterConnection:Disconnect(); characterConnection=nil end
         if enemyConnection then enemyConnection:Disconnect(); enemyConnection=nil end
         if enemyDescendantConnection then enemyDescendantConnection:Disconnect(); enemyDescendantConnection=nil end
+        if enemyRemovingConnection then enemyRemovingConnection:Disconnect(); enemyRemovingConnection=nil end
         if cameraChildConnection then cameraChildConnection:Disconnect(); cameraChildConnection=nil end
         for _,connection in ipairs(enemyExtraConnections) do
             if typeof(connection)=="RBXScriptConnection" then connection:Disconnect() end
