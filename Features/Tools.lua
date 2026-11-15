@@ -29,38 +29,140 @@ Features.AntiAFK={
     end
 }
 
-local originalLighting,removedAtmospheres,fullbrightConnection
-removedAtmospheres={}
-Features.Fullbright={
-    Name="Full Bright", Description="Menerangkan map dan mengurangi kabut secara lokal.",
-    Start=function()
-        if fullbrightConnection then return true end
-        originalLighting={Brightness=Lighting.Brightness,ClockTime=Lighting.ClockTime,FogEnd=Lighting.FogEnd,
-            GlobalShadows=Lighting.GlobalShadows,Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient}
-        table.clear(removedAtmospheres)
-        for _,child in ipairs(Lighting:GetChildren()) do
-            if child:IsA("Atmosphere") then table.insert(removedAtmospheres,child); child.Parent=nil end
-        end
-        fullbrightConnection=RunService.RenderStepped:Connect(function()
-            Lighting.Brightness=2; Lighting.ClockTime=14; Lighting.FogEnd=100000
-            Lighting.GlobalShadows=false
-            Lighting.Ambient=Color3.fromRGB(200,200,200)
-            Lighting.OutdoorAmbient=Color3.fromRGB(200,200,200)
+-- Visual Environment uses one-shot local overrides and restores only values it still owns.
+local function applyTracked(target, property, value, store)
+    local ok, original = pcall(function() return target[property] end)
+    if not ok then return end
+    local setOK = pcall(function() target[property] = value end)
+    if setOK then table.insert(store, {Target=target, Property=property, Original=original, Applied=value}) end
+end
+
+local function restoreTracked(store)
+    for index = #store, 1, -1 do
+        local item = store[index]
+        pcall(function()
+            if item.Target and item.Target.Parent ~= nil and item.Target[item.Property] == item.Applied then
+                item.Target[item.Property] = item.Original
+            elseif item.Target == Lighting and item.Target[item.Property] == item.Applied then
+                item.Target[item.Property] = item.Original
+            end
         end)
-        notify("Full Bright","Pencahayaan lokal diaktifkan.")
+    end
+    table.clear(store)
+end
+
+local visualStores = {}
+local function makeVisualFeature(id, name, description, apply)
+    local store
+    return {
+        Name=name,
+        Description=description,
+        Start=function()
+            if store then return true end
+            store={}
+            visualStores[id]=store
+            local ok,err=pcall(function() apply(store) end)
+            if not ok then
+                restoreTracked(store)
+                store=nil
+                visualStores[id]=nil
+                warn("[Tryo Visual] "..id..": "..tostring(err))
+                return false
+            end
+            notify(name,"Pengaturan visual lokal diaktifkan.")
+            return true
+        end,
+        Stop=function()
+            if store then restoreTracked(store); store=nil; visualStores[id]=nil end
+            notify(name,"Pengaturan visual dipulihkan.")
+        end
+    }
+end
+
+Features.Fullbright=makeVisualFeature(
+    "Fullbright","Brightness & Ambient",
+    "Meningkatkan pencahayaan lokal tanpa mengubah waktu atau menghapus efek map.",
+    function(store)
+        applyTracked(Lighting,"Brightness",2,store)
+        applyTracked(Lighting,"Ambient",Color3.fromRGB(200,200,200),store)
+        applyTracked(Lighting,"OutdoorAmbient",Color3.fromRGB(200,200,200),store)
+    end
+)
+
+Features.VisualFog=makeVisualFeature(
+    "VisualFog","No Fog",
+    "Mengurangi Fog dan Atmosphere secara lokal tanpa menghapus objeknya.",
+    function(store)
+        applyTracked(Lighting,"FogStart",0,store)
+        applyTracked(Lighting,"FogEnd",100000,store)
+        for _,effect in ipairs(Lighting:GetChildren()) do
+            if effect:IsA("Atmosphere") then
+                applyTracked(effect,"Density",0,store)
+                applyTracked(effect,"Haze",0,store)
+                applyTracked(effect,"Glare",0,store)
+            end
+        end
+    end
+)
+
+Features.VisualTime=makeVisualFeature(
+    "VisualTime","Daylight",
+    "Mengatur ClockTime lokal ke siang hari.",
+    function(store) applyTracked(Lighting,"ClockTime",14,store) end
+)
+
+Features.VisualShadows=makeVisualFeature(
+    "VisualShadows","Disable Shadows",
+    "Menonaktifkan GlobalShadows secara lokal.",
+    function(store) applyTracked(Lighting,"GlobalShadows",false,store) end
+)
+
+Features.VisualPostFX=makeVisualFeature(
+    "VisualPostFX","Disable Post FX",
+    "Menonaktifkan Bloom, Blur, Color Correction, Depth of Field, dan Sun Rays lokal.",
+    function(store)
+        local supported={
+            BloomEffect=true,BlurEffect=true,ColorCorrectionEffect=true,
+            DepthOfFieldEffect=true,SunRaysEffect=true
+        }
+        for _,effect in ipairs(Lighting:GetChildren()) do
+            if supported[effect.ClassName] then applyTracked(effect,"Enabled",false,store) end
+        end
+    end
+)
+
+local noFallConnection
+Features.NoFallDamage={
+    Name="No Fall Damage",
+    Description="Fall Guard + Landing Protection lokal; efektivitas bergantung pada sistem damage map.",
+    Start=function()
+        if noFallConnection then return true end
+        local rayParams=RaycastParams.new()
+        rayParams.FilterType=Enum.RaycastFilterType.Exclude
+        noFallConnection=RunService.Heartbeat:Connect(function()
+            local character=LocalPlayer.Character
+            if not character then return end
+            local humanoid=character:FindFirstChildOfClass("Humanoid")
+            local root=character:FindFirstChild("HumanoidRootPart")
+            if not humanoid or humanoid.Health<=0 or not root or not root:IsA("BasePart") then return end
+            local velocity=root.AssemblyLinearVelocity
+            if velocity.Y>=-12 then return end
+            local state=humanoid:GetState()
+            if state~=Enum.HumanoidStateType.Freefall and state~=Enum.HumanoidStateType.Jumping then return end
+
+            rayParams.FilterDescendantsInstances={character}
+            local ground=workspace:Raycast(root.Position,Vector3.new(0,-12,0),rayParams)
+            local maxDownSpeed=ground and 18 or 52
+            if velocity.Y < -maxDownSpeed then
+                root.AssemblyLinearVelocity=Vector3.new(velocity.X,-maxDownSpeed,velocity.Z)
+            end
+        end)
+        notify("No Fall Damage","Fall Guard + Landing Protection aktif (lokal).")
         return true
     end,
     Stop=function()
-        if fullbrightConnection then fullbrightConnection:Disconnect(); fullbrightConnection=nil end
-        if originalLighting then
-            for property,value in pairs(originalLighting) do pcall(function() Lighting[property]=value end) end
-            originalLighting=nil
-        end
-        for _,atmosphere in ipairs(removedAtmospheres) do
-            if atmosphere and not atmosphere.Parent then atmosphere.Parent=Lighting end
-        end
-        table.clear(removedAtmospheres)
-        notify("Full Bright","Pencahayaan awal dipulihkan.")
+        if noFallConnection then noFallConnection:Disconnect(); noFallConnection=nil end
+        notify("No Fall Damage","Perlindungan jatuh dinonaktifkan.")
     end
 }
 
