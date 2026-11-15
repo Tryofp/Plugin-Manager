@@ -66,8 +66,10 @@ function FeatureManager:DestroyAsync()
                 warn("[Tryo Feature] " .. item.Id .. " shutdown failed: " .. tostring(err))
             end
         end
-        -- Yield between feature cleanups to spread their work across frames.
-        if index < #queue then task.wait() end
+        -- Pace shutdown instead of stacking cleanup work on consecutive
+        -- frames. Heavy feature-specific cleanup is responsible for batching
+        -- its own large instance-removal loops.
+        if index < #queue then task.wait(0.08) end
     end
 end
 
