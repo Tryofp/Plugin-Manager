@@ -13,6 +13,8 @@ local chatDetected = {}
 local detectionCache = {}
 local scanning = false
 local scanQueued = false
+local initialScanReady = false
+local initialScanCompleted = false
 
 local alertSound = Instance.new("Sound")
 alertSound.Name = "TryoAdminDetectedBeep"
@@ -161,7 +163,7 @@ local function detectPlayer(player)
 end
 
 local function scan()
-    if not running or scanning then return end
+    if not running or not initialScanReady or scanning then return end
     scanning = true
     local current = {}
     for _, player in ipairs(Players:GetPlayers()) do
@@ -191,6 +193,15 @@ local function scan()
         end
         playAlertBeep()
         notify("⚠ Admin / Staff terdeteksi", table.concat(lines, "\n"), 8)
+    end
+
+    -- Hanya tampilkan status aman setelah pemindaian awal selesai.
+    -- Ini bukan jaminan server bebas admin; hanya berarti belum ada yang terdeteksi.
+    if not initialScanCompleted then
+        initialScanCompleted = true
+        if #added == 0 then
+            notify("✓ Admin Detector", "Belum ada admin/staff terdeteksi. Pemeriksaan awal selesai.", 6)
+        end
     end
     scanning = false
 end
@@ -276,6 +287,8 @@ function Feature.Start()
     table.clear(detectionCache)
     scanning = false
     scanQueued = false
+    initialScanReady = false
+    initialScanCompleted = false
 
     -- Legacy chat pipeline: inspect PrefixText and explicit tag metadata.
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -320,13 +333,17 @@ function Feature.Start()
         end
     end))
     task.spawn(function()
-        task.wait(2)
+        -- Beri waktu 3 detik agar karakter, overhead, dan tool pemain selesai dimuat.
+        task.wait(3)
+        if not running then return end
+        initialScanReady = true
+        scan()
         while running do
-            scan()
             for _ = 1, 20 do
                 if not running then break end
                 task.wait(1)
             end
+            if running then scan() end
         end
     end)
     notify("Admin Detector", "Pemantauan aktif. Pemeriksaan otomatis setiap 20 detik.", 4)
@@ -344,6 +361,8 @@ function Feature.Stop()
     table.clear(detectionCache)
     scanning = false
     scanQueued = false
+    initialScanReady = false
+    initialScanCompleted = false
     pcall(function() alertSound:Stop() end)
     notify("Admin Detector", "Pemantauan dinonaktifkan.", 3)
 end
