@@ -582,6 +582,7 @@ local ok, result = pcall(function()
     local presetStore = { Version = 1, Presets = {} }
     local selectedPresetName = nil
     local presetRows = {}
+    local presetEmptyInfo = nil
     local function loadPresetStore()
         if type(readfile) ~= "function" or type(isfile) ~= "function" then
             return false, "Executor tidak menyediakan readfile/isfile."
@@ -628,13 +629,18 @@ local ok, result = pcall(function()
             if row and row.Parent then row:Destroy() end
         end
         table.clear(presetRows)
+        if presetEmptyInfo and presetEmptyInfo.Parent then presetEmptyInfo:Destroy() end
+        presetEmptyInfo = nil
         local names = {}
         for name, data in pairs(presetStore.Presets) do
             if type(name) == "string" and type(data) == "table" then table.insert(names, name) end
         end
         table.sort(names, function(a, b) return string.lower(a) < string.lower(b) end)
         if #names == 0 then
-            presetsTab:CreateInfo({ Height = 38, Text = "Belum ada preset. Simpan konfigurasi pertama lu di bawah." })
+            presetEmptyInfo = presetsTab:CreateInfo({
+                Height = 38,
+                Text = "Belum ada preset. Simpan konfigurasi pertama lu di bawah."
+            })
             return
         end
         for _, name in ipairs(names) do
