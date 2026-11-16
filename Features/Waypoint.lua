@@ -24,7 +24,7 @@ local IGNORE = {
     "effect","butter","head","torso","humanoid","character","arm","leg","face","hair","holder","neon","oreo","view",
     "prop","decoration","wall","roof","ceiling","window","door","table","chair","badge","particle","sparkle","fire",
     "smoke","cewe","cowo","refresh","ava","chinese","bubble","ball","chinematic","cinematic","dance","male","female",
-    "outfit","suguhan","big","small","sesi","trend","potret","player","douyin"
+    "outfit","suguhan","big","small","sesi","trend","potret","player","douyin","jurnal","pedang"
 }
 
 local Feature = { Name = "Waypoint / Checkpoint Manager" }
