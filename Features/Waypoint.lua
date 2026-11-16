@@ -159,6 +159,26 @@ local function parseCheckpoint(object)
             end
         end
     end
+
+    -- Decimal route checkpoints: Workspace.CP1_1.CheckPoints.AuraCP1_1
+    -- Use the AuraCP BasePart directly; these parts may not have TouchInterest/ProximityPrompt.
+    if object:IsA("BasePart") then
+        local routeParent = object.Parent
+        local routeFolder = routeParent and routeParent.Parent
+        local routeGroup = routeFolder and string.match(routeFolder.Name, "^CP(%d+)_(%d+)$")
+        local auraMajor, auraMinor = string.match(object.Name, "^AuraCP(%d+)_(%d+)$")
+        if routeParent and string.lower(routeParent.Name) == "checkpoints"
+            and routeGroup and auraMajor and auraMinor
+            and routeGroup == auraMajor .. "_" .. auraMinor then
+            local major, minor = tonumber(auraMajor), tonumber(auraMinor)
+            if major and minor and major <= 500 and minor <= 500 then
+                return tostring(major) .. "." .. tostring(minor),
+                    "CP" .. major .. "_" .. minor .. " - " .. object.Name,
+                    object, 3, false
+            end
+        end
+    end
+
     local parent = object.Parent
     local lowerName = string.lower(object.Name)
     local lowerParent = string.lower(parent and parent.Name or "")
@@ -369,6 +389,22 @@ local function queuePlainNumbering()
     end)
 end
 
+local function checkpointKeyLess(a, b)
+    local aMajor, aMinor = string.match(tostring(a), "^(%d+)%.(%d+)$")
+    local bMajor, bMinor = string.match(tostring(b), "^(%d+)%.(%d+)$")
+    if aMajor and bMajor then
+        aMajor, aMinor = tonumber(aMajor), tonumber(aMinor)
+        bMajor, bMinor = tonumber(bMajor), tonumber(bMinor)
+        if aMajor ~= bMajor then return aMajor < bMajor end
+        return aMinor < bMinor
+    end
+    local na, nb = tonumber(a), tonumber(b)
+    if na and nb then return na < nb end
+    if na then return true end
+    if nb then return false end
+    return tostring(a) < tostring(b)
+end
+
 local function addSaved(key, description, cf, isPlain)
     local pos = cf.Position
     local visitKey=tostring(key).."_"..math.floor(pos.X).."_"..math.floor(pos.Y).."_"..math.floor(pos.Z)
@@ -383,11 +419,7 @@ local function addSaved(key, description, cf, isPlain)
     end
     table.insert(saved, {key=key, desc=description, cf={cf:GetComponents()}, plain=isPlain == true})
     table.sort(saved, function(a,b)
-        local na, nb = tonumber(a.key), tonumber(b.key)
-        if na and nb then return na < nb end
-        if na then return true end
-        if nb then return false end
-        return tostring(a.key) < tostring(b.key)
+        return checkpointKeyLess(a.key, b.key)
     end)
     persist()
     refresh()
@@ -614,11 +646,7 @@ function Feature.RefreshUI()
             end
         end
         table.sort(entries,function(a,b)
-            local na,nb=tonumber(a.key),tonumber(b.key)
-            if na and nb then return na<nb end
-            if na then return true end
-            if nb then return false end
-            return tostring(a.key)<tostring(b.key)
+            return checkpointKeyLess(a.key,b.key)
         end)
     else
         for index,item in ipairs(saved) do table.insert(entries,{key=item.key,desc=item.desc,item=item,index=index}) end
