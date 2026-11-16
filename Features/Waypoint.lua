@@ -113,7 +113,7 @@ local function uploadPublicRoute()
         local result,err=waypointPost({Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=tostring(game.Name):sub(1,120),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points})
         if result then
             publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP.")
-            publicRouteNameBox.Text=""
+            if publicRouteNameBox then publicRouteNameBox.Text="" end
         else publicMessage(err or "Upload gagal.",true) end
         publicBusy=false
         if result then loadPublicRoutes() end
