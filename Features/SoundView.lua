@@ -6,40 +6,18 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 local Features = {}
-local WHITELIST = {
-    "checkpoint", "respawn", "cp", "pos", "pospemeriksaan",
-    "oof", "gettingup", "music", "radio", "boombox", "jukebox",
-    "song", "soundtrack", "bgm", "audio"
-}
-
-local function notify(title, message)
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = title, Text = message, Duration = 3
-        })
-    end)
-end
-
-local function isWhitelisted(sound)
-    local name = string.lower(sound.Name or "")
-    for _, keyword in ipairs(WHITELIST) do
-        if string.find(name, keyword, 1, true) then return true end
-    end
-    return false
-end
-
 local mutedOriginals = {}
 local muteConnections = {}
 local soundAddedConnections = {}
 local muteEnabled = false
 
 local function muteSound(sound)
-    if not muteEnabled or not sound:IsA("Sound") or isWhitelisted(sound) then return end
+    if not muteEnabled or not sound:IsA("Sound") then return end
     if mutedOriginals[sound] == nil then mutedOriginals[sound] = sound.Volume end
     sound.Volume = 0
     if not muteConnections[sound] then
         muteConnections[sound] = sound:GetPropertyChangedSignal("Volume"):Connect(function()
-            if muteEnabled and sound.Parent and not isWhitelisted(sound) and sound.Volume ~= 0 then
+            if muteEnabled and sound.Parent and sound.Volume ~= 0 then
                 sound.Volume = 0
             end
         end)
@@ -62,7 +40,7 @@ end
 
 Features.MuteMapSounds = {
     Name = "Mute Map Sounds",
-    Description = "Membisukan efek suara map sambil mempertahankan suara checkpoint dan musik yang diizinkan.",
+    Description = "Membisukan seluruh suara, termasuk checkpoint dan respawn.",
     Start = function()
         if muteEnabled then return true end
         muteEnabled = true
