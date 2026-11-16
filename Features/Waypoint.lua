@@ -688,8 +688,17 @@ function Feature.RefreshUI()
         table.sort(entries,function(a,b)
             return checkpointKeyLess(a.key,b.key)
         end)
-    else
+    elseif page=="SAVED" then
         for index,item in ipairs(saved) do table.insert(entries,{key=item.key,desc=item.desc,item=item,index=index}) end
+    else
+        local info = make("TextLabel",{
+            Name="PublicMapInfo",Size=UDim2.new(1,-8,0,62),BackgroundTransparency=1,
+            Text="PUBLIC MAP SHARING\nEndpoint Firestore Waypoint belum dikonfigurasi.",
+            TextColor3=Color3.fromRGB(190,198,216),Font=Enum.Font.Gotham,
+            TextSize=11,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Center,
+            TextYAlignment=Enum.TextYAlignment.Center
+        },list)
+        info.LayoutOrder=1
     end
 
     for index,entry in ipairs(entries) do
