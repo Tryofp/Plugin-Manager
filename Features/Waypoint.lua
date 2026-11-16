@@ -587,13 +587,14 @@ local function buildUI()
         panel.Visible=false
         if reopenButton then reopenButton.Visible=true end
     end,false).ZIndex=3
-    local radarTab, savedTab
+    local radarTab, savedTab, publicTab
     local function selectPage(nextPage)
         page = nextPage
         local activeColor = Color3.fromRGB(93,78,145)
         local inactiveColor = Color3.fromRGB(43,53,72)
         if radarTab then radarTab.BackgroundColor3 = page == "RADAR" and activeColor or inactiveColor end
         if savedTab then savedTab.BackgroundColor3 = page == "SAVED" and activeColor or inactiveColor end
+        if publicTab then publicTab.BackgroundColor3 = page == "PUBLIC MAP" and activeColor or inactiveColor end
         Feature.RefreshUI()
     end
     local tabBar = make("Frame",{
