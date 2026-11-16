@@ -601,21 +601,33 @@ local function buildUI()
         Name="TabBar",Position=UDim2.fromOffset(8,42),Size=UDim2.new(1,-16,0,25),
         BackgroundTransparency=1,BorderSizePixel=0
     },panel)
+    -- Scrollable primary tabs; the manual-save action remains fixed on the right.
+    local tabScroll = make("ScrollingFrame",{
+        Name="MainTabs",Position=UDim2.fromOffset(0,0),Size=UDim2.new(1,-84,1,0),
+        BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,
+        ScrollingDirection=Enum.ScrollingDirection.X,CanvasSize=UDim2.new(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.None,ClipsDescendants=true
+    },tabBar)
     local tabLayout = make("UIListLayout",{
         FillDirection=Enum.FillDirection.Horizontal,HorizontalAlignment=Enum.HorizontalAlignment.Left,
         VerticalAlignment=Enum.VerticalAlignment.Center,Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder
-    },tabBar)
-    radarTab = button(tabBar,"RADAR",UDim2.new(0.20,0,1,0),UDim2.new(),function() selectPage("RADAR") end,page=="RADAR")
+    },tabScroll)
+    tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        tabScroll.CanvasSize=UDim2.fromOffset(tabLayout.AbsoluteContentSize.X+2,0)
+    end)
+    radarTab = button(tabScroll,"RADAR",UDim2.fromOffset(65,25),UDim2.new(),function() selectPage("RADAR") end,page=="RADAR")
     radarTab.LayoutOrder=1
-    radarTab.TextSize=10
-    savedTab = button(tabBar,"SAVED",UDim2.new(0.20,0,1,0),UDim2.new(),function() selectPage("SAVED") end,page=="SAVED")
+    radarTab.TextSize=9
+    savedTab = button(tabScroll,"SAVED",UDim2.fromOffset(65,25),UDim2.new(),function() selectPage("SAVED") end,page=="SAVED")
     savedTab.LayoutOrder=2
-    local refreshTab = button(tabBar,"REFRESH",UDim2.new(0.25,0,1,0),UDim2.new(),function() Feature.Scan(); Feature.RefreshUI() end,false)
+    local refreshTab = button(tabScroll,"REFRESH",UDim2.fromOffset(72,25),UDim2.new(),function() Feature.Scan(); Feature.RefreshUI() end,false)
     refreshTab.LayoutOrder=3
     refreshTab.TextSize=9
-    local saveHereTab = button(tabBar,"SAVE HERE",UDim2.new(0.31,0,1,0),UDim2.new(),showNamePrompt,true)
-    saveHereTab.LayoutOrder=4
-    saveHereTab.TextSize=9
+    publicTab = button(tabScroll,"PUBLIC MAP",UDim2.fromOffset(88,25),UDim2.new(),function() selectPage("PUBLIC MAP") end,page=="PUBLIC MAP")
+    publicTab.LayoutOrder=4
+    publicTab.TextSize=9
+    local saveHereTab = button(tabBar,"SAVE MANUAL",UDim2.fromOffset(80,25),UDim2.new(1,-80,0,0),showNamePrompt,true)
+    saveHereTab.TextSize=8
 
     list=make("ScrollingFrame",{
         Name="WaypointList",Position=UDim2.fromOffset(8,75),Size=UDim2.new(1,-16,1,-83),
