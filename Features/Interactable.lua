@@ -3168,7 +3168,9 @@ function Feature:SetFeatureEnabled(id, enabled)
         return true
     end
 
-    stopFeature(id)
+    if isRunning(id) then
+        stopFeature(id)
+    end
     return true
 end
 
