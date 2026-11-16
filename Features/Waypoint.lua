@@ -715,8 +715,20 @@ local function buildUI()
         if radarTab then radarTab.BackgroundColor3 = page == "RADAR" and activeColor or inactiveColor end
         if savedTab then savedTab.BackgroundColor3 = page == "SAVED" and activeColor or inactiveColor end
         if publicTab then publicTab.BackgroundColor3 = page == "PUBLIC MAP" and activeColor or inactiveColor end
-        if publicToolbar then publicToolbar.Visible = page == "PUBLIC MAP" end
-        if page == "PUBLIC MAP" then loadPublicRoutes() end
+        local isPublicPage = page == "PUBLIC MAP"
+        if publicToolbar then publicToolbar.Visible = isPublicPage end
+        -- RADAR/SAVED should use the space normally occupied by the Public Map toolbar.
+        -- Keep the larger top offset only while the Public Map toolbar is visible.
+        if list then
+            if isPublicPage then
+                list.Position = UDim2.fromOffset(8,171)
+                list.Size = UDim2.new(1,-16,1,-179)
+            else
+                list.Position = UDim2.fromOffset(8,73)
+                list.Size = UDim2.new(1,-16,1,-81)
+            end
+        end
+        if isPublicPage then loadPublicRoutes() end
         Feature.RefreshUI()
     end
     local tabBar = make("Frame",{
