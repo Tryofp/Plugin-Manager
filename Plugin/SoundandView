@@ -74,9 +74,8 @@ end
 
 local function isPreservedSound(sound)
     if not sound or not sound:IsA("Sound") then return false end
-    -- Semua suara yang berada di dalam karakter player tetap aktif,
-    -- termasuk suara langkah, lompatan, voice, dan emote.
-    if belongsToPlayerCharacter(sound) then return true end
+    -- Hanya suara checkpoint/respawn yang dipertahankan.
+    -- Audio karakter player juga ikut dimute.
     return hasPreservedName(sound)
 end
 
