@@ -1141,9 +1141,18 @@ function Feature.Scan()
     if scanBusy or not active then return end
     scanBusy=true
     task.spawn(function()
-        local descendants=Workspace:GetDescendants()
-        for i,object in ipairs(descendants) do
+        -- Traverse Workspace incrementally instead of materializing one huge
+        -- GetDescendants() array at once. This avoids a cold-start allocation/
+        -- traversal spike when the Waypoint window is opened on large maps.
+        local queue=Workspace:GetChildren()
+        local head=1
+        local processed=0
+        while head<=#queue do
             if not active then break end
+            local object=queue[head]
+            head=head+1
+            processed=processed+1
+
             local key,desc,part,priority,plain,identity=parseCheckpoint(object)
             if key and part and part.Parent then
                 local cacheKey=identity or (plain and part or getPath(part))
@@ -1170,8 +1179,17 @@ function Feature.Scan()
                     end
                 end
             end
-            if i%80==0 then task.wait() end
+
+            -- Add only this object's direct children, keeping traversal
+            -- incremental and yielding regularly on low-end devices.
+            if object and object.Parent then
+                for _,child in ipairs(object:GetChildren()) do
+                    queue[#queue+1]=child
+                end
+            end
+            if processed%40==0 then task.wait() end
         end
+        table.clear(queue)
         scanBusy=false
         assignPlainNumbers()
         refresh()
