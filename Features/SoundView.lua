@@ -7,9 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local Features = {}
 local WHITELIST = {
-    "checkpoint", "respawn", "cp", "pos", "pospemeriksaan",
-    "oof", "gettingup", "music", "radio", "boombox", "jukebox",
-    "song", "soundtrack", "bgm", "audio"
+    "checkpoint", "respawn", "pospemeriksaan"
 }
 
 local function notify(title, message)
@@ -21,9 +19,18 @@ local function notify(title, message)
 end
 
 local function isWhitelisted(sound)
-    local name = string.lower(sound.Name or "")
-    for _, keyword in ipairs(WHITELIST) do
-        if string.find(name, keyword, 1, true) then return true end
+    local node = sound
+    local depth = 0
+    while node and node ~= game and depth < 8 do
+        local name = string.lower(node.Name or "")
+        for _, keyword in ipairs(WHITELIST) do
+            if string.find(name, keyword, 1, true) then return true end
+        end
+        if string.match(name, "^cp%d+$") or name == "cpsummit" then
+            return true
+        end
+        node = node.Parent
+        depth = depth + 1
     end
     return false
 end
@@ -62,7 +69,7 @@ end
 
 Features.MuteMapSounds = {
     Name = "Mute Map Sounds",
-    Description = "Membisukan efek suara map sambil mempertahankan suara checkpoint dan musik yang diizinkan.",
+    Description = "Membisukan semua suara kecuali efek checkpoint dan respawn.",
     Start = function()
         if muteEnabled then return true end
         muteEnabled = true
