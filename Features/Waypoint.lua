@@ -215,7 +215,6 @@ local function importPublicRoute(route)
             end
 
             publicMessage("Mencocokkan nama dan checkpoint...")
-            assignPlainNumbers()
 
             -- Existing SAVED keys are the shared CP identities for this PlaceId.
             local savedKeys={}
