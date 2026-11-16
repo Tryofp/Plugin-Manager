@@ -51,11 +51,47 @@ local reopenDragAction = dragAction .. "_Toggle"
 local function waypointRequest(method, url, payload)
     local req = (syn and syn.request) or (http and http.request) or http_request or request
     if type(req) ~= "function" then return nil, "Executor tidak mendukung HTTP request." end
-    local ok, response = pcall(req, {Url=url, Method=method, Headers={["Content-Type"]="application/json"}, Body=payload and HttpService:JSONEncode(payload) or nil})
+
+    local body = payload and HttpService:JSONEncode(payload) or nil
+    local requestOptions = {
+        Url=url,
+        Method=method,
+        Headers={["Content-Type"]="application/json"},
+        Body=body,
+        FollowRedirects=false
+    }
+    local ok, response = pcall(req, requestOptions)
     if not ok then return nil, tostring(response) end
+    if type(response) ~= "table" then return nil, "Respons HTTP executor tidak valid." end
+
     local code = tonumber(response.StatusCode or response.Status or 0) or 0
-    if code >= 400 then return nil, "HTTP "..tostring(code) end
-    local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(response.Body or response.body or "") end)
+    local headers = response.Headers or response.headers or {}
+    local location = headers.Location or headers.location or headers.LOCATION
+
+    -- Google Apps Script may redirect POST responses to googleusercontent.
+    -- Fetch the redirect target explicitly with GET so the executor does not
+    -- replay or rewrite the original POST method and produce HTTP 405.
+    if code == 301 or code == 302 or code == 303 or code == 307 or code == 308 then
+        if type(location) ~= "string" or location == "" then
+            return nil, "HTTP "..tostring(code)..": URL redirect tidak ditemukan."
+        end
+        local redirectOk, redirectResponse = pcall(req, {
+            Url=location,
+            Method="GET",
+            Headers={["Accept"]="application/json"},
+            FollowRedirects=true
+        })
+        if not redirectOk then return nil, "Redirect gagal: "..tostring(redirectResponse) end
+        response = redirectResponse
+        if type(response) ~= "table" then return nil, "Respons redirect tidak valid." end
+        code = tonumber(response.StatusCode or response.Status or 0) or 0
+    end
+
+    local responseBody = response.Body or response.body or ""
+    if code >= 400 then
+        return nil, "HTTP "..tostring(code)..(responseBody ~= "" and (": "..tostring(responseBody):sub(1,160)) or "")
+    end
+    local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(responseBody) end)
     if not decodedOk or type(decoded) ~= "table" then return nil, "Respons server tidak valid." end
     if decoded.status == "error" then return nil, tostring(decoded.message or "Permintaan gagal.") end
     return decoded
