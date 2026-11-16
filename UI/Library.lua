@@ -118,6 +118,7 @@ function TryoUI.new(config)
     -- This keeps the layout proportions intact on phones with different
     -- resolutions, display scaling, and landscape/portrait orientations.
     self.ResponsiveScale = make("UIScale", {Scale = 1}, self.Window)
+    self.ViewportConnections = {}
     local function updateResponsiveScale()
         if self.Destroyed or not self.Window or not self.Window.Parent then return end
         local camera = workspace.CurrentCamera
@@ -1292,8 +1293,6 @@ function TryoUI:CreateTab(name, icon)
             ZIndex = header.ZIndex + 1
         }, header)
         corner(statusDot, 4)
-        local releaseBadge = makeReleaseBadge(header, "WalkSpeedReleaseBadge")
-        releaseBadge.Position = UDim2.new(1, -31, 0.5, 0)
         local maintenanceBadge = make("TextLabel", {
             Name = "MaintenanceBadge",
             AnchorPoint = Vector2.new(1, 0.5),
@@ -1424,7 +1423,6 @@ function TryoUI:CreateTab(name, icon)
             panel.Visible = expanded
             updateValue()
         end
-        local control
         header.MouseButton1Click:Connect(function()
             if maintenanceLocked then return end
             enabled = not enabled
@@ -1433,19 +1431,12 @@ function TryoUI:CreateTab(name, icon)
                 local ok, err = pcall(options.Callback, enabled)
                 if not ok then warn("[Tryo UI] " .. tostring(err)) end
             end
-            if type(control.OnBadgeActivate) == "function" then pcall(control.OnBadgeActivate) end
             refresh()
         end)
         header.MouseEnter:Connect(function() header.BackgroundColor3 = COLORS.SurfaceHover end)
         header.MouseLeave:Connect(function() header.BackgroundColor3 = enabled and Color3.fromRGB(49, 65, 79) or COLORS.Surface end)
         refresh()
-        control = {
-            SetBadge = function(kind)
-                if kind == nil then releaseBadge.Visible = false; return end
-                releaseBadge.Text = tostring(kind):upper()
-                releaseBadge.BackgroundColor3 = kind == "NEW" and Color3.fromRGB(80, 215, 145) or Color3.fromRGB(235, 171, 65)
-                releaseBadge.Visible = true
-            end,
+        local control = {
             Set = function(value, silent)
                 if maintenanceLocked then
                     enabled = false
