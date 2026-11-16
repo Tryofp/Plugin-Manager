@@ -26,63 +26,9 @@ _G.__VoiceSpyMuteState = _G.__VoiceSpyMuteState or {
 local state = _G.__SpectateState
 local muteState = _G.__VoiceSpyMuteState
 
--- SUARA YANG DIPERTAHANKAN: CHECKPOINT, RESPAWN, DAN AUDIO KARAKTER PLAYER
--- Musik/BGM/radio/boombox sengaja TIDAK masuk whitelist.
-local PRESERVED_SOUND_KEYWORDS = {
-    "checkpoint", "respawn", "pospemeriksaan"
-}
-
-local function hasPreservedName(sound)
-    local node = sound
-    local depth = 0
-
-    while node and node ~= game and depth < 8 do
-        local name = string.lower(node.Name or "")
-
-        for _, keyword in ipairs(PRESERVED_SOUND_KEYWORDS) do
-            if string.find(name, keyword, 1, true) then
-                return true
-            end
-        end
-
-        -- Nama CP generik seperti CP1, CP2, CPSUMMIT.
-        if string.match(name, "^cp%d+$") or name == "cpsummit" then
-            return true
-        end
-
-        node = node.Parent
-        depth = depth + 1
-    end
-
-    return false
-end
-
-local function belongsToPlayerCharacter(sound)
-    local node = sound
-    while node and node ~= Workspace do
-        if node:IsA("Model") then
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player.Character == node then
-                    return true
-                end
-            end
-        end
-        node = node.Parent
-    end
-    return false
-end
-
-local function isPreservedSound(sound)
-    if not sound or not sound:IsA("Sound") then return false end
-    -- Hanya suara checkpoint/respawn yang dipertahankan.
-    -- Audio karakter player juga ikut dimute.
-    return hasPreservedName(sound)
-end
-
+-- MuteSound membungkam seluruh Sound tanpa pengecualian.
 local function applyMute(sound)
     if not muteState.enabled or not sound or not sound:IsA("Sound") then return end
-    if isPreservedSound(sound) then return end
-
     if muteState.mutedSounds[sound] == nil then
         muteState.mutedSounds[sound] = sound.Volume
     end
@@ -94,8 +40,7 @@ local function applyMute(sound)
 
     if not muteState.connections[sound] then
         muteState.connections[sound] = sound:GetPropertyChangedSignal("Volume"):Connect(function()
-            if muteState.enabled and sound.Parent and not isPreservedSound(sound)
-                and sound.Volume ~= 0 then
+            if muteState.enabled and sound.Parent and sound.Volume ~= 0 then
                 sound.Volume = 0
             end
         end)
