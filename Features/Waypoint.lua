@@ -1,7 +1,8 @@
--- Tryo Standalone Waypoint / Checkpoint Manager
+-- Tryo beta2 Waypoint / Checkpoint Manager
 -- Standalone implementation. No Infinite Yield dependency.
 
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
 local StarterGui = game:GetService("StarterGui")
@@ -24,7 +25,7 @@ local IGNORE = {
     "effect","butter","head","torso","humanoid","character","arm","leg","face","hair","holder","neon","oreo","view",
     "prop","decoration","wall","roof","ceiling","window","door","table","chair","badge","particle","sparkle","fire",
     "smoke","cewe","cowo","refresh","ava","chinese","bubble","ball","chinematic","cinematic","dance","male","female",
-    "outfit","suguhan","big","small","sesi","trend","potret","player","douyin"
+    "outfit","suguhan","big","small","sesi","trend","potret","player","douyin","jurnal","pedang"
 }
 
 local Feature = { Name = "Waypoint / Checkpoint Manager" }
@@ -35,6 +36,10 @@ local saved = {}
 local plainNumbers = {}
 local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
+local publicToolbar, publicRouteNameBox, publicSearchBox, publicUploaderSearchBox, publicStatus, publicErrorCopyButton
+local lastPublicError = ""
+local publicRoutes, publicBusy = {}, false
+local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
 local page = "RADAR"
 local scanBusy = false
 local refreshQueued = false
@@ -45,13 +50,334 @@ local reopenDragging, reopenDragInput, reopenDragStart, reopenButtonStart
 local reopenWasDragged = false
 local reopenDragAction = dragAction .. "_Toggle"
 
+local function waypointRequest(method, url, payload)
+    local req = (syn and syn.request) or (http and http.request) or http_request or request
+    if type(req) ~= "function" then return nil, "Executor tidak mendukung HTTP request." end
+
+    local body = payload and HttpService:JSONEncode(payload) or nil
+    local requestOptions = {
+        Url=url,
+        Method=method,
+        Headers={["Content-Type"]="application/json"},
+        Body=body,
+        FollowRedirects=false
+    }
+    local ok, response = pcall(req, requestOptions)
+    if not ok then return nil, tostring(response) end
+    if type(response) ~= "table" then return nil, "Respons HTTP executor tidak valid." end
+
+    local code = tonumber(response.StatusCode or response.Status or 0) or 0
+    local headers = response.Headers or response.headers or {}
+    local location = headers.Location or headers.location or headers.LOCATION
+
+    -- Google Apps Script may redirect POST responses to googleusercontent.
+    -- Fetch the redirect target explicitly with GET so the executor does not
+    -- replay or rewrite the original POST method and produce HTTP 405.
+    if code == 301 or code == 302 or code == 303 or code == 307 or code == 308 then
+        if type(location) ~= "string" or location == "" then
+            return nil, "HTTP "..tostring(code)..": URL redirect tidak ditemukan."
+        end
+        local redirectOk, redirectResponse = pcall(req, {
+            Url=location,
+            Method="GET",
+            Headers={["Accept"]="application/json"},
+            FollowRedirects=true
+        })
+        if not redirectOk then return nil, "Redirect gagal: "..tostring(redirectResponse) end
+        response = redirectResponse
+        if type(response) ~= "table" then return nil, "Respons redirect tidak valid." end
+        code = tonumber(response.StatusCode or response.Status or 0) or 0
+    end
+
+    local responseBody = response.Body or response.body or ""
+    if code >= 400 then
+        return nil, "HTTP "..tostring(code)..(responseBody ~= "" and (": "..tostring(responseBody):sub(1,1800)) or "")
+    end
+    local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(responseBody) end)
+    if not decodedOk or type(decoded) ~= "table" then return nil, "Respons server tidak valid." end
+    if decoded.status == "error" then return nil, tostring(decoded.message or "Permintaan gagal.") end
+    return decoded
+end
+
+local function waypointGet(action, params)
+    local q = {"action="..HttpService:UrlEncode(action)}
+    for k,v in pairs(params or {}) do table.insert(q,HttpService:UrlEncode(k).."="..HttpService:UrlEncode(tostring(v))) end
+    return waypointRequest("GET",WAYPOINT_API.."?"..table.concat(q,"&"))
+end
+
+local function waypointPost(data)
+    data.Type = "WaypointRoute"
+    return waypointRequest("POST",WAYPOINT_API,data)
+end
+
+-- Resolve the exact Place title from Roblox's public Place catalog.
+-- MarketplaceService:GetProductInfo can return a generic experience title
+-- for some places, so prefer the Place-specific Develop API first.
+local cachedRobloxPlaceName
+local function getRobloxPlaceName()
+    if cachedRobloxPlaceName and cachedRobloxPlaceName ~= "" then
+        return cachedRobloxPlaceName
+    end
+
+    local placeId = tostring(game.PlaceId)
+    local function getJson(url)
+        local result = waypointRequest("GET", url)
+        return type(result) == "table" and result or nil
+    end
+
+    -- Convert PlaceId to UniverseId, then enumerate the universe's Places.
+    -- The Develop endpoint returns each Place's own id and name.
+    local universeData = getJson("https://apis.roblox.com/universes/v1/places/"..placeId.."/universe")
+    local universeId = universeData and tostring(universeData.universeId or universeData.UniverseId or "")
+    if universeId and universeId ~= "" then
+        local cursor = nil
+        for page = 1, 10 do
+            local url = "https://develop.roblox.com/v1/universes/"..universeId.."/places?isUniverseCreation=false&limit=100&sortOrder=Asc"
+            if cursor and cursor ~= "" then
+                url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+            end
+            local placesData = getJson(url)
+            if not placesData then break end
+            local places = placesData.data or placesData.Data
+            if type(places) == "table" then
+                for _, placeInfo in ipairs(places) do
+                    local id = tostring(placeInfo.id or placeInfo.Id or "")
+                    local name = tostring(placeInfo.name or placeInfo.Name or "")
+                    name = string.gsub(name, "^%s*(.-)%s*$", "%1")
+                    if id == placeId and name ~= "" then
+                        cachedRobloxPlaceName = name:sub(1,120)
+                        return cachedRobloxPlaceName
+                    end
+                end
+            end
+            cursor = placesData.nextPageCursor or placesData.NextPageCursor
+            if not cursor or cursor == "" then break end
+        end
+    end
+
+    -- Secondary fallback for environments where the public catalog endpoint
+    -- is unavailable. Never use game.Name because it may only say "UGC".
+    local ok, info = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    if ok and type(info) == "table" then
+        local placeName = tostring(info.Name or "")
+        placeName = string.gsub(placeName, "^%s*(.-)%s*$", "%1")
+        if placeName ~= "" and string.lower(placeName) ~= "ugc" then
+            cachedRobloxPlaceName = placeName:sub(1,120)
+            return cachedRobloxPlaceName
+        end
+    end
+
+    cachedRobloxPlaceName = "Place " .. placeId
+    return cachedRobloxPlaceName
+end
+
+local publicStatusGeneration=0
+local notify, persist, assignPlainNumbers, checkpointKeyLess
+
+local function publicMessage(message, failed, clearAfter)
+    publicStatusGeneration=publicStatusGeneration+1
+    local generation=publicStatusGeneration
+    if failed then lastPublicError=tostring(message or "Terjadi kesalahan.") end
+    if publicStatus and publicStatus.Parent then
+        publicStatus.Text=tostring(message or "")
+        publicStatus.TextColor3=failed and Color3.fromRGB(255,135,135) or Color3.fromRGB(170,220,190)
+    end
+    if publicErrorCopyButton and publicErrorCopyButton.Parent then
+        publicErrorCopyButton.Visible=failed==true and lastPublicError~=""
+    end
+    if clearAfter and clearAfter>0 then
+        task.delay(clearAfter,function()
+            if generation==publicStatusGeneration and publicStatus and publicStatus.Parent then
+                publicStatus.Text="PUBLIC MAP"
+            end
+        end)
+    end
+end
+
+local function loadPublicRoutes()
+    if publicBusy then return end
+    publicBusy=true
+    publicMessage("Memuat Rute ... ( Harap bersabar )")
+    task.spawn(function()
+        local result,err=waypointGet("WaypointRoutes",{limit=100})
+        if result and type(result.routes)=="table" then
+            publicRoutes=result.routes
+            publicMessage("Ditemukan "..#publicRoutes.." rute ( Silahkan UPLOAD, GET atau DEL )")
+            if page=="PUBLIC MAP" then Feature.RefreshUI() end
+        else publicMessage(err or "Gagal memuat rute.",true) end
+        publicBusy=false
+    end)
+end
+
+local function uploadPublicRoute()
+    if publicBusy then return end
+    if #saved==0 then notify("SAVED masih kosong."); return end
+    local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
+    if name=="" then name=getRobloxPlaceName() end
+    local points={}
+    for _,item in ipairs(saved) do
+        if type(item.cf)=="table" and #item.cf>=3 then
+            local p=CFrame.new(unpack(item.cf)).Position
+            table.insert(points,{
+                key=tostring(item.key or (#points+1)),
+                desc=tostring(item.desc or ""):sub(1,120),
+                x=p.X,y=p.Y,z=p.Z
+            })
+        end
+    end
+    if #points==0 or #points>300 then notify("Rute harus berisi 1–300 checkpoint."); return end
+    publicBusy=true
+    publicMessage("Mengunggah "..#points.." checkpoint...")
+    task.spawn(function()
+        local uploadData={Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=getRobloxPlaceName(),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points}
+        local result,err=waypointPost(uploadData)
+        if not result then
+            -- Google Apps Script may commit the POST, then return a redirect response
+            -- that some executors incorrectly surface as HTTP 405. Verify via GET.
+            local check=waypointGet("WaypointRoutes",{limit=100})
+            if check and type(check.routes)=="table" then
+                for _,route in ipairs(check.routes) do
+                    if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
+                        and tostring(route.RouteName)==name
+                        and tonumber(route.TotalCP)==#points then
+                        result={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
+                        break
+                    end
+                end
+            end
+        end
+        if result then
+            publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            if publicRouteNameBox then publicRouteNameBox.Text="" end
+        else publicMessage(err or "Upload gagal.",true) end
+        publicBusy=false
+        if result then loadPublicRoutes() end
+    end)
+end
+
+local function importPublicRoute(route)
+    if publicBusy then return end
+
+    -- Public Map is a global catalogue, but checkpoint data is PlaceId-bound.
+    -- Never download or import a route from another Roblox place.
+    local routePlaceId=tostring(route and route.PlaceId or "")
+    local currentPlaceId=tostring(game.PlaceId)
+    if routePlaceId=="" or routePlaceId~=currentPlaceId then
+        publicMessage("Map tidak sesuai. Rute ini hanya bisa digunakan di map asal.",true,8)
+        return
+    end
+
+    publicBusy=true
+    publicMessage("Mengunduh data rute...")
+    task.spawn(function()
+        local ok,processError=pcall(function()
+            local result,err=waypointGet("WaypointRouteGet",{placeId=routePlaceId,routeId=route.RouteId})
+            local record=result and result.route
+            if not record or type(record.Waypoints)~="table" then
+                publicMessage(err or "Data rute tidak tersedia.",true,8)
+                return
+            end
+
+            publicMessage("Mencocokkan nama dan checkpoint...")
+
+            -- Existing SAVED keys are the shared CP identities for this PlaceId.
+            local savedKeys={}
+            for _,item in ipairs(saved) do
+                if item.key~=nil and tostring(item.key)~="" then
+                    savedKeys[tostring(item.key)]=true
+                end
+            end
+
+            -- Older uploads did not include descriptions. Recover the exact
+            -- RADAR description from this map's live checkpoint cache when possible.
+            local radarDescriptions={}
+            for _,data in pairs(cache) do
+                if data and data.part and data.part.Parent then
+                    local radarKey=data.plain and (data.number or 1) or data.key
+                    if radarKey~=nil and data.desc then
+                        radarDescriptions[tostring(radarKey)]=tostring(data.desc)
+                    end
+                end
+            end
+
+            local added=0
+            local total=0
+            for index,point in ipairs(record.Waypoints) do
+                local x,y,z=tonumber(point.x),tonumber(point.y),tonumber(point.z)
+                if x and y and z then
+                    total=total+1
+                    local key=tostring(point.key or index)
+                    if not savedKeys[key] then
+                        local cf=CFrame.new(x,y,z)
+                        local description=tostring(point.desc or "")
+                        if description=="" then description=radarDescriptions[key] or "Checkpoint" end
+                        table.insert(saved,{
+                            key=key,
+                            desc=description,
+                            cf={cf:GetComponents()},
+                            plain=false
+                        })
+                        savedKeys[key]=true
+                        added=added+1
+                    end
+                end
+            end
+
+            table.sort(saved,function(a,b) return checkpointKeyLess(a.key,b.key) end)
+            if added>0 then persist() end
+
+            if added==0 then
+                publicMessage("Semua CP sudah tersedia di SAVED ("..total.."/"..total..").",false,5)
+                notify("Public Map: semua CP sudah tersedia.")
+            else
+                publicMessage("Berhasil: "..added.." CP baru ditambahkan ke SAVED.",false,5)
+                notify("Public Map: "..added.." CP baru ditambahkan.")
+            end
+            if page=="SAVED" then Feature.RefreshUI() end
+        end)
+
+        -- Always release the GET lock, including unexpected processing errors.
+        publicBusy=false
+        if not ok then
+            publicMessage("GET gagal diproses: "..tostring(processError),true,8)
+        end
+    end)
+end
+
+local function removePublicRoute(route)
+    if publicBusy then return end
+    publicBusy=true
+    publicMessage("Menghapus rute...")
+    task.spawn(function()
+        local result,err=waypointPost({Method="DELETE",PlaceId=route.PlaceId or game.PlaceId,RouteId=route.RouteId,UploaderId=tostring(LocalPlayer.UserId)})
+        if not result then
+            -- Confirm whether DELETE committed despite a broken Apps Script redirect.
+            local check=waypointGet("WaypointRoutes",{limit=100})
+            if check and type(check.routes)=="table" then
+                local stillExists=false
+                for _,item in ipairs(check.routes) do
+                    if tostring(item.RouteId)==tostring(route.RouteId) then stillExists=true; break end
+                end
+                if not stillExists then result={status="success",deleted=true,verifiedAfterRedirect=true} end
+            end
+        end
+        if result then
+            publicMessage(result.verifiedAfterRedirect and "Rute berhasil dihapus (terverifikasi)." or "Rute berhasil dihapus.")
+        else publicMessage(err or "Gagal menghapus.",true) end
+        publicBusy=false
+        if result then loadPublicRoutes() end
+    end)
+end
+
 local function connect(signal, callback)
     local c = signal:Connect(callback)
     table.insert(connections, c)
     return c
 end
 
-local function notify(message)
+notify = function(message)
     pcall(function()
         StarterGui:SetCore("SendNotification", {
             Title = "Waypoint Manager",
@@ -159,6 +485,26 @@ local function parseCheckpoint(object)
             end
         end
     end
+
+    -- Decimal route checkpoints: Workspace.CP1_1.CheckPoints.AuraCP1_1
+    -- Use the AuraCP BasePart directly; these parts may not have TouchInterest/ProximityPrompt.
+    if object:IsA("BasePart") then
+        local routeParent = object.Parent
+        local routeFolder = routeParent and routeParent.Parent
+        local routeGroup = routeFolder and string.match(routeFolder.Name, "^CP(%d+)_(%d+)$")
+        local auraMajor, auraMinor = string.match(object.Name, "^AuraCP(%d+)_(%d+)$")
+        if routeParent and string.lower(routeParent.Name) == "checkpoints"
+            and routeGroup and auraMajor and auraMinor
+            and routeGroup == auraMajor .. "_" .. auraMinor then
+            local major, minor = tonumber(auraMajor), tonumber(auraMinor)
+            if major and minor and major <= 500 and minor <= 500 then
+                return tostring(major) .. "." .. tostring(minor),
+                    "CP" .. major .. "_" .. minor .. " - " .. object.Name,
+                    object, 3, false, "DECIMAL_CP:" .. tostring(major) .. "_" .. tostring(minor)
+            end
+        end
+    end
+
     local parent = object.Parent
     local lowerName = string.lower(object.Name)
     local lowerParent = string.lower(parent and parent.Name or "")
@@ -255,6 +601,16 @@ local function positionToken(position)
     return string.format("%.1f|%.1f|%.1f", position.X, position.Y, position.Z)
 end
 
+local function savedRouteIdentity(item)
+    local desc = tostring(item and item.desc or "")
+    local major, minor = string.match(desc, "[Cc][Pp](%d+)_(%d+)")
+    if not major then
+        major, minor = string.match(desc, "[Aa]ura[Cc][Pp](%d+)_(%d+)")
+    end
+    if major and minor then return "DECIMAL_CP:" .. major .. "_" .. minor end
+    return nil
+end
+
 local function loadSaved()
     saved = {}
     if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
@@ -265,6 +621,22 @@ local function loadSaved()
             saved = data[tostring(game.PlaceId)]
         end
     end)
+    -- Collapse legacy duplicate saves for the same decimal-route checkpoint.
+    local unique, seenRouteIds = {}, {}
+    for _, item in ipairs(saved) do
+        local routeId = item.id or savedRouteIdentity(item)
+        if routeId then
+            item.id = routeId
+            if not seenRouteIds[routeId] then
+                seenRouteIds[routeId] = true
+                table.insert(unique, item)
+            end
+        else
+            table.insert(unique, item)
+        end
+    end
+    saved = unique
+
     local used = {}
     for _, item in ipairs(saved) do
         local n = tonumber(item.key)
@@ -292,7 +664,7 @@ local function loadSaved()
     end
 end
 
-local function persist()
+persist = function()
     if type(writefile) ~= "function" then return false end
     local ok = pcall(function()
         local all = {}
@@ -317,7 +689,7 @@ local function refresh()
     end)
 end
 
-local function assignPlainNumbers()
+assignPlainNumbers = function()
     local used = {}
     for _, item in ipairs(saved) do
         local n = tonumber(item.key)
@@ -369,25 +741,51 @@ local function queuePlainNumbering()
     end)
 end
 
-local function addSaved(key, description, cf, isPlain)
+checkpointKeyLess = function(a, b)
+    local aMajor, aMinor = string.match(tostring(a), "^(%d+)%.(%d+)$")
+    local bMajor, bMinor = string.match(tostring(b), "^(%d+)%.(%d+)$")
+    if aMajor and bMajor then
+        aMajor, aMinor = tonumber(aMajor), tonumber(aMinor)
+        bMajor, bMinor = tonumber(bMajor), tonumber(bMinor)
+        if aMajor ~= bMajor then return aMajor < bMajor end
+        return aMinor < bMinor
+    end
+    local na, nb = tonumber(a), tonumber(b)
+    if na and nb then return na < nb end
+    if na then return true end
+    if nb then return false end
+    return tostring(a) < tostring(b)
+end
+
+local function addSaved(key, description, cf, isPlain, identity)
     local pos = cf.Position
     local visitKey=tostring(key).."_"..math.floor(pos.X).."_"..math.floor(pos.Y).."_"..math.floor(pos.Z)
     visitedKeys[visitKey]=true
-    for _, item in ipairs(saved) do
-        if item.cf and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3 then
-            item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
-            persist()
-            refresh()
-            return
+    identity = identity or savedRouteIdentity({desc=description})
+    if identity then
+        for _, item in ipairs(saved) do
+            local existingId = item.id or savedRouteIdentity(item)
+            if existingId == identity then
+                item.id = identity
+                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
+                persist()
+                refresh()
+                return
+            end
+        end
+    else
+        for _, item in ipairs(saved) do
+            if not item.id and item.cf and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3 then
+                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
+                persist()
+                refresh()
+                return
+            end
         end
     end
-    table.insert(saved, {key=key, desc=description, cf={cf:GetComponents()}, plain=isPlain == true})
+    table.insert(saved, {key=key, desc=description, cf={cf:GetComponents()}, plain=isPlain == true, id=identity})
     table.sort(saved, function(a,b)
-        local na, nb = tonumber(a.key), tonumber(b.key)
-        if na and nb then return na < nb end
-        if na then return true end
-        if nb then return false end
-        return tostring(a.key) < tostring(b.key)
+        return checkpointKeyLess(a.key, b.key)
     end)
     persist()
     refresh()
@@ -398,7 +796,7 @@ local function saveFromData(data)
     if not data or not data.part or not data.part.Parent then return end
     assignPlainNumbers()
     local key = data.plain and (data.number or 1) or data.key
-    addSaved(key, data.desc, data.part.CFrame, data.plain)
+    addSaved(key, data.desc, data.part.CFrame, data.plain, data.identity)
 end
 
 local function teleportTo(cf)
@@ -515,39 +913,103 @@ local function buildUI()
         panel.Visible=false
         if reopenButton then reopenButton.Visible=true end
     end,false).ZIndex=3
-    local radarTab, savedTab
+    local radarTab, savedTab, publicTab
     local function selectPage(nextPage)
         page = nextPage
         local activeColor = Color3.fromRGB(93,78,145)
         local inactiveColor = Color3.fromRGB(43,53,72)
         if radarTab then radarTab.BackgroundColor3 = page == "RADAR" and activeColor or inactiveColor end
         if savedTab then savedTab.BackgroundColor3 = page == "SAVED" and activeColor or inactiveColor end
+        if publicTab then publicTab.BackgroundColor3 = page == "PUBLIC MAP" and activeColor or inactiveColor end
+        local isPublicPage = page == "PUBLIC MAP"
+        if publicToolbar then publicToolbar.Visible = isPublicPage end
+        -- RADAR/SAVED should use the space normally occupied by the Public Map toolbar.
+        -- Keep the larger top offset only while the Public Map toolbar is visible.
+        if list then
+            if isPublicPage then
+                list.Position = UDim2.fromOffset(8,142)
+                list.Size = UDim2.new(1,-16,1,-150)
+            else
+                list.Position = UDim2.fromOffset(8,73)
+                list.Size = UDim2.new(1,-16,1,-81)
+            end
+        end
+        if isPublicPage then loadPublicRoutes() end
         Feature.RefreshUI()
     end
     local tabBar = make("Frame",{
         Name="TabBar",Position=UDim2.fromOffset(8,42),Size=UDim2.new(1,-16,0,25),
         BackgroundTransparency=1,BorderSizePixel=0
     },panel)
+    -- Scrollable primary tabs; the manual-save action remains fixed on the right.
+    local tabScroll = make("ScrollingFrame",{
+        Name="MainTabs",Position=UDim2.fromOffset(0,0),Size=UDim2.new(1,-84,1,0),
+        BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,
+        ScrollingDirection=Enum.ScrollingDirection.X,CanvasSize=UDim2.new(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.None,ClipsDescendants=true
+    },tabBar)
     local tabLayout = make("UIListLayout",{
         FillDirection=Enum.FillDirection.Horizontal,HorizontalAlignment=Enum.HorizontalAlignment.Left,
         VerticalAlignment=Enum.VerticalAlignment.Center,Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder
-    },tabBar)
-    radarTab = button(tabBar,"RADAR",UDim2.new(0.20,0,1,0),UDim2.new(),function() selectPage("RADAR") end,page=="RADAR")
+    },tabScroll)
+    tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        tabScroll.CanvasSize=UDim2.fromOffset(tabLayout.AbsoluteContentSize.X+2,0)
+    end)
+    radarTab = button(tabScroll,"RADAR",UDim2.fromOffset(65,25),UDim2.new(),function() selectPage("RADAR") end,page=="RADAR")
     radarTab.LayoutOrder=1
-    radarTab.TextSize=10
-    savedTab = button(tabBar,"SAVED",UDim2.new(0.20,0,1,0),UDim2.new(),function() selectPage("SAVED") end,page=="SAVED")
+    radarTab.TextSize=9
+    savedTab = button(tabScroll,"SAVED",UDim2.fromOffset(65,25),UDim2.new(),function() selectPage("SAVED") end,page=="SAVED")
     savedTab.LayoutOrder=2
-    local refreshTab = button(tabBar,"REFRESH",UDim2.new(0.25,0,1,0),UDim2.new(),function() Feature.Scan(); Feature.RefreshUI() end,false)
-    refreshTab.LayoutOrder=3
+    publicTab = button(tabScroll,"PUBLIC MAP",UDim2.fromOffset(88,25),UDim2.new(),function() selectPage("PUBLIC MAP") end,page=="PUBLIC MAP")
+    publicTab.LayoutOrder=3
+    publicTab.TextSize=9
+    local refreshTab = button(tabScroll,"REFRESH",UDim2.fromOffset(72,25),UDim2.new(),function() Feature.Scan(); Feature.RefreshUI() end,false)
+    refreshTab.LayoutOrder=4
     refreshTab.TextSize=9
-    local saveHereTab = button(tabBar,"SAVE HERE",UDim2.new(0.31,0,1,0),UDim2.new(),showNamePrompt,true)
-    saveHereTab.LayoutOrder=4
-    saveHereTab.TextSize=9
+    publicTab.TextSize=9
+    local saveHereTab = button(tabBar,"SAVE MANUAL",UDim2.fromOffset(80,25),UDim2.new(1,-80,0,0),showNamePrompt,true)
+    saveHereTab.TextSize=8
+
+    publicToolbar=make("Frame",{Name="PublicToolbar",Position=UDim2.fromOffset(8,73),Size=UDim2.new(1,-16,0,64),BackgroundColor3=Color3.fromRGB(31,40,57),BorderSizePixel=0,Visible=false},panel)
+    corner(publicToolbar,7)
+    button(publicToolbar,"UPLOAD",UDim2.new(0.48,-4,0,22),UDim2.fromOffset(5,5),uploadPublicRoute,true).TextSize=9
+    button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,22),UDim2.new(0.52,0,0,5),loadPublicRoutes,false).TextSize=9
+    publicSearchBox=make("TextBox",{PlaceholderText="PENCARIAN MAP",Text="",Position=UDim2.fromOffset(5,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
+    corner(publicSearchBox,5)
+    publicUploaderSearchBox=make("TextBox",{PlaceholderText="PENCARIAN UPLOADER",Text="",Position=UDim2.new(0.5,2,0,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
+    corner(publicUploaderSearchBox,5)
+    local function onPublicSearchChanged()
+        if page=="PUBLIC MAP" then Feature.RefreshUI() end
+    end
+    publicSearchBox:GetPropertyChangedSignal("Text"):Connect(onPublicSearchChanged)
+    publicUploaderSearchBox:GetPropertyChangedSignal("Text"):Connect(onPublicSearchChanged)
+    publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,55),Size=UDim2.new(1,-76,0,9),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=7,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},publicToolbar)
+
+    publicErrorCopyButton=button(publicToolbar,"SALIN ERROR",UDim2.fromOffset(66,17),UDim2.new(1,-71,0,51),function()
+        if lastPublicError=="" then return end
+        local clipboard=(setclipboard or toclipboard or (Clipboard and Clipboard.set))
+        if type(clipboard)=="function" then
+            local ok=pcall(clipboard,lastPublicError)
+            if ok then
+                publicMessage("Error disalin ke clipboard.",false,3)
+            else
+                publicMessage("Gagal menyalin error. Coba lagi.",true,5)
+            end
+        else
+            publicMessage("Executor tidak mendukung clipboard.",true,5)
+        end
+    end,false)
+    publicErrorCopyButton.TextSize=7
+    publicErrorCopyButton.Visible=false
 
     list=make("ScrollingFrame",{
-        Name="WaypointList",Position=UDim2.fromOffset(8,75),Size=UDim2.new(1,-16,1,-83),
+        Name="WaypointList",Position=UDim2.fromOffset(8,142),Size=UDim2.new(1,-16,1,-150),
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
+    if page ~= "PUBLIC MAP" then
+        list.Position=UDim2.fromOffset(8,73)
+        list.Size=UDim2.new(1,-16,1,-81)
+    end
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
     reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-154,0,14),function()
         if reopenWasDragged then
@@ -601,7 +1063,29 @@ function Feature.RefreshUI()
         if child:IsA("Frame") then child:Destroy() end
     end
     local entries={}
-    if page=="RADAR" then
+    if page=="PUBLIC MAP" then
+        local shown=0
+        local mapTerm=string.lower((publicSearchBox and publicSearchBox.Text) or "")
+        local uploaderTerm=string.lower((publicUploaderSearchBox and publicUploaderSearchBox.Text) or "")
+        for _,route in ipairs(publicRoutes) do
+            local mapHay=string.lower(tostring(route.MapName or ""))
+            local uploaderHay=string.lower(tostring(route.UploaderName or ""))
+            if (mapTerm=="" or string.find(mapHay,mapTerm,1,true)) and (uploaderTerm=="" or string.find(uploaderHay,uploaderTerm,1,true)) then
+            shown=shown+1
+            local index=shown
+            local row=make("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
+            corner(row,6)
+            make("TextLabel",{Text=(function() local title=tostring(route.RouteName or "Unnamed"); title=string.gsub(title,"[ ]+[Rr][Oo][Uu][Tt][Ee]$",""); return title end)(),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
+            make("TextLabel",{Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",Position=UDim2.fromOffset(7,20),Size=UDim2.new(1,-110,0,15),BackgroundTransparency=1,TextColor3=Color3.fromRGB(165,178,200),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},row)
+            local getButton=button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true)
+            getButton.Text="GET"
+            getButton.TextSize=9
+            if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
+                button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function() removePublicRoute(route) end,false).TextSize=9
+            end
+            end
+        end
+    elseif page=="RADAR" then
         assignPlainNumbers()
         for _,data in pairs(cache) do
             if data.part and data.part.Parent then
@@ -614,14 +1098,12 @@ function Feature.RefreshUI()
             end
         end
         table.sort(entries,function(a,b)
-            local na,nb=tonumber(a.key),tonumber(b.key)
-            if na and nb then return na<nb end
-            if na then return true end
-            if nb then return false end
-            return tostring(a.key)<tostring(b.key)
+            return checkpointKeyLess(a.key,b.key)
         end)
-    else
+    elseif page=="SAVED" then
         for index,item in ipairs(saved) do table.insert(entries,{key=item.key,desc=item.desc,item=item,index=index}) end
+    else
+        -- Public Map routes are rendered from the active PlaceId collection.
     end
 
     for index,entry in ipairs(entries) do
@@ -662,11 +1144,11 @@ function Feature.Scan()
         local descendants=Workspace:GetDescendants()
         for i,object in ipairs(descendants) do
             if not active then break end
-            local key,desc,part,priority,plain=parseCheckpoint(object)
+            local key,desc,part,priority,plain,identity=parseCheckpoint(object)
             if key and part and part.Parent then
-                local cacheKey=plain and part or getPath(part)
+                local cacheKey=identity or (plain and part or getPath(part))
                 if not cache[cacheKey] then
-                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
+                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true,identity=identity}
                     if plain then queuePlainNumbering() end
                     if part:FindFirstChild("TouchInterest") or plain or isZoneCheckpoint(part) then
                         local lastTouch=0
@@ -704,11 +1186,11 @@ function Feature.Start()
     connect(Workspace.DescendantAdded,function(object)
         task.delay(0.2,function()
             if not active then return end
-            local key,desc,part,priority,plain=parseCheckpoint(object)
+            local key,desc,part,priority,plain,identity=parseCheckpoint(object)
             if key and part and part.Parent then
-                local cacheKey=plain and part or getPath(part)
+                local cacheKey=identity or (plain and part or getPath(part))
                 if not cache[cacheKey] then
-                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
+                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true,identity=identity}
                     if plain then queuePlainNumbering() end
                     if part:FindFirstChild("TouchInterest") or plain or isZoneCheckpoint(part) then
                         local lastTouch=0
@@ -755,6 +1237,8 @@ function Feature.Stop()
     table.clear(connections)
     if gui then gui:Destroy() end
     gui,panel,list,nameBox,promptFrame,reopenButton=nil,nil,nil,nil,nil,nil
+    publicToolbar,publicRouteNameBox,publicSearchBox,publicUploaderSearchBox,publicStatus,publicErrorCopyButton=nil,nil,nil,nil,nil,nil
+    publicRoutes={}
     table.clear(cache)
     notify("Waypoint Manager dimatikan")
     return true
