@@ -162,7 +162,7 @@ local function uploadPublicRoute()
     if publicBusy then return end
     if #saved==0 then notify("SAVED masih kosong."); return end
     local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
-    if name=="" then name=tostring(game.Name).." Route" end
+    if name=="" then name=getRobloxPlaceName().." Route" end
     local points={}
     for _,item in ipairs(saved) do
         if type(item.cf)=="table" and #item.cf>=3 then
