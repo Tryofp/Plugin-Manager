@@ -221,6 +221,8 @@ local function uploadPublicRoute()
     publicBusy=true
     publicMessage("Menyiapkan upload...")
     task.spawn(function()
+        -- Let the button/UI frame complete before preparing route data.
+        task.wait()
         local ok,result,err,pointCount,routeName=pcall(function()
             local name=requestedName
             if name=="" then name="Place "..tostring(game.PlaceId) end
