@@ -45,6 +45,7 @@ local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h
 local page = "RADAR"
 local scanBusy = false
 local refreshQueued = false
+local refreshGeneration = 0
 local dragAction = "TryoWaypointDrag_" .. tostring(LocalPlayer.UserId)
 local dragging = false
 local dragInput, dragStart, frameStart
@@ -1099,82 +1100,157 @@ local function buildUI()
 end
 
 function Feature.RefreshUI()
-    if not list then return end
-    for _, child in ipairs(list:GetChildren()) do
-        if child:IsA("Frame") then child:Destroy() end
-    end
-    local entries={}
-    if page=="PUBLIC MAP" then
-        local shown=0
-        local mapTerm=string.lower((publicSearchBox and publicSearchBox.Text) or "")
-        local uploaderTerm=string.lower((publicUploaderSearchBox and publicUploaderSearchBox.Text) or "")
-        for _,route in ipairs(publicRoutes) do
-            local mapHay=string.lower(tostring(route.MapName or ""))
-            local uploaderHay=string.lower(tostring(route.UploaderName or ""))
-            if (mapTerm=="" or string.find(mapHay,mapTerm,1,true)) and (uploaderTerm=="" or string.find(uploaderHay,uploaderTerm,1,true)) then
-            shown=shown+1
-            local index=shown
-            local row=make("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
-            corner(row,6)
-            make("TextLabel",{Text=(function() local title=tostring(route.RouteName or "Unnamed"); title=string.gsub(title,"[ ]+[Rr][Oo][Uu][Tt][Ee]$",""); return title end)(),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
-            make("TextLabel",{Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",Position=UDim2.fromOffset(7,20),Size=UDim2.new(1,-110,0,15),BackgroundTransparency=1,TextColor3=Color3.fromRGB(165,178,200),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},row)
-            local getButton=button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true)
-            getButton.Text="GET"
-            getButton.TextSize=9
-            if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
-                button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function() removePublicRoute(route) end,false).TextSize=9
-            end
-            end
-        end
-    elseif page=="RADAR" then
-        assignPlainNumbers()
-        for _,data in pairs(cache) do
-            if data.part and data.part.Parent then
-                local key=data.plain and (data.number or 1) or data.key
-                local already=false
-                for _,item in ipairs(saved) do
-                    if item.cf and (CFrame.new(unpack(item.cf)).Position-data.part.Position).Magnitude<3 then already=true; break end
-                end
-                if not already then table.insert(entries,{key=key,desc=data.desc,part=data.part,data=data}) end
-            end
-        end
-        table.sort(entries,function(a,b)
-            return checkpointKeyLess(a.key,b.key)
-        end)
-    elseif page=="SAVED" then
-        for index,item in ipairs(saved) do table.insert(entries,{key=item.key,desc=item.desc,item=item,index=index}) end
-    else
-        -- Public Map routes are rendered from the active PlaceId collection.
-    end
+    if not list or not list.Parent or not active then return end
 
-    for index,entry in ipairs(entries) do
-        local row=make("Frame",{Size=UDim2.new(1,-4,0,31),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
-        corner(row,6)
-        local keyText=entry.key=="SUMMIT" and "SUMMIT" or (entry.key=="" and "MANUAL" or "CP "..tostring(entry.key))
-        make("TextLabel",{Text=keyText,Position=UDim2.fromOffset(7,0),Size=UDim2.fromOffset(66,31),BackgroundTransparency=1,TextColor3=Color3.fromRGB(105,210,245),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left},row)
-        make("TextLabel",{Text=tostring(entry.desc),Position=UDim2.fromOffset(72,0),Size=UDim2.new(1,-157,1,0),BackgroundTransparency=1,TextColor3=Color3.fromRGB(225,230,242),Font=Enum.Font.Gotham,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
-        if page=="RADAR" then
-            button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
-                local data=entry.data
-                if data and data.part and data.part.Parent then
-                    assignPlainNumbers()
-                    local key=data.plain and (data.number or 1) or data.key
-                    teleportTo(data.part.CFrame)
-                    addSaved(key,data.desc,data.part.CFrame,data.plain)
-                    notify("Berhasil Teleport & Disave!")
-                end
-            end,true)
-        else
-            button(row,"TELE",UDim2.fromOffset(45,23),UDim2.new(1,-94,0,4),function()
-                if entry.item.cf then teleportTo(CFrame.new(unpack(entry.item.cf))) end
-            end,true)
-            button(row,"DEL",UDim2.fromOffset(40,23),UDim2.new(1,-45,0,4),function()
-                table.remove(saved,entry.index); persist(); Feature.RefreshUI()
-            end,false)
+    -- Cancel any older render pass. A large map can trigger many scanner
+    -- refreshes; only the newest snapshot should continue creating rows.
+    refreshGeneration = refreshGeneration + 1
+    local generation = refreshGeneration
+    local targetList = list
+    local targetPage = page
+
+    task.spawn(function()
+        if not active or generation ~= refreshGeneration or not targetList.Parent then return end
+
+        for _, child in ipairs(targetList:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
         end
-    end
-    task.defer(function()
-        if list then list.CanvasSize=UDim2.new(0,0,0,list.UIListLayout.AbsoluteContentSize.Y+5) end
+
+        local entries = {}
+        if targetPage == "PUBLIC MAP" then
+            local mapTerm = string.lower((publicSearchBox and publicSearchBox.Text) or "")
+            local uploaderTerm = string.lower((publicUploaderSearchBox and publicUploaderSearchBox.Text) or "")
+            local shown = 0
+            for _, route in ipairs(publicRoutes) do
+                local mapHay = string.lower(tostring(route.MapName or ""))
+                local uploaderHay = string.lower(tostring(route.UploaderName or ""))
+                if (mapTerm == "" or string.find(mapHay, mapTerm, 1, true))
+                    and (uploaderTerm == "" or string.find(uploaderHay, uploaderTerm, 1, true)) then
+                    shown = shown + 1
+                    table.insert(entries, {route=route, index=shown})
+                end
+            end
+        elseif targetPage == "RADAR" then
+            assignPlainNumbers()
+            for _, data in pairs(cache) do
+                if data.part and data.part.Parent then
+                    local key = data.plain and (data.number or 1) or data.key
+                    local already = false
+                    for _, item in ipairs(saved) do
+                        if item.cf and (CFrame.new(unpack(item.cf)).Position-data.part.Position).Magnitude < 3 then
+                            already = true
+                            break
+                        end
+                    end
+                    if not already then
+                        table.insert(entries, {key=key, desc=data.desc, part=data.part, data=data})
+                    end
+                end
+            end
+            table.sort(entries, function(a,b) return checkpointKeyLess(a.key,b.key) end)
+        elseif targetPage == "SAVED" then
+            for index, item in ipairs(saved) do
+                table.insert(entries, {key=item.key, desc=item.desc, item=item, index=index})
+            end
+        end
+
+        local function stillCurrent()
+            return active and generation == refreshGeneration and page == targetPage
+                and list == targetList and targetList.Parent ~= nil
+        end
+
+        for index, entry in ipairs(entries) do
+            if not stillCurrent() then return end
+
+            if targetPage == "PUBLIC MAP" then
+                local route = entry.route
+                local row = make("Frame", {
+                    Size=UDim2.new(1,-4,0,42), BackgroundColor3=Color3.fromRGB(34,43,60),
+                    BackgroundTransparency=0.12, BorderSizePixel=0, LayoutOrder=entry.index
+                }, targetList)
+                corner(row,6)
+                make("TextLabel", {
+                    Text=(function()
+                        local title=tostring(route.RouteName or "Unnamed")
+                        title=string.gsub(title,"[ ]+[Rr][Oo][Uu][Tt][Ee]$","")
+                        return title
+                    end)(),
+                    Position=UDim2.fromOffset(7,2), Size=UDim2.new(1,-110,0,17),
+                    BackgroundTransparency=1, TextColor3=Color3.fromRGB(235,239,248),
+                    Font=Enum.Font.GothamBold, TextSize=10, TextXAlignment=Enum.TextXAlignment.Left,
+                    TextTruncate=Enum.TextTruncate.AtEnd
+                },row)
+                make("TextLabel", {
+                    Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",
+                    Position=UDim2.fromOffset(7,20), Size=UDim2.new(1,-110,0,15),
+                    BackgroundTransparency=1, TextColor3=Color3.fromRGB(165,178,200),
+                    Font=Enum.Font.Gotham, TextSize=8, TextXAlignment=Enum.TextXAlignment.Left
+                },row)
+                local getButton=button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function()
+                    importPublicRoute(route)
+                end,true)
+                getButton.Text="GET"
+                getButton.TextSize=9
+                if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
+                    button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function()
+                        removePublicRoute(route)
+                    end,false).TextSize=9
+                end
+            else
+                local row = make("Frame", {
+                    Size=UDim2.new(1,-4,0,31), BackgroundColor3=Color3.fromRGB(34,43,60),
+                    BackgroundTransparency=0.12, BorderSizePixel=0, LayoutOrder=index
+                },targetList)
+                corner(row,6)
+                local keyText=entry.key=="SUMMIT" and "SUMMIT" or (entry.key=="" and "MANUAL" or "CP "..tostring(entry.key))
+                make("TextLabel", {
+                    Text=keyText, Position=UDim2.fromOffset(7,0), Size=UDim2.fromOffset(66,31),
+                    BackgroundTransparency=1, TextColor3=Color3.fromRGB(105,210,245),
+                    Font=Enum.Font.GothamBold, TextSize=10, TextXAlignment=Enum.TextXAlignment.Left
+                },row)
+                make("TextLabel", {
+                    Text=tostring(entry.desc), Position=UDim2.fromOffset(72,0),
+                    Size=UDim2.new(1,-157,1,0), BackgroundTransparency=1,
+                    TextColor3=Color3.fromRGB(225,230,242), Font=Enum.Font.Gotham,
+                    TextSize=10, TextXAlignment=Enum.TextXAlignment.Left,
+                    TextTruncate=Enum.TextTruncate.AtEnd
+                },row)
+                if targetPage=="RADAR" then
+                    button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
+                        local data=entry.data
+                        if data and data.part and data.part.Parent then
+                            assignPlainNumbers()
+                            local key=data.plain and (data.number or 1) or data.key
+                            teleportTo(data.part.CFrame)
+                            addSaved(key,data.desc,data.part.CFrame,data.plain)
+                            notify("Berhasil Teleport & Disave!")
+                        end
+                    end,true)
+                else
+                    button(row,"TELE",UDim2.fromOffset(45,23),UDim2.new(1,-94,0,4),function()
+                        if entry.item.cf then teleportTo(CFrame.new(unpack(entry.item.cf))) end
+                    end,true)
+                    button(row,"DEL",UDim2.fromOffset(40,23),UDim2.new(1,-45,0,4),function()
+                        table.remove(saved,entry.index)
+                        persist()
+                        Feature.RefreshUI()
+                    end,false)
+                end
+            end
+
+            -- Keep frame-time bounded on large checkpoint lists.
+            if index % 8 == 0 then
+                task.wait()
+                if not stillCurrent() then return end
+            end
+        end
+
+        if stillCurrent() then
+            local layout = targetList:FindFirstChildOfClass("UIListLayout")
+            if layout then
+                targetList.CanvasSize=UDim2.new(0,0,0,layout.AbsoluteContentSize.Y+5)
+            end
+        end
     end)
 end
 
@@ -1323,6 +1399,7 @@ end
 function Feature.Stop()
     if not active then return true end
     active=false
+    refreshGeneration = refreshGeneration + 1
     dragging=false
     reopenDragging=false
     ContextActionService:UnbindAction(dragAction)
