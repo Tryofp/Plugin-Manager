@@ -26,35 +26,77 @@ _G.__VoiceSpyMuteState = _G.__VoiceSpyMuteState or {
 local state = _G.__SpectateState
 local muteState = _G.__VoiceSpyMuteState
 
--- DAFTAR WHITELIST SUARA YANG BOLEH DIBUNYIKAN
-local ALLOWED_KEYWORDS = {
-    "checkpoint", "respawn", "cp", "pos", "pospemeriksaan", 
-    "uuhh", "oof", "gettingup", "music", "radio", "boombox", 
-    "jukebox", "song", "soundtrack", "bgm", "audio"
+-- SUARA YANG DIPERTAHANKAN: CHECKPOINT, RESPAWN, DAN AUDIO KARAKTER PLAYER
+-- Musik/BGM/radio/boombox sengaja TIDAK masuk whitelist.
+local PRESERVED_SOUND_KEYWORDS = {
+    "checkpoint", "respawn", "pospemeriksaan"
 }
 
-local function isAllowedSound(sound)
-    if not sound or not sound:IsA("Sound") then return end
-    local name = string.lower(sound.Name or "")
-    for _, kw in ipairs(ALLOWED_KEYWORDS) do
-        if string.find(name, kw, 1, true) then return true end
+local function hasPreservedName(sound)
+    local node = sound
+    local depth = 0
+
+    while node and node ~= game and depth < 8 do
+        local name = string.lower(node.Name or "")
+
+        for _, keyword in ipairs(PRESERVED_SOUND_KEYWORDS) do
+            if string.find(name, keyword, 1, true) then
+                return true
+            end
+        end
+
+        -- Nama CP generik seperti CP1, CP2, CPSUMMIT.
+        if string.match(name, "^cp%d+$") or name == "cpsummit" then
+            return true
+        end
+
+        node = node.Parent
+        depth = depth + 1
+    end
+
+    return false
+end
+
+local function belongsToPlayerCharacter(sound)
+    local node = sound
+    while node and node ~= Workspace do
+        if node:IsA("Model") then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Character == node then
+                    return true
+                end
+            end
+        end
+        node = node.Parent
     end
     return false
 end
 
+local function isPreservedSound(sound)
+    if not sound or not sound:IsA("Sound") then return false end
+    -- Semua suara yang berada di dalam karakter player tetap aktif,
+    -- termasuk suara langkah, lompatan, voice, dan emote.
+    if belongsToPlayerCharacter(sound) then return true end
+    return hasPreservedName(sound)
+end
+
 local function applyMute(sound)
     if not muteState.enabled or not sound or not sound:IsA("Sound") then return end
-    if isAllowedSound(sound) then return end
+    if isPreservedSound(sound) then return end
 
     if muteState.mutedSounds[sound] == nil then
         muteState.mutedSounds[sound] = sound.Volume
     end
 
-    sound.Volume = 0
+    -- Volume nol membungkam suara tanpa mengubah playback/posisi audio.
+    if sound.Volume ~= 0 then
+        sound.Volume = 0
+    end
 
     if not muteState.connections[sound] then
         muteState.connections[sound] = sound:GetPropertyChangedSignal("Volume"):Connect(function()
-            if muteState.enabled and sound.Parent and not isAllowedSound(sound) then
+            if muteState.enabled and sound.Parent and not isPreservedSound(sound)
+                and sound.Volume ~= 0 then
                 sound.Volume = 0
             end
         end)
@@ -474,6 +516,18 @@ local Plugin = {
                     muteState.addedConn:Disconnect()
                     muteState.addedConn = nil
                 end
+                if muteState.addedConns then
+                    for _, conn in ipairs(muteState.addedConns) do
+                        pcall(function() conn:Disconnect() end)
+                    end
+                end
+                muteState.addedConns = {}
+
+                -- Bersihkan koneksi lama agar pemanggilan command berulang tidak menumpuk.
+                for _, conn in pairs(muteState.connections) do
+                    pcall(function() conn:Disconnect() end)
+                end
+                muteState.connections = {}
 
                 for _, obj in ipairs(Workspace:GetDescendants()) do
                     if obj:IsA("Sound") then applyMute(obj) end
@@ -482,13 +536,18 @@ local Plugin = {
                     if obj:IsA("Sound") then applyMute(obj) end
                 end
 
-                muteState.addedConn = Workspace.DescendantAdded:Connect(function(obj)
-                    if muteState.enabled and obj:IsA("Sound") then
-                        task.defer(function() applyMute(obj) end)
-                    end
-                end)
+                local function watchNewSounds(container)
+                    table.insert(muteState.addedConns, container.DescendantAdded:Connect(function(obj)
+                        if muteState.enabled and obj:IsA("Sound") then
+                            applyMute(obj)
+                        end
+                    end))
+                end
 
-                print("[MuteSound] Berhasil membisukan suara latar map.")
+                watchNewSounds(Workspace)
+                watchNewSounds(SoundService)
+
+                print("[MuteSound] Map dimute; suara CP, respawn, dan player dipertahankan.")
             end
         },
         ["unmutesound"] = {
@@ -501,6 +560,12 @@ local Plugin = {
                 if muteState.addedConn then
                     muteState.addedConn:Disconnect()
                     muteState.addedConn = nil
+                end
+                if muteState.addedConns then
+                    for _, conn in ipairs(muteState.addedConns) do
+                        pcall(function() conn:Disconnect() end)
+                    end
+                    muteState.addedConns = {}
                 end
 
                 for sound, origVol in pairs(muteState.mutedSounds) do
