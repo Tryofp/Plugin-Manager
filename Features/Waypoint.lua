@@ -1,4 +1,4 @@
--- Tryo beta2 Waypoint / Checkpoint Manager
+-- Tryo Standalone Waypoint / Checkpoint Manager
 -- Standalone implementation. No Infinite Yield dependency.
 
 local Players = game:GetService("Players")
