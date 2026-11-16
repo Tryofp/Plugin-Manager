@@ -52,6 +52,18 @@ local ok, result = pcall(function()
     -- Public release manifest: only intentional user-facing changes create badges.
     local RELEASES = {
         {
+            Version = "0.8", Date = "16/11/2026", Title = "Preset, Waypoint & Sound Fixes",
+            Summary = "Perbaikan pemulihan preset Interactable, deteksi checkpoint QUEST, dan kontrol mute suara.",
+            Changes = {
+                {Id = "InteractablePresetRestore", Type = "UPDATE", Tab = "Presets", Feature = "Preset Manager",
+                    Details = "Preset kini menyimpan dan memulihkan ketujuh status Interactable; indikator toggle mengikuti hasil Load."},
+                {Id = "QuestWaypointDetection", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Radar mengenali Workspace.QUEST.CP<number>.Part dan Workspace.QUEST.CPSUMMIT.Part, termasuk pencarian ProximityPrompt pada ancestor terkait."},
+                {Id = "MuteAllSounds", FeatureId = "MuteMapSounds", Type = "UPDATE", Tab = "Horor", Feature = "Mute Sound",
+                    Details = "Mute Sound membisukan seluruh objek Sound di Workspace dan SoundService, termasuk suara karakter, checkpoint, dan respawn."}
+            }
+        },
+        {
             Version = "0.7", Date = "15/11/2026", Title = "Changelog & Tab Organization",
             Summary = "Penyempurnaan navigasi fitur dan riwayat pembaruan Script Hub.",
             Changes = {
@@ -411,6 +423,13 @@ local ok, result = pcall(function()
         end
     end
 
+    local function syncInteractable(featureId, enabled)
+        local entry = maintenanceEntries[featureId]
+        for _, control in ipairs(entry and entry.Controls or {}) do
+            if control.Set then control.Set(enabled, true) end
+        end
+    end
+
     local function addFeatureToggle(tab, featureId, definition, displayName, parent)
         if not definition then return end
         if not featureManager.Registry[featureId] then featureManager:Register(featureId, definition) end
@@ -700,6 +719,8 @@ local ok, result = pcall(function()
         end
         return {
             Features = features,
+            -- Interactable commands are managed outside FeatureManager.
+            Interactables = interactable:GetStates(),
             WalkSpeedTarget = math.clamp(tonumber(featureManager.Context.WalkSpeedTarget) or 16, 16, 100),
             SavedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             PlaceId = tostring(game.PlaceId)
@@ -877,6 +898,30 @@ local ok, result = pcall(function()
                             end
                         end
                         task.wait(0.035)
+                    end
+                end
+                -- Interactable commands are not registered in FeatureManager.
+                -- Restore each saved state through its own command controller.
+                if type(data.Interactables) == "table" then
+                    for _, id in ipairs(interactable:GetFeatureIds()) do
+                        local target = data.Interactables[id]
+                        if type(target) == "boolean" then
+                            local uiEnabled = false
+                            if target and maintenanceLocks[id] then
+                                skipped = skipped + 1
+                            else
+                                local okSet, errSet = interactable:SetFeatureEnabled(id, target)
+                                if okSet then
+                                    applied = applied + 1
+                                    uiEnabled = target
+                                else
+                                    skipped = skipped + 1
+                                    warn("[Tryo Plugin Manager] Preset load " .. tostring(id) .. ": " .. tostring(errSet))
+                                end
+                            end
+                            syncInteractable(id, uiEnabled)
+                            task.wait(0.035)
+                        end
                     end
                 end
                 local speed = tonumber(data.WalkSpeedTarget)
