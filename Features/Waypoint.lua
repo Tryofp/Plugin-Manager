@@ -848,7 +848,7 @@ local function make(className, props, parent)
     -- can render/input between batches instead of freezing on one long frame.
     if uiBuilding then
         uiBuildObjectCount=uiBuildObjectCount+1
-        if uiBuildObjectCount%12==0 then task.wait() end
+        if uiBuildObjectCount%4==0 then task.wait() end
     end
     return object
 end
@@ -1240,9 +1240,32 @@ end
 function Feature.Start()
     if active then return true end
     active=true
-    -- Build and display the panel before disk I/O or checkpoint scanning.
-    -- Large saved-route JSON files must never delay the first visible frame.
-    buildUI()
+    -- Construct the UI in a worker so Feature.Start returns immediately.
+    -- make() yields every four objects, allowing the minimal panel shell to
+    -- render before the remaining controls are added in small batches.
+    task.spawn(function()
+        local ok,err=pcall(buildUI)
+        if not ok then
+            warn("[Waypoint] UI build failed: "..tostring(err))
+            if gui then pcall(function() gui:Destroy() end) end
+            gui,panel,list,reopenButton=nil,nil,nil,nil
+            return
+        end
+        if not active then
+            if gui then gui:Destroy() end
+            gui,panel,list,reopenButton=nil,nil,nil,nil
+            return
+        end
+        -- Saved-data decoding and scanning begin only after the controls exist.
+        task.delay(0.12,function()
+            if not active or not list then return end
+            loadSaved()
+            if not active then return end
+            Feature.RefreshUI()
+            Feature.Scan()
+            notify("Scanner checkpoint aktif")
+        end)
+    end)
     -- Resolve the exact Roblox Place name away from the UI/input thread.
     -- Retry failures; getRobloxPlaceName() no longer permanently caches fallback.
     task.spawn(function()
@@ -1280,16 +1303,6 @@ function Feature.Start()
                 end
             end
         end)
-    end)
-    -- Give Roblox a frame to present the panel before decoding saved data
-    -- and starting the radar scan. Detection rules and event wiring stay intact.
-    task.delay(0.12,function()
-        if not active then return end
-        loadSaved()
-        if not active then return end
-        Feature.RefreshUI()
-        Feature.Scan()
-        notify("Scanner checkpoint aktif")
     end)
     task.spawn(function()
         local lastAccent
