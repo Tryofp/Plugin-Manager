@@ -779,6 +779,10 @@ local function buildUI()
         Name="WaypointList",Position=UDim2.fromOffset(8,171),Size=UDim2.new(1,-16,1,-179),
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
+    if page ~= "PUBLIC MAP" then
+        list.Position=UDim2.fromOffset(8,73)
+        list.Size=UDim2.new(1,-16,1,-81)
+    end
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
     reopenButton=button(gui,"Waypoint",UDim2.fromOffset(92,38),UDim2.new(1,-154,0,14),function()
         if reopenWasDragged then
