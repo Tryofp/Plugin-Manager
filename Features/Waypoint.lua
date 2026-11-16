@@ -2,6 +2,7 @@
 -- Standalone implementation. No Infinite Yield dependency.
 
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
 local StarterGui = game:GetService("StarterGui")
@@ -108,6 +109,21 @@ local function waypointPost(data)
     return waypointRequest("POST",WAYPOINT_API,data)
 end
 
+-- Roblox Place metadata provides the actual title shown on the experience page.
+-- Do not use game.Name here: it can be a generic runtime name such as "UGC".
+local function getRobloxPlaceName()
+    local ok, info = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    if ok and type(info) == "table" then
+        local placeName = tostring(info.Name or "")
+        placeName = string.gsub(placeName, "^%s*(.-)%s*$", "%1")
+        if placeName ~= "" then return placeName:sub(1,120) end
+    end
+    -- A truthful fallback is better than saving a misleading generic title.
+    return "Place " .. tostring(game.PlaceId)
+end
+
 local publicStatusGeneration=0
 local notify, persist, assignPlainNumbers, checkpointKeyLess
 
@@ -162,7 +178,7 @@ local function uploadPublicRoute()
     publicBusy=true
     publicMessage("Mengunggah "..#points.." checkpoint...")
     task.spawn(function()
-        local uploadData={Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=tostring(game.Name):sub(1,120),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points}
+        local uploadData={Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=getRobloxPlaceName(),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points}
         local result,err=waypointPost(uploadData)
         if not result then
             -- Google Apps Script may commit the POST, then return a redirect response
