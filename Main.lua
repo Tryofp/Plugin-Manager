@@ -863,18 +863,23 @@ local ok, result = pcall(function()
                     for _, id in ipairs(interactable:GetFeatureIds()) do
                         local target = data.Interactables[id]
                         if type(target) == "boolean" then
+                            local uiEnabled = false
                             if target and maintenanceLocks[id] then
                                 skipped = skipped + 1
                             else
                                 local okSet, errSet = interactable:SetFeatureEnabled(id, target)
                                 if okSet then
                                     applied = applied + 1
+                                    -- The command controller confirms that the requested state was applied.
+                                    -- Use that result for the toggle indicator instead of a potentially stale
+                                    -- internal running flag immediately after command startup.
+                                    uiEnabled = target
                                 else
                                     skipped = skipped + 1
                                     warn("[Tryo Plugin Manager] Preset load " .. tostring(id) .. ": " .. tostring(errSet))
                                 end
                             end
-                            syncInteractable(id, interactable:IsRunning(id))
+                            syncInteractable(id, uiEnabled)
                             task.wait(0.035)
                         end
                     end
