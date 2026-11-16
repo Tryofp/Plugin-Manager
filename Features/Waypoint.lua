@@ -214,44 +214,69 @@ end
 local function uploadPublicRoute()
     if publicBusy then return end
     if #saved==0 then notify("SAVED masih kosong."); return end
-    local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
-    if name=="" then name=getRobloxPlaceName() end
-    local points={}
-    for _,item in ipairs(saved) do
-        if type(item.cf)=="table" and #item.cf>=3 then
-            local p=CFrame.new(unpack(item.cf)).Position
-            table.insert(points,{
-                key=tostring(item.key or (#points+1)),
-                desc=tostring(item.desc or ""):sub(1,120),
-                x=p.X,y=p.Y,z=p.Z
-            })
-        end
-    end
-    if #points==0 or #points>300 then notify("Rute harus berisi 1–300 checkpoint."); return end
+
+    -- Keep the button callback lightweight. Snapshot/convert checkpoint data,
+    -- build JSON, perform HTTP and verify redirects inside the worker.
+    local requestedName=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
     publicBusy=true
-    publicMessage("Mengunggah "..#points.." checkpoint...")
+    publicMessage("Menyiapkan upload...")
     task.spawn(function()
-        local uploadData={Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=getRobloxPlaceName(),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points}
-        local result,err=waypointPost(uploadData)
-        if not result then
-            -- Google Apps Script may commit the POST, then return a redirect response
-            -- that some executors incorrectly surface as HTTP 405. Verify via GET.
-            local check=waypointGet("WaypointRoutes",{limit=100})
-            if check and type(check.routes)=="table" then
-                for _,route in ipairs(check.routes) do
-                    if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
-                        and tostring(route.RouteName)==name
-                        and tonumber(route.TotalCP)==#points then
-                        result={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
-                        break
+        -- Let the button/UI frame complete before preparing route data.
+        task.wait()
+        local ok,result,err,pointCount,routeName=pcall(function()
+            local name=requestedName
+            if name=="" then name="Place "..tostring(game.PlaceId) end
+            local points={}
+            for _,item in ipairs(saved) do
+                if type(item.cf)=="table" and #item.cf>=3 then
+                    local p=CFrame.new(unpack(item.cf)).Position
+                    table.insert(points,{
+                        key=tostring(item.key or (#points+1)),
+                        desc=tostring(item.desc or ""):sub(1,120),
+                        x=p.X,y=p.Y,z=p.Z
+                    })
+                end
+            end
+            if #points==0 or #points>300 then
+                return nil,"Rute harus berisi 1–300 checkpoint.",#points,name
+            end
+
+            publicMessage("Mengunggah "..#points.." checkpoint...")
+            local uploadData={
+                Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
+                MapName="Place "..tostring(game.PlaceId),
+                UploaderId=tostring(LocalPlayer.UserId),
+                UploaderName=tostring(LocalPlayer.Name),Waypoints=points
+            }
+            local uploaded,uploadError=waypointPost(uploadData)
+            if not uploaded then
+                -- Google Apps Script may commit the POST, then return a redirect
+                -- response that some executors incorrectly surface as HTTP 405.
+                local check=waypointGet("WaypointRoutes",{limit=100})
+                if check and type(check.routes)=="table" then
+                    for _,route in ipairs(check.routes) do
+                        if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
+                            and tostring(route.RouteName)==name
+                            and tonumber(route.TotalCP)==#points then
+                            uploaded={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
+                            break
+                        end
                     end
                 end
             end
+            return uploaded,uploadError,#points,name
+        end)
+
+        if not ok then
+            err=tostring(result)
+            result=nil
         end
         if result then
-            publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            publicMessage("Upload berhasil: "..tostring(result.totalCP or pointCount or 0).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
             if publicRouteNameBox then publicRouteNameBox.Text="" end
-        else publicMessage(err or "Upload gagal.",true) end
+        else
+            publicMessage(err or "Upload gagal.",true)
+        end
         publicBusy=false
         if result then loadPublicRoutes() end
     end)
@@ -1199,7 +1224,8 @@ end
 function Feature.Start()
     if active then return true end
     active=true
-    loadSaved()
+    -- Build and display the panel before disk I/O or checkpoint scanning.
+    -- Large saved-route JSON files must never delay the first visible frame.
     buildUI()
     connect(Workspace.DescendantAdded,function(object)
         task.delay(0.2,function()
@@ -1226,7 +1252,16 @@ function Feature.Start()
             end
         end)
     end)
-    Feature.Scan()
+    -- Give Roblox a frame to present the panel before decoding saved data
+    -- and starting the radar scan. Detection rules and event wiring stay intact.
+    task.delay(0.12,function()
+        if not active then return end
+        loadSaved()
+        if not active then return end
+        Feature.RefreshUI()
+        Feature.Scan()
+        notify("Scanner checkpoint aktif")
+    end)
     task.spawn(function()
         local lastAccent
         while active and reopenButton and reopenButton.Parent do
@@ -1240,7 +1275,6 @@ function Feature.Start()
             task.wait(2)
         end
     end)
-    notify("Scanner checkpoint aktif")
     return true
 end
 
