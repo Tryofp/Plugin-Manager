@@ -142,6 +142,23 @@ end
 
 local function parseCheckpoint(object)
     if not object or not (object:IsA("BasePart") or object:IsA("Model")) then return nil end
+    -- QUEST path checkpoints: Workspace.QUEST.CP<number>.Part.
+    -- The ProximityPrompt may be attached to the CP container, not the Part itself.
+    if object:IsA("BasePart") and string.lower(object.Name) == "part" then
+        local cpContainer = object.Parent
+        local questFolder = cpContainer and cpContainer.Parent
+        if cpContainer and questFolder and string.lower(questFolder.Name) == "quest"
+            and string.lower(cpContainer.Name) == "cpsummit" then
+            return "SUMMIT", "QUEST - SUMMIT", object, 10, false
+        end
+        local cpNumber = cpContainer and string.match(string.lower(cpContainer.Name), "^cp(%d+)$")
+        if cpNumber and questFolder and string.lower(questFolder.Name) == "quest" then
+            local number = tonumber(cpNumber)
+            if number and number <= 500 then
+                return number, "QUEST - " .. cpContainer.Name, object, 3, false
+            end
+        end
+    end
     local parent = object.Parent
     local lowerName = string.lower(object.Name)
     local lowerParent = string.lower(parent and parent.Name or "")
@@ -223,6 +240,17 @@ local function parseCheckpoint(object)
     if guiText~="" then description=context.." - "..guiText end
     return n,description,part,priority,false
 end
+local function getCheckpointPrompt(part)
+    local current = part
+    while current and current ~= Workspace do
+        local prompt = current:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if prompt then return prompt end
+        if string.lower(current.Name) == "quest" then break end
+        current = current.Parent
+    end
+    return nil
+end
+
 local function positionToken(position)
     return string.format("%.1f|%.1f|%.1f", position.X, position.Y, position.Z)
 end
@@ -500,7 +528,7 @@ local function buildUI()
         Name="TabBar",Position=UDim2.fromOffset(8,42),Size=UDim2.new(1,-16,0,25),
         BackgroundTransparency=1,BorderSizePixel=0
     },panel)
-    make("UIListLayout",{
+    local tabLayout = make("UIListLayout",{
         FillDirection=Enum.FillDirection.Horizontal,HorizontalAlignment=Enum.HorizontalAlignment.Left,
         VerticalAlignment=Enum.VerticalAlignment.Center,Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder
     },tabBar)
@@ -652,7 +680,7 @@ function Feature.Scan()
                             end
                         end)
                     end
-                    local prompt=part:FindFirstChildWhichIsA("ProximityPrompt",true)
+                    local prompt=getCheckpointPrompt(part)
                     if prompt then
                         connect(prompt.Triggered,function(player)
                             if player==LocalPlayer then saveFromData(cache[cacheKey]) end
@@ -691,7 +719,7 @@ function Feature.Start()
                             if char and hit:IsDescendantOf(char) and hum and hum.Health>0 then lastTouch=tick(); saveFromData(cache[cacheKey]) end
                         end)
                     end
-                    local prompt=part:FindFirstChildWhichIsA("ProximityPrompt",true)
+                    local prompt=getCheckpointPrompt(part)
                     if prompt then connect(prompt.Triggered,function(player) if player==LocalPlayer then saveFromData(cache[cacheKey]) end end) end
                     assignPlainNumbers(); refresh()
                 end
