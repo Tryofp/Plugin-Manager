@@ -147,6 +147,10 @@ local function parseCheckpoint(object)
     if object:IsA("BasePart") and string.lower(object.Name) == "part" then
         local cpContainer = object.Parent
         local questFolder = cpContainer and cpContainer.Parent
+        if cpContainer and questFolder and string.lower(questFolder.Name) == "quest"
+            and string.lower(cpContainer.Name) == "cpsummit" then
+            return "SUMMIT", "QUEST - SUMMIT", object, 10, false
+        end
         local cpNumber = cpContainer and string.match(string.lower(cpContainer.Name), "^cp(%d+)$")
         if cpNumber and questFolder and string.lower(questFolder.Name) == "quest" then
             local number = tonumber(cpNumber)
