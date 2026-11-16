@@ -254,11 +254,21 @@ end
 
 local function importPublicRoute(route)
     if publicBusy then return end
+
+    -- Public Map is a global catalogue, but checkpoint data is PlaceId-bound.
+    -- Never download or import a route from another Roblox place.
+    local routePlaceId=tostring(route and route.PlaceId or "")
+    local currentPlaceId=tostring(game.PlaceId)
+    if routePlaceId=="" or routePlaceId~=currentPlaceId then
+        publicMessage("Map tidak sesuai. Rute ini hanya bisa digunakan di map asal.",true,8)
+        return
+    end
+
     publicBusy=true
     publicMessage("Mengunduh data rute...")
     task.spawn(function()
         local ok,processError=pcall(function()
-            local result,err=waypointGet("WaypointRouteGet",{placeId=route.PlaceId or game.PlaceId,routeId=route.RouteId})
+            local result,err=waypointGet("WaypointRouteGet",{placeId=routePlaceId,routeId=route.RouteId})
             local record=result and result.route
             if not record or type(record.Waypoints)~="table" then
                 publicMessage(err or "Data rute tidak tersedia.",true,8)
