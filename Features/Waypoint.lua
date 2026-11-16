@@ -214,46 +214,84 @@ end
 local function uploadPublicRoute()
     if publicBusy then return end
     if #saved==0 then notify("SAVED masih kosong."); return end
-    local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
-    if name=="" then name=getRobloxPlaceName() end
-    local points={}
-    for _,item in ipairs(saved) do
-        if type(item.cf)=="table" and #item.cf>=3 then
-            local p=CFrame.new(unpack(item.cf)).Position
-            table.insert(points,{
-                key=tostring(item.key or (#points+1)),
-                desc=tostring(item.desc or ""):sub(1,120),
-                x=p.X,y=p.Y,z=p.Z
-            })
-        end
-    end
-    if #points==0 or #points>300 then notify("Rute harus berisi 1–300 checkpoint."); return end
+
+    -- Lock and return control to the UI before doing any route preparation,
+    -- Place-name lookup, JSON encoding, or network work.
     publicBusy=true
-    publicMessage("Mengunggah "..#points.." checkpoint...")
+    publicMessage("Menyiapkan data upload...")
+
     task.spawn(function()
-        local uploadData={Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=getRobloxPlaceName(),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points}
-        local result,err=waypointPost(uploadData)
-        if not result then
-            -- Google Apps Script may commit the POST, then return a redirect response
-            -- that some executors incorrectly surface as HTTP 405. Verify via GET.
-            local check=waypointGet("WaypointRoutes",{limit=100})
-            if check and type(check.routes)=="table" then
-                for _,route in ipairs(check.routes) do
-                    if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
-                        and tostring(route.RouteName)==name
-                        and tonumber(route.TotalCP)==#points then
-                        result={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
-                        break
+        local result,err
+        local ok,processError=pcall(function()
+            local points={}
+            local savedCount=#saved
+
+            -- Convert saved CFrames in small batches so a large route does not
+            -- monopolize a frame on lower-end devices.
+            for index,item in ipairs(saved) do
+                if type(item.cf)=="table" and #item.cf>=3 then
+                    local p=CFrame.new(unpack(item.cf)).Position
+                    table.insert(points,{
+                        key=tostring(item.key or (#points+1)),
+                        desc=tostring(item.desc or ""):sub(1,120),
+                        x=p.X,y=p.Y,z=p.Z
+                    })
+                end
+                if index%30==0 then task.wait() end
+            end
+
+            if #points==0 or #points>300 then
+                publicMessage("Rute harus berisi 1–300 checkpoint.",true,5)
+                return
+            end
+
+            -- Place-name lookup can perform several HTTP requests. Keep it
+            -- inside this worker, never in the button callback.
+            local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
+            if name=="" then name=getRobloxPlaceName() end
+
+            local uploadData={
+                Method="UPLOAD",
+                PlaceId=game.PlaceId,
+                RouteName=name,
+                MapName=getRobloxPlaceName(),
+                UploaderId=tostring(LocalPlayer.UserId),
+                UploaderName=tostring(LocalPlayer.Name),
+                Waypoints=points
+            }
+
+            publicMessage("Mengunggah "..#points.." checkpoint...")
+            result,err=waypointPost(uploadData)
+
+            if not result then
+                -- The POST may have committed before an executor mishandled
+                -- the Apps Script redirect. Verify it with the existing GET.
+                local check=waypointGet("WaypointRoutes",{limit=100})
+                if check and type(check.routes)=="table" then
+                    for _,route in ipairs(check.routes) do
+                        if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
+                            and tostring(route.RouteName)==name
+                            and tonumber(route.TotalCP)==#points then
+                            result={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
+                            break
+                        end
                     end
                 end
             end
+        end)
+
+        publicBusy=false
+        if not ok then
+            publicMessage("Upload gagal diproses: "..tostring(processError),true,8)
+            return
         end
         if result then
-            publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            publicMessage("Upload berhasil: "..tostring(result.totalCP or (#saved)).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
             if publicRouteNameBox then publicRouteNameBox.Text="" end
-        else publicMessage(err or "Upload gagal.",true) end
-        publicBusy=false
-        if result then loadPublicRoutes() end
+            loadPublicRoutes()
+        elseif err then
+            publicMessage(err,true,8)
+        end
     end)
 end
 
