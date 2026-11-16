@@ -110,6 +110,8 @@ local function waypointPost(data)
 end
 
 local publicStatusGeneration=0
+local notify, persist, assignPlainNumbers, checkpointKeyLess
+
 local function publicMessage(message, failed, clearAfter)
     publicStatusGeneration=publicStatusGeneration+1
     local generation=publicStatusGeneration
@@ -311,7 +313,7 @@ local function connect(signal, callback)
     return c
 end
 
-local function notify(message)
+notify = function(message)
     pcall(function()
         StarterGui:SetCore("SendNotification", {
             Title = "Waypoint Manager",
@@ -598,7 +600,7 @@ local function loadSaved()
     end
 end
 
-local function persist()
+persist = function()
     if type(writefile) ~= "function" then return false end
     local ok = pcall(function()
         local all = {}
@@ -623,7 +625,7 @@ local function refresh()
     end)
 end
 
-local function assignPlainNumbers()
+assignPlainNumbers = function()
     local used = {}
     for _, item in ipairs(saved) do
         local n = tonumber(item.key)
@@ -675,7 +677,7 @@ local function queuePlainNumbering()
     end)
 end
 
-local function checkpointKeyLess(a, b)
+checkpointKeyLess = function(a, b)
     local aMajor, aMinor = string.match(tostring(a), "^(%d+)%.(%d+)$")
     local bMajor, bMinor = string.match(tostring(b), "^(%d+)%.(%d+)$")
     if aMajor and bMajor then
