@@ -3172,5 +3172,21 @@ function Feature:SetFeatureEnabled(id, enabled)
     return true
 end
 
+function Feature:GetFeatureIds()
+    local ids = {}
+    for _, item in ipairs(ORDER) do
+        table.insert(ids, item.id)
+    end
+    return ids
+end
+
+function Feature:GetStates()
+    local states = {}
+    for _, item in ipairs(ORDER) do
+        states[item.id] = isRunning(item.id)
+    end
+    return states
+end
+
 Feature.IsRunning=isRunning
 return Feature
