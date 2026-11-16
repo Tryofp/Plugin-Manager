@@ -196,7 +196,7 @@ local function loadPublicRoutes()
     publicBusy=true
     publicMessage("Memuat Rute ... ( Harap bersabar )")
     task.spawn(function()
-        local result,err=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
+        local result,err=waypointGet("WaypointRoutes",{limit=100})
         if result and type(result.routes)=="table" then
             publicRoutes=result.routes
             publicMessage("Ditemukan "..#publicRoutes.." rute ( Silahkan UPLOAD, GET atau DEL )")
@@ -231,7 +231,7 @@ local function uploadPublicRoute()
         if not result then
             -- Google Apps Script may commit the POST, then return a redirect response
             -- that some executors incorrectly surface as HTTP 405. Verify via GET.
-            local check=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
+            local check=waypointGet("WaypointRoutes",{limit=100})
             if check and type(check.routes)=="table" then
                 for _,route in ipairs(check.routes) do
                     if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
@@ -258,7 +258,7 @@ local function importPublicRoute(route)
     publicMessage("Mengunduh data rute...")
     task.spawn(function()
         local ok,processError=pcall(function()
-            local result,err=waypointGet("WaypointRouteGet",{placeId=game.PlaceId,routeId=route.RouteId})
+            local result,err=waypointGet("WaypointRouteGet",{placeId=route.PlaceId or game.PlaceId,routeId=route.RouteId})
             local record=result and result.route
             if not record or type(record.Waypoints)~="table" then
                 publicMessage(err or "Data rute tidak tersedia.",true,8)
@@ -336,10 +336,10 @@ local function removePublicRoute(route)
     publicBusy=true
     publicMessage("Menghapus rute...")
     task.spawn(function()
-        local result,err=waypointPost({Method="DELETE",PlaceId=game.PlaceId,RouteId=route.RouteId,UploaderId=tostring(LocalPlayer.UserId)})
+        local result,err=waypointPost({Method="DELETE",PlaceId=route.PlaceId or game.PlaceId,RouteId=route.RouteId,UploaderId=tostring(LocalPlayer.UserId)})
         if not result then
             -- Confirm whether DELETE committed despite a broken Apps Script redirect.
-            local check=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
+            local check=waypointGet("WaypointRoutes",{limit=100})
             if check and type(check.routes)=="table" then
                 local stillExists=false
                 for _,item in ipairs(check.routes) do
@@ -1045,7 +1045,9 @@ function Feature.RefreshUI()
             corner(row,6)
             make("TextLabel",{Text=(function() local title=tostring(route.RouteName or "Unnamed"); title=string.gsub(title,"[ ]+[Rr][Oo][Uu][Tt][Ee]$",""); return title end)(),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
             make("TextLabel",{Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",Position=UDim2.fromOffset(7,20),Size=UDim2.new(1,-110,0,15),BackgroundTransparency=1,TextColor3=Color3.fromRGB(165,178,200),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},row)
-            button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true).TextSize=9
+            local getButton=button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true)
+            getButton.Text="GET"
+            getButton.TextSize=9
             if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
                 button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function() removePublicRoute(route) end,false).TextSize=9
             end
