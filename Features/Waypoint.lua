@@ -405,19 +405,33 @@ local function checkpointKeyLess(a, b)
     return tostring(a) < tostring(b)
 end
 
-local function addSaved(key, description, cf, isPlain)
+local function addSaved(key, description, cf, isPlain, identity)
     local pos = cf.Position
     local visitKey=tostring(key).."_"..math.floor(pos.X).."_"..math.floor(pos.Y).."_"..math.floor(pos.Z)
     visitedKeys[visitKey]=true
-    for _, item in ipairs(saved) do
-        if item.cf and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3 then
-            item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
-            persist()
-            refresh()
-            return
+    identity = identity or savedRouteIdentity({desc=description})
+    if identity then
+        for _, item in ipairs(saved) do
+            local existingId = item.id or savedRouteIdentity(item)
+            if existingId == identity then
+                item.id = identity
+                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
+                persist()
+                refresh()
+                return
+            end
+        end
+    else
+        for _, item in ipairs(saved) do
+            if not item.id and item.cf and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3 then
+                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
+                persist()
+                refresh()
+                return
+            end
         end
     end
-    table.insert(saved, {key=key, desc=description, cf={cf:GetComponents()}, plain=isPlain == true})
+    table.insert(saved, {key=key, desc=description, cf={cf:GetComponents()}, plain=isPlain == true, id=identity})
     table.sort(saved, function(a,b)
         return checkpointKeyLess(a.key, b.key)
     end)
@@ -430,7 +444,7 @@ local function saveFromData(data)
     if not data or not data.part or not data.part.Parent then return end
     assignPlainNumbers()
     local key = data.plain and (data.number or 1) or data.key
-    addSaved(key, data.desc, data.part.CFrame, data.plain)
+    addSaved(key, data.desc, data.part.CFrame, data.plain, data.identity)
 end
 
 local function teleportTo(cf)
