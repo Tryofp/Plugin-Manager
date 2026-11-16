@@ -30,6 +30,8 @@ local IGNORE = {
 
 local Feature = { Name = "Waypoint / Checkpoint Manager" }
 local active = false
+local uiBuilding = false
+local uiBuildObjectCount = 0
 local connections = {}
 local cache = {}
 local saved = {}
@@ -169,8 +171,9 @@ local function getRobloxPlaceName()
         end
     end
 
-    cachedRobloxPlaceName = "Place " .. placeId
-    return cachedRobloxPlaceName
+    -- Return a temporary fallback only. Do not cache it: a later background
+    -- retry must still be able to resolve the real Place-specific title.
+    return "Place " .. placeId
 end
 
 local publicStatusGeneration=0
@@ -224,8 +227,12 @@ local function uploadPublicRoute()
         -- Let the button/UI frame complete before preparing route data.
         task.wait()
         local ok,result,err,pointCount,routeName=pcall(function()
+            local resolvedMapName=cachedRobloxPlaceName
+            if not resolvedMapName or resolvedMapName=="" then
+                resolvedMapName="Place "..tostring(game.PlaceId)
+            end
             local name=requestedName
-            if name=="" then name="Place "..tostring(game.PlaceId) end
+            if name=="" then name=resolvedMapName end
             local points={}
             for _,item in ipairs(saved) do
                 if type(item.cf)=="table" and #item.cf>=3 then
@@ -244,7 +251,7 @@ local function uploadPublicRoute()
             publicMessage("Mengunggah "..#points.." checkpoint...")
             local uploadData={
                 Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
-                MapName="Place "..tostring(game.PlaceId),
+                MapName=resolvedMapName,
                 UploaderId=tostring(LocalPlayer.UserId),
                 UploaderName=tostring(LocalPlayer.Name),Waypoints=points
             }
@@ -837,6 +844,12 @@ local function make(className, props, parent)
     local object = Instance.new(className)
     for k,v in pairs(props or {}) do object[k] = v end
     object.Parent = parent
+    -- During the initial panel build, yield every 12 UI instances so Roblox
+    -- can render/input between batches instead of freezing on one long frame.
+    if uiBuilding then
+        uiBuildObjectCount=uiBuildObjectCount+1
+        if uiBuildObjectCount%12==0 then task.wait() end
+    end
     return object
 end
 
@@ -898,6 +911,8 @@ local function getThemeAccent()
 end
 
 local function buildUI()
+    uiBuilding=true
+    uiBuildObjectCount=0
     local parent
     pcall(function() parent = game:GetService("CoreGui") end)
     if not parent then parent = LocalPlayer:WaitForChild("PlayerGui") end
@@ -1080,6 +1095,7 @@ local function buildUI()
             if reopenWasDragged then task.delay(0.15,function() reopenWasDragged=false end) end
         end
     end)
+    uiBuilding=false
 end
 
 function Feature.RefreshUI()
@@ -1227,6 +1243,19 @@ function Feature.Start()
     -- Build and display the panel before disk I/O or checkpoint scanning.
     -- Large saved-route JSON files must never delay the first visible frame.
     buildUI()
+    -- Resolve the exact Roblox Place name away from the UI/input thread.
+    -- Retry failures; getRobloxPlaceName() no longer permanently caches fallback.
+    task.spawn(function()
+        for attempt=1,3 do
+            if not active or (cachedRobloxPlaceName and cachedRobloxPlaceName~="") then break end
+            local ok,name=pcall(getRobloxPlaceName)
+            if ok and type(name)=="string" and name~="" and name~=("Place "..tostring(game.PlaceId)) then
+                cachedRobloxPlaceName=name
+                break
+            end
+            if attempt<3 then task.wait(20) end
+        end
+    end)
     connect(Workspace.DescendantAdded,function(object)
         task.delay(0.2,function()
             if not active then return end
