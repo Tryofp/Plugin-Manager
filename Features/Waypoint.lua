@@ -199,7 +199,7 @@ local function loadPublicRoutes()
         local result,err=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
         if result and type(result.routes)=="table" then
             publicRoutes=result.routes
-            publicMessage("Ditemukan "..#publicRoutes.." rute ( Silahkan Upload, Get atau Del )")
+            publicMessage("Ditemukan "..#publicRoutes.." rute ( Silahkan UPLOAD, GET atau DEL )")
             if page=="PUBLIC MAP" then Feature.RefreshUI() end
         else publicMessage(err or "Gagal memuat rute.",true) end
         publicBusy=false
@@ -210,7 +210,7 @@ local function uploadPublicRoute()
     if publicBusy then return end
     if #saved==0 then notify("SAVED masih kosong."); return end
     local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
-    if name=="" then name=getRobloxPlaceName().." Route" end
+    if name=="" then name=getRobloxPlaceName() end
     local points={}
     for _,item in ipairs(saved) do
         if type(item.cf)=="table" and #item.cf>=3 then
@@ -961,7 +961,7 @@ local function buildUI()
     button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,22),UDim2.new(0.52,0,0,5),loadPublicRoutes,false).TextSize=9
     publicSearchBox=make("TextBox",{PlaceholderText="PENCARIAN MAP",Text="",Position=UDim2.fromOffset(5,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
     corner(publicSearchBox,5)
-    publicUploaderSearchBox=make("TextBox",{PlaceholderText="PENCARIAN DISTRIBUTOR",Text="",Position=UDim2.new(0.5,2,0,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
+    publicUploaderSearchBox=make("TextBox",{PlaceholderText="PENCARIAN UPLOADER",Text="",Position=UDim2.new(0.5,2,0,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
     corner(publicUploaderSearchBox,5)
     local function onPublicSearchChanged()
         if page=="PUBLIC MAP" then Feature.RefreshUI() end
@@ -1043,7 +1043,7 @@ function Feature.RefreshUI()
             local index=shown
             local row=make("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
             corner(row,6)
-            make("TextLabel",{Text=tostring(route.RouteName or "Unnamed"),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
+            make("TextLabel",{Text=(function() local title=tostring(route.RouteName or "Unnamed"); title=string.gsub(title,"[ ]+[Rr][Oo][Uu][Tt][Ee]$",""); return title end)(),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
             make("TextLabel",{Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",Position=UDim2.fromOffset(7,20),Size=UDim2.new(1,-110,0,15),BackgroundTransparency=1,TextColor3=Color3.fromRGB(165,178,200),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},row)
             button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true).TextSize=9
             if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
