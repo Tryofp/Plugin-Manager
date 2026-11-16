@@ -35,7 +35,7 @@ local saved = {}
 local plainNumbers = {}
 local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
-local publicToolbar, publicRouteNameBox, publicStatus
+local publicToolbar, publicRouteNameBox, publicSearchBox, publicStatus
 local publicRoutes, publicBusy = {}, false
 local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
 local page = "RADAR"
@@ -753,14 +753,18 @@ local function buildUI()
 
     publicToolbar=make("Frame",{Name="PublicToolbar",Position=UDim2.fromOffset(8,73),Size=UDim2.new(1,-16,0,68),BackgroundColor3=Color3.fromRGB(31,40,57),BorderSizePixel=0,Visible=false},panel)
     corner(publicToolbar,7)
-    publicRouteNameBox=make("TextBox",{PlaceholderText="Nama rute publik",Text="",Position=UDim2.fromOffset(5,5),Size=UDim2.new(1,-10,0,23),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=10,ClearTextOnFocus=false},publicToolbar)
+    publicToolbar.Size=UDim2.new(1,-16,0,94)
+    publicRouteNameBox=make("TextBox",{PlaceholderText="Nama rute publik",Text="",Position=UDim2.fromOffset(5,5),Size=UDim2.new(1,-10,0,22),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=10,ClearTextOnFocus=false},publicToolbar)
     corner(publicRouteNameBox,5)
-    button(publicToolbar,"UPLOAD SAVED",UDim2.new(0.48,-4,0,21),UDim2.fromOffset(5,32),uploadPublicRoute,true).TextSize=9
-    button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,21),UDim2.new(0.52,0,0,32),loadPublicRoutes,false).TextSize=9
-    publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,54),Size=UDim2.new(1,-10,0,12),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},publicToolbar)
+    button(publicToolbar,"UPLOAD SAVED",UDim2.new(0.48,-4,0,21),UDim2.fromOffset(5,31),uploadPublicRoute,true).TextSize=9
+    button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,21),UDim2.new(0.52,0,0,31),loadPublicRoutes,false).TextSize=9
+    publicSearchBox=make("TextBox",{PlaceholderText="Cari nama rute / uploader",Text="",Position=UDim2.fromOffset(5,56),Size=UDim2.new(1,-10,0,20),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=9,ClearTextOnFocus=false},publicToolbar)
+    corner(publicSearchBox,5)
+    publicSearchBox:GetPropertyChangedSignal("Text"):Connect(function() if page=="PUBLIC MAP" then Feature.RefreshUI() end end)
+    publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,78),Size=UDim2.new(1,-10,0,12),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},publicToolbar)
 
     list=make("ScrollingFrame",{
-        Name="WaypointList",Position=UDim2.fromOffset(8,145),Size=UDim2.new(1,-16,1,-153),
+        Name="WaypointList",Position=UDim2.fromOffset(8,171),Size=UDim2.new(1,-16,1,-179),
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
@@ -817,7 +821,13 @@ function Feature.RefreshUI()
     end
     local entries={}
     if page=="PUBLIC MAP" then
-        for index,route in ipairs(publicRoutes) do
+        local shown=0
+        local term=string.lower((publicSearchBox and publicSearchBox.Text) or "")
+        for _,route in ipairs(publicRoutes) do
+            local hay=string.lower(tostring(route.RouteName or "").." "..tostring(route.UploaderName or ""))
+            if term=="" or string.find(hay,term,1,true) then
+            shown=shown+1
+            local index=shown
             local row=make("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
             corner(row,6)
             make("TextLabel",{Text=tostring(route.RouteName or "Unnamed"),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
@@ -825,6 +835,7 @@ function Feature.RefreshUI()
             button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true).TextSize=9
             if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
                 button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function() removePublicRoute(route) end,false).TextSize=9
+            end
             end
         end
     elseif page=="RADAR" then
@@ -979,7 +990,7 @@ function Feature.Stop()
     table.clear(connections)
     if gui then gui:Destroy() end
     gui,panel,list,nameBox,promptFrame,reopenButton=nil,nil,nil,nil,nil,nil
-    publicToolbar,publicRouteNameBox,publicStatus=nil,nil,nil
+    publicToolbar,publicRouteNameBox,publicSearchBox,publicStatus=nil,nil,nil,nil
     publicRoutes={}
     table.clear(cache)
     notify("Waypoint Manager dimatikan")
