@@ -3,6 +3,21 @@
 Catatan rilis resmi untuk branch `main`. Riwayat terbaru berada di bagian atas dan disinkronkan
 dengan manifest `RELEASES` di `Main.lua`.
 
+## V0.8 — 16/11/2026
+### Preset Manager
+- **FIX — Interactable preset:** seluruh tujuh status Interactable (PPESP, ITP, DESP, CDESP, TESP, ITESP, dan LOOT) kini ikut disimpan dan dipulihkan melalui pengendali masing-masing.
+- **FIX — Toggle indicators:** indikator hijau/abu-abu pada ketujuh Interactable kini disinkronkan setelah preset dimuat. Fitur yang gagal atau terkunci Maintenance tidak ditampilkan sebagai aktif.
+
+### Waypoint Radar
+- **UPDATE — QUEST checkpoints:** radar mengenali `Workspace.QUEST.CP<number>.Part` dan mencari `ProximityPrompt` pada Part maupun container CP/ancestor terkait.
+- **UPDATE — QUEST Summit:** radar mengenali `Workspace.QUEST.CPSUMMIT.Part` sebagai SUMMIT dan mencari prompt pada ancestor terkait.
+- **Status pengujian:** deteksi CP dan Summit telah dikonfirmasi berjalan di game.
+
+### Sound & View
+- **UPDATE — MuteSound:** seluruh objek Sound di Workspace dan SoundService dimute tanpa pengecualian, termasuk suara karakter, checkpoint, dan respawn. Berlaku untuk fitur standalone dan command legacy.
+- **UPDATE — Sound monitoring:** suara baru yang ditambahkan ke Workspace atau SoundService ikut dimute; koneksi pemantauan dibersihkan saat mute dinonaktifkan.
+- **Catatan pengujian:** mute total sudah diterapkan pada source, tetapi pengujian ulang untuk memastikan gejala audio kresek telah teratasi masih diperlukan.
+
 ## V0.7 — 15/11/2026
 ### Changelog & Tab Organization
 - **NEW — Changelog!:** riwayat versi dibuka melalui jendela khusus yang dapat di-scroll, dengan kartu terpisah untuk setiap versi dan rincian perubahannya.
