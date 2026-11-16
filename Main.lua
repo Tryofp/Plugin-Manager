@@ -367,6 +367,13 @@ local ok, result = pcall(function()
         end
     end
 
+    local function syncInteractable(featureId, enabled)
+        local entry = maintenanceEntries[featureId]
+        for _, control in ipairs(entry and entry.Controls or {}) do
+            if control.Set then control.Set(enabled, true) end
+        end
+    end
+
     local function addFeatureToggle(tab, featureId, definition, displayName, parent)
         if not definition then return end
         if not featureManager.Registry[featureId] then featureManager:Register(featureId, definition) end
@@ -669,6 +676,8 @@ local ok, result = pcall(function()
         end
         return {
             Features = features,
+            -- Only PPESP is included; the other Interactable tools remain independent.
+            Interactables = { PPESP = interactable:IsRunning("PPESP") },
             WalkSpeedTarget = math.clamp(tonumber(featureManager.Context.WalkSpeedTarget) or 16, 16, 100),
             SavedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             PlaceId = tostring(game.PlaceId)
@@ -846,6 +855,24 @@ local ok, result = pcall(function()
                             end
                         end
                         task.wait(0.035)
+                    end
+                end
+                -- Restore PPESP separately because Interactable features are not registered
+                -- in FeatureManager. Older presets without this field stay backward-compatible.
+                if type(data.Interactables) == "table" and type(data.Interactables.PPESP) == "boolean" then
+                    local target = data.Interactables.PPESP
+                    if target and maintenanceLocks.PPESP then
+                        skipped = skipped + 1
+                    else
+                        local okSet, errSet = interactable:SetFeatureEnabled("PPESP", target)
+                        if okSet then
+                            syncInteractable("PPESP", interactable:IsRunning("PPESP"))
+                            applied = applied + 1
+                        else
+                            skipped = skipped + 1
+                            warn("[Tryo Plugin Manager] Preset load PPESP: " .. tostring(errSet))
+                            syncInteractable("PPESP", interactable:IsRunning("PPESP"))
+                        end
                     end
                 end
                 local speed = tonumber(data.WalkSpeedTarget)
