@@ -766,7 +766,6 @@ local function buildUI()
 
     publicToolbar=make("Frame",{Name="PublicToolbar",Position=UDim2.fromOffset(8,73),Size=UDim2.new(1,-16,0,64),BackgroundColor3=Color3.fromRGB(31,40,57),BorderSizePixel=0,Visible=false},panel)
     corner(publicToolbar,7)
-    publicRouteNameBox=make("TextBox",{PlaceholderText="Nama rute (opsional)",Text="",Position=UDim2.fromOffset(5,5),Size=UDim2.new(0,1,0,1),BackgroundTransparency=1,TextTransparency=1,ClearTextOnFocus=false},publicToolbar)
     button(publicToolbar,"UPLOAD",UDim2.new(0.48,-4,0,22),UDim2.fromOffset(5,5),uploadPublicRoute,true).TextSize=9
     button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,22),UDim2.new(0.52,0,0,5),loadPublicRoutes,false).TextSize=9
     publicSearchBox=make("TextBox",{PlaceholderText="PENCARIAN MAP",Text="",Position=UDim2.fromOffset(5,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
