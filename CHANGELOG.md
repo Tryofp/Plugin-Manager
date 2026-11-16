@@ -2,9 +2,12 @@
 
 ## Unreleased — 16/11/2026
 ### Sound & View
-- **UPDATE — MuteSound:** whitelist dipersempit ke suara checkpoint/respawn dan suara di dalam karakter player; musik, BGM, radio, boombox, jukebox, serta suara map lain ikut dimute.
+- **UPDATE — MuteSound:** hanya suara checkpoint/respawn yang dipertahankan; suara karakter/player, musik, BGM, radio, boombox, jukebox, dan suara map lain ikut dimute.
 - **UPDATE — MuteSound:** pemantauan suara baru mencakup Workspace dan SoundService, serta koneksi dibersihkan saat command dipanggil ulang atau mute dinonaktifkan.
-- **Status pengujian:** Belum diuji di game; perlu konfirmasi apakah suara kresek-kresek sudah hilang dan tiga kategori suara tetap terdengar.
+- **Status pengujian:** suara kresek-kresek masih dilaporkan; perubahan whitelist ini belum membuktikan masalah audio sudah teratasi.
+
+### Preset Manager
+- **FIX — PPESP preset:** status PPESP kini ikut tersimpan dan dipulihkan saat preset dimuat. Fitur Interactable lain tetap tidak ikut disimpan.
 
 ### Waypoint Radar
 - **NEW — QUEST path checkpoint detection:** radar mengenali `Workspace.QUEST.CP<number>.Part` dan mencari `ProximityPrompt` pada Part maupun container CP/ancestor terkait. Aturan checkpoint lama (CP bernama, Summit, dan Checkpoint biasa) tetap dipertahankan.
