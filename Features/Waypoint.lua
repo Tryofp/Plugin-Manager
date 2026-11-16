@@ -2,7 +2,6 @@
 -- Standalone implementation. No Infinite Yield dependency.
 
 local Players = game:GetService("Players")
-local MarketplaceService = game:GetService("MarketplaceService")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
 local StarterGui = game:GetService("StarterGui")
@@ -110,67 +109,16 @@ local function waypointPost(data)
     return waypointRequest("POST",WAYPOINT_API,data)
 end
 
--- Resolve the exact Place title from Roblox's public Place catalog.
--- MarketplaceService:GetProductInfo can return a generic experience title
--- for some places, so prefer the Place-specific Develop API first.
-local cachedRobloxPlaceName
-local function getRobloxPlaceName()
-    if cachedRobloxPlaceName and cachedRobloxPlaceName ~= "" then
-        return cachedRobloxPlaceName
+-- Keep map naming local and zero-network: never query Roblox catalogs
+-- during feature startup or route upload. game.Name is used when meaningful;
+-- otherwise the stable PlaceId keeps the map identity unambiguous.
+local function getLocalMapName()
+    local name = tostring(game.Name or "")
+    name = string.gsub(name, "^%s*(.-)%s*$", "%1")
+    if name == "" or string.lower(name) == "ugc" then
+        return "Place " .. tostring(game.PlaceId)
     end
-
-    local placeId = tostring(game.PlaceId)
-    local function getJson(url)
-        local result = waypointRequest("GET", url)
-        return type(result) == "table" and result or nil
-    end
-
-    -- Convert PlaceId to UniverseId, then enumerate the universe's Places.
-    -- The Develop endpoint returns each Place's own id and name.
-    local universeData = getJson("https://apis.roblox.com/universes/v1/places/"..placeId.."/universe")
-    local universeId = universeData and tostring(universeData.universeId or universeData.UniverseId or "")
-    if universeId and universeId ~= "" then
-        local cursor = nil
-        for page = 1, 10 do
-            local url = "https://develop.roblox.com/v1/universes/"..universeId.."/places?isUniverseCreation=false&limit=100&sortOrder=Asc"
-            if cursor and cursor ~= "" then
-                url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
-            end
-            local placesData = getJson(url)
-            if not placesData then break end
-            local places = placesData.data or placesData.Data
-            if type(places) == "table" then
-                for _, placeInfo in ipairs(places) do
-                    local id = tostring(placeInfo.id or placeInfo.Id or "")
-                    local name = tostring(placeInfo.name or placeInfo.Name or "")
-                    name = string.gsub(name, "^%s*(.-)%s*$", "%1")
-                    if id == placeId and name ~= "" then
-                        cachedRobloxPlaceName = name:sub(1,120)
-                        return cachedRobloxPlaceName
-                    end
-                end
-            end
-            cursor = placesData.nextPageCursor or placesData.NextPageCursor
-            if not cursor or cursor == "" then break end
-        end
-    end
-
-    -- Secondary fallback for environments where the public catalog endpoint
-    -- is unavailable. Never use game.Name because it may only say "UGC".
-    local ok, info = pcall(function()
-        return MarketplaceService:GetProductInfo(game.PlaceId)
-    end)
-    if ok and type(info) == "table" then
-        local placeName = tostring(info.Name or "")
-        placeName = string.gsub(placeName, "^%s*(.-)%s*$", "%1")
-        if placeName ~= "" and string.lower(placeName) ~= "ugc" then
-            cachedRobloxPlaceName = placeName:sub(1,120)
-            return cachedRobloxPlaceName
-        end
-    end
-
-    cachedRobloxPlaceName = "Place " .. placeId
-    return cachedRobloxPlaceName
+    return name:sub(1,120)
 end
 
 local publicStatusGeneration=0
@@ -245,14 +193,9 @@ local function uploadPublicRoute()
                 return
             end
 
-            -- Place-name lookup can perform several HTTP requests. Keep it
-            -- inside this worker, never in the button callback.
-            -- Never perform Roblox catalog lookups from the upload path.
-            -- The name is warmed asynchronously after the feature starts.
-            local placeName=cachedRobloxPlaceName
-            if not placeName or placeName=="" then
-                placeName="Place "..tostring(game.PlaceId)
-            end
+            -- Resolve the label from local game metadata only. No catalog
+            -- request, warm-up task, or extra network dependency is involved.
+            local placeName=getLocalMapName()
             local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
             if name=="" then name=placeName end
 
@@ -1227,14 +1170,8 @@ function Feature.Start()
     active=true
     loadSaved()
     buildUI()
-    -- Warm the Roblox Place title in the background. Upload must never wait
-    -- for cold-start catalog/API requests; it uses the cached title or PlaceId.
-    task.delay(1,function()
-        if not active then return end
-        task.spawn(function()
-            pcall(getRobloxPlaceName)
-        end)
-    end)
+    -- Startup stays local-only: no Roblox catalog lookup or background
+    -- HTTP warm-up when the Waypoint window opens.
     connect(Workspace.DescendantAdded,function(object)
         task.delay(0.2,function()
             if not active then return end
