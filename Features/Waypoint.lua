@@ -37,6 +37,7 @@ local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
 local publicToolbar, publicRouteNameBox, publicSearchBox, publicUploaderSearchBox, publicStatus
 local publicRoutes, publicBusy = {}, false
+local publicLastError = ""
 local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
 local page = "RADAR"
 local scanBusy = false
@@ -89,7 +90,7 @@ local function waypointRequest(method, url, payload)
 
     local responseBody = response.Body or response.body or ""
     if code >= 400 then
-        return nil, "HTTP "..tostring(code)..(responseBody ~= "" and (": "..tostring(responseBody):sub(1,160)) or "")
+        return nil, "HTTP "..tostring(code)..(responseBody ~= "" and (": "..tostring(responseBody):sub(1,1800)) or "")
     end
     local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(responseBody) end)
     if not decodedOk or type(decoded) ~= "table" then return nil, "Respons server tidak valid." end
@@ -109,10 +110,21 @@ local function waypointPost(data)
 end
 
 local function publicMessage(message, failed)
+    if failed then publicLastError=tostring(message or "Unknown error") end
     if publicStatus and publicStatus.Parent then
         publicStatus.Text=tostring(message or "")
         publicStatus.TextColor3=failed and Color3.fromRGB(255,135,135) or Color3.fromRGB(170,220,190)
     end
+end
+
+local function copyPublicError()
+    if publicLastError=="" then notify("Belum ada error untuk disalin."); return end
+    local clip=(setclipboard or toclipboard or (syn and syn.write_clipboard))
+    if type(clip)=="function" then
+        local ok=pcall(clip,publicLastError)
+        if ok then notify("Detail error berhasil disalin."); return end
+    end
+    notify("Executor tidak mendukung clipboard. Error tetap tampil di status.")
 end
 
 local function loadPublicRoutes()
@@ -146,9 +158,26 @@ local function uploadPublicRoute()
     publicBusy=true
     publicMessage("Mengunggah "..#points.." checkpoint...")
     task.spawn(function()
-        local result,err=waypointPost({Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=tostring(game.Name):sub(1,120),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points})
+        local uploadData={Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=tostring(game.Name):sub(1,120),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points}
+        local result,err=waypointPost(uploadData)
+        if not result then
+            -- Google Apps Script may commit the POST, then return a redirect response
+            -- that some executors incorrectly surface as HTTP 405. Verify via GET.
+            local check=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
+            if check and type(check.routes)=="table" then
+                for _,route in ipairs(check.routes) do
+                    if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
+                        and tostring(route.RouteName)==name
+                        and tonumber(route.TotalCP)==#points then
+                        result={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
+                        break
+                    end
+                end
+            end
+        end
         if result then
-            publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP.")
+            publicLastError=""
+            publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
             if publicRouteNameBox then publicRouteNameBox.Text="" end
         else publicMessage(err or "Upload gagal.",true) end
         publicBusy=false
@@ -195,7 +224,21 @@ local function removePublicRoute(route)
     publicMessage("Menghapus rute...")
     task.spawn(function()
         local result,err=waypointPost({Method="DELETE",PlaceId=game.PlaceId,RouteId=route.RouteId,UploaderId=tostring(LocalPlayer.UserId)})
-        if result then publicMessage("Rute berhasil dihapus.") else publicMessage(err or "Gagal menghapus.",true) end
+        if not result then
+            -- Confirm whether DELETE committed despite a broken Apps Script redirect.
+            local check=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
+            if check and type(check.routes)=="table" then
+                local stillExists=false
+                for _,item in ipairs(check.routes) do
+                    if tostring(item.RouteId)==tostring(route.RouteId) then stillExists=true; break end
+                end
+                if not stillExists then result={status="success",deleted=true,verifiedAfterRedirect=true} end
+            end
+        end
+        if result then
+            publicLastError=""
+            publicMessage(result.verifiedAfterRedirect and "Rute berhasil dihapus (terverifikasi)." or "Rute berhasil dihapus.")
+        else publicMessage(err or "Gagal menghapus.",true) end
         publicBusy=false
         if result then loadPublicRoutes() end
     end)
@@ -813,7 +856,8 @@ local function buildUI()
     end
     publicSearchBox:GetPropertyChangedSignal("Text"):Connect(onPublicSearchChanged)
     publicUploaderSearchBox:GetPropertyChangedSignal("Text"):Connect(onPublicSearchChanged)
-    publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,55),Size=UDim2.new(1,-10,0,9),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=7,TextXAlignment=Enum.TextXAlignment.Left},publicToolbar)
+    publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,55),Size=UDim2.new(1,-76,0,9),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=7,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},publicToolbar)
+    button(publicToolbar,"SALIN ERROR",UDim2.fromOffset(68,14),UDim2.new(1,-73,0,52),copyPublicError,false).TextSize=7
 
     list=make("ScrollingFrame",{
         Name="WaypointList",Position=UDim2.fromOffset(8,142),Size=UDim2.new(1,-16,1,-150),
