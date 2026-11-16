@@ -202,9 +202,15 @@ local function importPublicRoute(route)
         -- SAVED is already scoped by PlaceId. Use the shared CP key/name as
         -- identity so local and public checkpoints with the same CP number merge.
         local savedKeys={}
+        local migratedLegacyNames=false
         for _,item in ipairs(saved) do
             if item.key~=nil and tostring(item.key)~="" then
                 savedKeys[tostring(item.key)]=true
+            end
+            -- Clean up names created by the older importer without changing CP keys.
+            if string.match(tostring(item.desc or ""), "^Public:%s*") then
+                item.desc="Checkpoint • "..tostring(record.RouteName or "Public Route")
+                migratedLegacyNames=true
             end
         end
 
@@ -245,7 +251,7 @@ local function importPublicRoute(route)
             return tostring(a.key)<tostring(b.key)
         end)
 
-        if added>0 then persist() end
+        if added>0 or migratedLegacyNames then persist() end
         if added==0 then
             publicMessage("Semua CP sudah tersedia di SAVED ("..total.."/"..total..").")
             notify("Public Map: semua CP sudah tersedia.")
