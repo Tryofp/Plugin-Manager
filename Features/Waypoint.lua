@@ -109,11 +109,21 @@ local function waypointPost(data)
     return waypointRequest("POST",WAYPOINT_API,data)
 end
 
-local function publicMessage(message, failed)
+local publicStatusGeneration=0
+local function publicMessage(message, failed, clearAfter)
+    publicStatusGeneration=publicStatusGeneration+1
+    local generation=publicStatusGeneration
     if failed then publicLastError=tostring(message or "Unknown error") end
     if publicStatus and publicStatus.Parent then
         publicStatus.Text=tostring(message or "")
         publicStatus.TextColor3=failed and Color3.fromRGB(255,135,135) or Color3.fromRGB(170,220,190)
+    end
+    if clearAfter and clearAfter>0 then
+        task.delay(clearAfter,function()
+            if generation==publicStatusGeneration and publicStatus and publicStatus.Parent then
+                publicStatus.Text="PUBLIC MAP"
+            end
+        end)
     end
 end
 
@@ -151,7 +161,11 @@ local function uploadPublicRoute()
     for _,item in ipairs(saved) do
         if type(item.cf)=="table" and #item.cf>=3 then
             local p=CFrame.new(unpack(item.cf)).Position
-            table.insert(points,{key=tostring(item.key or (#points+1)),x=p.X,y=p.Y,z=p.Z})
+            table.insert(points,{
+                key=tostring(item.key or (#points+1)),
+                desc=tostring(item.desc or ""):sub(1,120),
+                x=p.X,y=p.Y,z=p.Z
+            })
         end
     end
     if #points==0 or #points>300 then notify("Rute harus berisi 1–300 checkpoint."); return end
@@ -190,77 +204,78 @@ local function importPublicRoute(route)
     publicBusy=true
     publicMessage("Mengunduh data rute...")
     task.spawn(function()
-        local result,err=waypointGet("WaypointRouteGet",{placeId=game.PlaceId,routeId=route.RouteId})
-        local record=result and result.route
-        if not record or type(record.Waypoints)~="table" then
-            publicMessage(err or "Data rute tidak tersedia.",true)
-            publicBusy=false
-            return
-        end
-
-        publicMessage("Memeriksa checkpoint...")
-        -- SAVED is already scoped by PlaceId. Use the shared CP key/name as
-        -- identity so local and public checkpoints with the same CP number merge.
-        local savedKeys={}
-        local migratedLegacyNames=false
-        for _,item in ipairs(saved) do
-            if item.key~=nil and tostring(item.key)~="" then
-                savedKeys[tostring(item.key)]=true
+        local ok,processError=pcall(function()
+            local result,err=waypointGet("WaypointRouteGet",{placeId=game.PlaceId,routeId=route.RouteId})
+            local record=result and result.route
+            if not record or type(record.Waypoints)~="table" then
+                publicMessage(err or "Data rute tidak tersedia.",true,8)
+                return
             end
-            -- Clean up names created by the older importer without changing CP keys.
-            if string.match(tostring(item.desc or ""), "^Public:%s*") then
-                item.desc="Checkpoint • "..tostring(record.RouteName or "Public Route")
-                migratedLegacyNames=true
-            end
-        end
 
-        local added=0
-        local total=0
-        for index,point in ipairs(record.Waypoints) do
-            local x,y,z=tonumber(point.x),tonumber(point.y),tonumber(point.z)
-            if x and y and z then
-                total=total+1
-                local key=tostring(point.key or index)
-                if not savedKeys[key] then
-                    local cf=CFrame.new(x,y,z)
-                    table.insert(saved,{
-                        key=key,
-                        desc="Checkpoint • "..tostring(record.RouteName or "Public Route"),
-                        cf={cf:GetComponents()},
-                        plain=false
-                    })
-                    savedKeys[key]=true
-                    added=added+1
+            publicMessage("Mencocokkan nama dan checkpoint...")
+            assignPlainNumbers()
+
+            -- Existing SAVED keys are the shared CP identities for this PlaceId.
+            local savedKeys={}
+            for _,item in ipairs(saved) do
+                if item.key~=nil and tostring(item.key)~="" then
+                    savedKeys[tostring(item.key)]=true
                 end
             end
-        end
 
-        table.sort(saved,function(a,b)
-            local aMajor,aMinor=string.match(tostring(a.key),"^(%d+)%.(%d+)$")
-            local bMajor,bMinor=string.match(tostring(b.key),"^(%d+)%.(%d+)$")
-            if aMajor and bMajor then
-                aMajor,aMinor=tonumber(aMajor),tonumber(aMinor)
-                bMajor,bMinor=tonumber(bMajor),tonumber(bMinor)
-                if aMajor~=bMajor then return aMajor<bMajor end
-                return aMinor<bMinor
+            -- Older uploads did not include descriptions. Recover the exact
+            -- RADAR description from this map's live checkpoint cache when possible.
+            local radarDescriptions={}
+            for _,data in pairs(cache) do
+                if data and data.part and data.part.Parent then
+                    local radarKey=data.plain and (data.number or 1) or data.key
+                    if radarKey~=nil and data.desc then
+                        radarDescriptions[tostring(radarKey)]=tostring(data.desc)
+                    end
+                end
             end
-            local na,nb=tonumber(a.key),tonumber(b.key)
-            if na and nb then return na<nb end
-            if na then return true end
-            if nb then return false end
-            return tostring(a.key)<tostring(b.key)
+
+            local added=0
+            local total=0
+            for index,point in ipairs(record.Waypoints) do
+                local x,y,z=tonumber(point.x),tonumber(point.y),tonumber(point.z)
+                if x and y and z then
+                    total=total+1
+                    local key=tostring(point.key or index)
+                    if not savedKeys[key] then
+                        local cf=CFrame.new(x,y,z)
+                        local description=tostring(point.desc or "")
+                        if description=="" then description=radarDescriptions[key] or "Checkpoint" end
+                        table.insert(saved,{
+                            key=key,
+                            desc=description,
+                            cf={cf:GetComponents()},
+                            plain=false
+                        })
+                        savedKeys[key]=true
+                        added=added+1
+                    end
+                end
+            end
+
+            table.sort(saved,function(a,b) return checkpointKeyLess(a.key,b.key) end)
+            if added>0 then persist() end
+
+            if added==0 then
+                publicMessage("Semua CP sudah tersedia di SAVED ("..total.."/"..total..").",false,5)
+                notify("Public Map: semua CP sudah tersedia.")
+            else
+                publicMessage("Berhasil: "..added.." CP baru ditambahkan ke SAVED.",false,5)
+                notify("Public Map: "..added.." CP baru ditambahkan.")
+            end
+            if page=="SAVED" then Feature.RefreshUI() end
         end)
 
-        if added>0 or migratedLegacyNames then persist() end
-        if added==0 then
-            publicMessage("Semua CP sudah tersedia di SAVED ("..total.."/"..total..").")
-            notify("Public Map: semua CP sudah tersedia.")
-        else
-            publicMessage("Berhasil: "..added.." CP baru ditambahkan ke SAVED.")
-            notify("Public Map: "..added.." CP baru ditambahkan.")
-        end
+        -- Always release the GET lock, including unexpected processing errors.
         publicBusy=false
-        if page=="SAVED" then Feature.RefreshUI() end
+        if not ok then
+            publicMessage("GET gagal diproses: "..tostring(processError),true,8)
+        end
     end)
 end
 
