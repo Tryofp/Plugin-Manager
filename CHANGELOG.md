@@ -3,6 +3,7 @@
 ## Unreleased — 16/11/2026
 ### Waypoint Radar
 - **NEW — QUEST path checkpoint detection:** radar mengenali `Workspace.QUEST.CP<number>.Part` dan mencari `ProximityPrompt` pada Part maupun container CP/ancestor terkait. Aturan checkpoint lama (CP bernama, Summit, dan Checkpoint biasa) tetap dipertahankan.
+- **NEW — QUEST summit detection:** radar mengenali `Workspace.QUEST.CPSUMMIT.Part` sebagai `SUMMIT`, dengan pencarian ProximityPrompt pada ancestor terkait.
 - **Status pengujian:** Belum diuji di game.
 
 Dokumen ini adalah sumber catatan perubahan untuk branch `beta2`.
