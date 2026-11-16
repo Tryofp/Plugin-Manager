@@ -247,14 +247,20 @@ local function uploadPublicRoute()
 
             -- Place-name lookup can perform several HTTP requests. Keep it
             -- inside this worker, never in the button callback.
+            -- Never perform Roblox catalog lookups from the upload path.
+            -- The name is warmed asynchronously after the feature starts.
+            local placeName=cachedRobloxPlaceName
+            if not placeName or placeName=="" then
+                placeName="Place "..tostring(game.PlaceId)
+            end
             local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
-            if name=="" then name=getRobloxPlaceName() end
+            if name=="" then name=placeName end
 
             local uploadData={
                 Method="UPLOAD",
                 PlaceId=game.PlaceId,
                 RouteName=name,
-                MapName=getRobloxPlaceName(),
+                MapName=placeName,
                 UploaderId=tostring(LocalPlayer.UserId),
                 UploaderName=tostring(LocalPlayer.Name),
                 Waypoints=points
@@ -1221,6 +1227,14 @@ function Feature.Start()
     active=true
     loadSaved()
     buildUI()
+    -- Warm the Roblox Place title in the background. Upload must never wait
+    -- for cold-start catalog/API requests; it uses the cached title or PlaceId.
+    task.delay(1,function()
+        if not active then return end
+        task.spawn(function()
+            pcall(getRobloxPlaceName)
+        end)
+    end)
     connect(Workspace.DescendantAdded,function(object)
         task.delay(0.2,function()
             if not active then return end
