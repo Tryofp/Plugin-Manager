@@ -37,7 +37,6 @@ local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
 local publicToolbar, publicRouteNameBox, publicSearchBox, publicUploaderSearchBox, publicStatus
 local publicRoutes, publicBusy = {}, false
-local publicLastError = ""
 local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
 local page = "RADAR"
 local scanBusy = false
@@ -115,7 +114,6 @@ local notify, persist, assignPlainNumbers, checkpointKeyLess
 local function publicMessage(message, failed, clearAfter)
     publicStatusGeneration=publicStatusGeneration+1
     local generation=publicStatusGeneration
-    if failed then publicLastError=tostring(message or "Unknown error") end
     if publicStatus and publicStatus.Parent then
         publicStatus.Text=tostring(message or "")
         publicStatus.TextColor3=failed and Color3.fromRGB(255,135,135) or Color3.fromRGB(170,220,190)
@@ -129,25 +127,15 @@ local function publicMessage(message, failed, clearAfter)
     end
 end
 
-local function copyPublicError()
-    if publicLastError=="" then notify("Belum ada error untuk disalin."); return end
-    local clip=(setclipboard or toclipboard or (syn and syn.write_clipboard))
-    if type(clip)=="function" then
-        local ok=pcall(clip,publicLastError)
-        if ok then notify("Detail error berhasil disalin."); return end
-    end
-    notify("Executor tidak mendukung clipboard. Error tetap tampil di status.")
-end
-
 local function loadPublicRoutes()
     if publicBusy then return end
     publicBusy=true
-    publicMessage("Memuat rute publik...")
+    publicMessage("Memuat Rute ... ( Harap bersabar )")
     task.spawn(function()
         local result,err=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
         if result and type(result.routes)=="table" then
             publicRoutes=result.routes
-            publicMessage("Ditemukan "..#publicRoutes.." rute.")
+            publicMessage("Ditemukan "..#publicRoutes.." rute ( Silahkan Upload, Get atau Del )")
             if page=="PUBLIC MAP" then Feature.RefreshUI() end
         else publicMessage(err or "Gagal memuat rute.",true) end
         publicBusy=false
@@ -192,7 +180,6 @@ local function uploadPublicRoute()
             end
         end
         if result then
-            publicLastError=""
             publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
             if publicRouteNameBox then publicRouteNameBox.Text="" end
         else publicMessage(err or "Upload gagal.",true) end
@@ -298,7 +285,6 @@ local function removePublicRoute(route)
             end
         end
         if result then
-            publicLastError=""
             publicMessage(result.verifiedAfterRedirect and "Rute berhasil dihapus (terverifikasi)." or "Rute berhasil dihapus.")
         else publicMessage(err or "Gagal menghapus.",true) end
         publicBusy=false
@@ -919,7 +905,6 @@ local function buildUI()
     publicSearchBox:GetPropertyChangedSignal("Text"):Connect(onPublicSearchChanged)
     publicUploaderSearchBox:GetPropertyChangedSignal("Text"):Connect(onPublicSearchChanged)
     publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,55),Size=UDim2.new(1,-76,0,9),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=7,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},publicToolbar)
-    button(publicToolbar,"SALIN ERROR",UDim2.fromOffset(68,14),UDim2.new(1,-73,0,52),copyPublicError,false).TextSize=7
 
     list=make("ScrollingFrame",{
         Name="WaypointList",Position=UDim2.fromOffset(8,142),Size=UDim2.new(1,-16,1,-150),
