@@ -174,7 +174,7 @@ local function parseCheckpoint(object)
             if major and minor and major <= 500 and minor <= 500 then
                 return tostring(major) .. "." .. tostring(minor),
                     "CP" .. major .. "_" .. minor .. " - " .. object.Name,
-                    object, 3, false
+                    object, 3, false, "DECIMAL_CP:" .. tostring(major) .. "_" .. tostring(minor)
             end
         end
     end
@@ -275,6 +275,16 @@ local function positionToken(position)
     return string.format("%.1f|%.1f|%.1f", position.X, position.Y, position.Z)
 end
 
+local function savedRouteIdentity(item)
+    local desc = tostring(item and item.desc or "")
+    local major, minor = string.match(desc, "[Cc][Pp](%d+)_(%d+)")
+    if not major then
+        major, minor = string.match(desc, "[Aa]ura[Cc][Pp](%d+)_(%d+)")
+    end
+    if major and minor then return "DECIMAL_CP:" .. major .. "_" .. minor end
+    return nil
+end
+
 local function loadSaved()
     saved = {}
     if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
@@ -285,6 +295,22 @@ local function loadSaved()
             saved = data[tostring(game.PlaceId)]
         end
     end)
+    -- Collapse legacy duplicate saves for the same decimal-route checkpoint.
+    local unique, seenRouteIds = {}, {}
+    for _, item in ipairs(saved) do
+        local routeId = item.id or savedRouteIdentity(item)
+        if routeId then
+            item.id = routeId
+            if not seenRouteIds[routeId] then
+                seenRouteIds[routeId] = true
+                table.insert(unique, item)
+            end
+        else
+            table.insert(unique, item)
+        end
+    end
+    saved = unique
+
     local used = {}
     for _, item in ipairs(saved) do
         local n = tonumber(item.key)
@@ -704,11 +730,11 @@ function Feature.Scan()
         local descendants=Workspace:GetDescendants()
         for i,object in ipairs(descendants) do
             if not active then break end
-            local key,desc,part,priority,plain=parseCheckpoint(object)
+            local key,desc,part,priority,plain,identity=parseCheckpoint(object)
             if key and part and part.Parent then
-                local cacheKey=plain and part or getPath(part)
+                local cacheKey=identity or (plain and part or getPath(part))
                 if not cache[cacheKey] then
-                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
+                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true,identity=identity}
                     if plain then queuePlainNumbering() end
                     if part:FindFirstChild("TouchInterest") or plain or isZoneCheckpoint(part) then
                         local lastTouch=0
@@ -746,11 +772,11 @@ function Feature.Start()
     connect(Workspace.DescendantAdded,function(object)
         task.delay(0.2,function()
             if not active then return end
-            local key,desc,part,priority,plain=parseCheckpoint(object)
+            local key,desc,part,priority,plain,identity=parseCheckpoint(object)
             if key and part and part.Parent then
-                local cacheKey=plain and part or getPath(part)
+                local cacheKey=identity or (plain and part or getPath(part))
                 if not cache[cacheKey] then
-                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true}
+                    cache[cacheKey]={key=key,desc=desc,part=part,priority=priority,plain=plain==true,identity=identity}
                     if plain then queuePlainNumbering() end
                     if part:FindFirstChild("TouchInterest") or plain or isZoneCheckpoint(part) then
                         local lastTouch=0
