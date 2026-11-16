@@ -451,7 +451,7 @@ local Plugin = {
         },
         ["mutesound"] = {
             ["ListName"] = "mutesound",
-            ["Description"] = "Mutes map sounds while preserving whitelisted sounds.",
+            ["Description"] = "Mutes every Sound object in Workspace and SoundService.",
             ["Aliases"] = {"mutesound"},
             ["Function"] = function(args, speaker)
                 muteState.enabled = true
@@ -491,7 +491,7 @@ local Plugin = {
                 watchNewSounds(Workspace)
                 watchNewSounds(SoundService)
 
-                print("[MuteSound] Map dimute; suara CP, respawn, dan player dipertahankan.")
+                print("[MuteSound] Semua Sound di Workspace dan SoundService dimute.")
             end
         },
         ["unmutesound"] = {
