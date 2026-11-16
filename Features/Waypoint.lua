@@ -488,6 +488,18 @@ local function getValidCheckpointPart(obj)
         end
         return obj
     end
+    -- BaseParts are inspected individually by the incremental Workspace scanner.
+    -- Avoid recursively enumerating their descendants on every scan pass.
+    if obj:IsA("BasePart") then
+        local nestedTouch = obj:FindFirstChild("TouchInterest", true)
+            or obj:FindFirstChildWhichIsA("TouchTransmitter", true)
+        local nestedPrompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if nestedTouch or nestedPrompt then return obj end
+        return nil
+    end
+
+    -- Model fallback is retained for explicitly named checkpoint containers.
+    -- The scanner filters unrelated Models before reaching this path.
     for _, descendant in ipairs(obj:GetDescendants()) do
         if descendant:IsA("BasePart") and not isIgnored(descendant.Name) then
             if descendant:FindFirstChild("TouchInterest") or descendant:FindFirstChildOfClass("TouchTransmitter")
@@ -501,6 +513,20 @@ end
 
 local function parseCheckpoint(object)
     if not object or not (object:IsA("BasePart") or object:IsA("Model")) then return nil end
+    if object:IsA("Model") then
+        local name = string.lower(object.Name)
+        local parentName = string.lower(object.Parent and object.Parent.Name or "")
+        local namedCandidate = name == "checkpoint" and parentName == "checkpoint"
+            or string.find(name, "checkpoint", 1, true)
+            or string.find(name, "summit", 1, true)
+            or string.find(name, "peak", 1, true)
+            or string.find(name, "finish", 1, true)
+            or string.find(name, "puncak", 1, true)
+            or string.find(name, "reset", 1, true)
+            or string.find(parentName, "summit", 1, true)
+            or string.find(parentName, "reset", 1, true)
+        if not namedCandidate then return nil end
+    end
     -- QUEST path checkpoints: Workspace.QUEST.CP<number>.Part.
     -- The ProximityPrompt may be attached to the CP container, not the Part itself.
     if object:IsA("BasePart") and string.lower(object.Name) == "part" then
@@ -1349,7 +1375,9 @@ function Feature.Scan()
                     queue[#queue+1]=child
                 end
             end
-            if processed%40==0 then task.wait() end
+            -- Yield more frequently during cold-start scans so large maps
+            -- cannot monopolize a frame on lower-end devices.
+            if processed%12==0 then task.wait() end
         end
         table.clear(queue)
         scanBusy=false
