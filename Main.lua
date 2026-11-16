@@ -1,7 +1,7 @@
 -- Tryo Plugin Manager - Standalone beta2
 -- Compact UI bootstrap. Independent from Infinite Yield.
 
-local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/beta2/"
+local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/waypoint-lazy-ui-beta2/"
 local LIBRARY_URL = BASE_URL .. "UI/Library.lua"
 
 local loadedModuleSources = {}
