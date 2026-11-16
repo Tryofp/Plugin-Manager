@@ -109,19 +109,67 @@ local function waypointPost(data)
     return waypointRequest("POST",WAYPOINT_API,data)
 end
 
--- Roblox Place metadata provides the actual title shown on the experience page.
--- Do not use game.Name here: it can be a generic runtime name such as "UGC".
+-- Resolve the exact Place title from Roblox's public Place catalog.
+-- MarketplaceService:GetProductInfo can return a generic experience title
+-- for some places, so prefer the Place-specific Develop API first.
+local cachedRobloxPlaceName
 local function getRobloxPlaceName()
+    if cachedRobloxPlaceName and cachedRobloxPlaceName ~= "" then
+        return cachedRobloxPlaceName
+    end
+
+    local placeId = tostring(game.PlaceId)
+    local function getJson(url)
+        local result = waypointRequest("GET", url)
+        return type(result) == "table" and result or nil
+    end
+
+    -- Convert PlaceId to UniverseId, then enumerate the universe's Places.
+    -- The Develop endpoint returns each Place's own id and name.
+    local universeData = getJson("https://apis.roblox.com/universes/v1/places/"..placeId.."/universe")
+    local universeId = universeData and tostring(universeData.universeId or universeData.UniverseId or "")
+    if universeId and universeId ~= "" then
+        local cursor = nil
+        for page = 1, 10 do
+            local url = "https://develop.roblox.com/v1/universes/"..universeId.."/places?isUniverseCreation=false&limit=100&sortOrder=Asc"
+            if cursor and cursor ~= "" then
+                url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+            end
+            local placesData = getJson(url)
+            if not placesData then break end
+            local places = placesData.data or placesData.Data
+            if type(places) == "table" then
+                for _, placeInfo in ipairs(places) do
+                    local id = tostring(placeInfo.id or placeInfo.Id or "")
+                    local name = tostring(placeInfo.name or placeInfo.Name or "")
+                    name = string.gsub(name, "^%s*(.-)%s*$", "%1")
+                    if id == placeId and name ~= "" then
+                        cachedRobloxPlaceName = name:sub(1,120)
+                        return cachedRobloxPlaceName
+                    end
+                end
+            end
+            cursor = placesData.nextPageCursor or placesData.NextPageCursor
+            if not cursor or cursor == "" then break end
+        end
+    end
+
+    -- Secondary fallback for environments where the public catalog endpoint
+    -- is unavailable. Never use game.Name because it may only say "UGC".
     local ok, info = pcall(function()
         return MarketplaceService:GetProductInfo(game.PlaceId)
     end)
     if ok and type(info) == "table" then
         local placeName = tostring(info.Name or "")
         placeName = string.gsub(placeName, "^%s*(.-)%s*$", "%1")
-        if placeName ~= "" then return placeName:sub(1,120) end
+        if placeName ~= "" and string.lower(placeName) ~= "ugc" then
+            cachedRobloxPlaceName = placeName:sub(1,120)
+            return cachedRobloxPlaceName
+        end
     end
-    -- A truthful fallback is better than saving a misleading generic title.
-    return "Place " .. tostring(game.PlaceId)
+
+    cachedRobloxPlaceName = "Place " .. placeId
+    return cachedRobloxPlaceName
 end
 
 local publicStatusGeneration=0
