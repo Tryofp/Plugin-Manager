@@ -145,7 +145,7 @@ local function importPublicRoute(route)
                 end
             end
         end
-        table.sort(saved,function(a,b) return checkpointKeyLess(a.key,b.key) end)
+        table.sort(saved,function(a,b) local na,nb=tonumber(a.key),tonumber(b.key); if na and nb then return na<nb end; if na then return true end; if nb then return false end; return tostring(a.key)<tostring(b.key) end)
         persist()
         publicMessage("Download selesai: "..added.." CP baru.")
         notify("Public Map: "..added.." CP diimpor.")
