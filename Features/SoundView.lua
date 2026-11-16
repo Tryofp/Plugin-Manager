@@ -6,47 +6,18 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 local Features = {}
-local WHITELIST = {
-    "checkpoint", "respawn", "pospemeriksaan"
-}
-
-local function notify(title, message)
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = title, Text = message, Duration = 3
-        })
-    end)
-end
-
-local function isWhitelisted(sound)
-    local node = sound
-    local depth = 0
-    while node and node ~= game and depth < 8 do
-        local name = string.lower(node.Name or "")
-        for _, keyword in ipairs(WHITELIST) do
-            if string.find(name, keyword, 1, true) then return true end
-        end
-        if string.match(name, "^cp%d+$") or name == "cpsummit" then
-            return true
-        end
-        node = node.Parent
-        depth = depth + 1
-    end
-    return false
-end
-
 local mutedOriginals = {}
 local muteConnections = {}
 local soundAddedConnections = {}
 local muteEnabled = false
 
 local function muteSound(sound)
-    if not muteEnabled or not sound:IsA("Sound") or isWhitelisted(sound) then return end
+    if not muteEnabled or not sound:IsA("Sound") then return end
     if mutedOriginals[sound] == nil then mutedOriginals[sound] = sound.Volume end
     sound.Volume = 0
     if not muteConnections[sound] then
         muteConnections[sound] = sound:GetPropertyChangedSignal("Volume"):Connect(function()
-            if muteEnabled and sound.Parent and not isWhitelisted(sound) and sound.Volume ~= 0 then
+            if muteEnabled and sound.Parent and sound.Volume ~= 0 then
                 sound.Volume = 0
             end
         end)
@@ -69,7 +40,7 @@ end
 
 Features.MuteMapSounds = {
     Name = "Mute Map Sounds",
-    Description = "Membisukan semua suara kecuali efek checkpoint dan respawn.",
+    Description = "Membisukan seluruh suara, termasuk checkpoint dan respawn.",
     Start = function()
         if muteEnabled then return true end
         muteEnabled = true
