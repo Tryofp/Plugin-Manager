@@ -1,5 +1,12 @@
 # Changelog — Tryo Standalone Script Hub
 
+## V0.9 — 17/11/2026
+### Waypoint Radar & Public Map
+- **UPDATE — Checkpoint biasa:** `Workspace.Checkpoint.Checkpoint` kini dikenali dan diberi nomor CP1, CP2, dan seterusnya berdasarkan urutan ketinggian.
+- **KEEP — Deteksi lama:** deteksi checkpoint bernomor dan seluruh aturan Summit, termasuk `Workspace.QUEST.CPSUMMIT.Part`, tetap dipertahankan.
+- **NEW — AuraCP route detection:** radar mengenali checkpoint rute AuraCP dengan nomor desimal tanpa mengubah klasifikasi Summit.
+- **NEW — Public Map:** integrasi Firestore untuk pencarian rute, metadata nama Place Roblox, katalog lintas map, validasi PlaceId, serta unggah, ambil, dan hapus rute.
+
 Catatan rilis resmi untuk branch `main`. Riwayat terbaru berada di bagian atas dan disinkronkan
 dengan manifest `RELEASES` di `Main.lua`.
 
