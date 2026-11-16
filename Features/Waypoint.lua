@@ -35,6 +35,9 @@ local saved = {}
 local plainNumbers = {}
 local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
+local publicToolbar, publicRouteNameBox, publicStatus
+local publicRoutes, publicBusy = {}, false
+local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
 local page = "RADAR"
 local scanBusy = false
 local refreshQueued = false
@@ -44,6 +47,123 @@ local dragInput, dragStart, frameStart
 local reopenDragging, reopenDragInput, reopenDragStart, reopenButtonStart
 local reopenWasDragged = false
 local reopenDragAction = dragAction .. "_Toggle"
+
+local function waypointRequest(method, url, payload)
+    local req = (syn and syn.request) or (http and http.request) or http_request or request
+    if type(req) ~= "function" then return nil, "Executor tidak mendukung HTTP request." end
+    local ok, response = pcall(req, {Url=url, Method=method, Headers={["Content-Type"]="application/json"}, Body=payload and HttpService:JSONEncode(payload) or nil})
+    if not ok then return nil, tostring(response) end
+    local code = tonumber(response.StatusCode or response.Status or 0) or 0
+    if code >= 400 then return nil, "HTTP "..tostring(code) end
+    local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(response.Body or response.body or "") end)
+    if not decodedOk or type(decoded) ~= "table" then return nil, "Respons server tidak valid." end
+    if decoded.status == "error" then return nil, tostring(decoded.message or "Permintaan gagal.") end
+    return decoded
+end
+
+local function waypointGet(action, params)
+    local q = {"action="..HttpService:UrlEncode(action)}
+    for k,v in pairs(params or {}) do table.insert(q,HttpService:UrlEncode(k).."="..HttpService:UrlEncode(tostring(v))) end
+    return waypointRequest("GET",WAYPOINT_API.."?"..table.concat(q,"&"))
+end
+
+local function waypointPost(data)
+    data.Type = "WaypointRoute"
+    return waypointRequest("POST",WAYPOINT_API,data)
+end
+
+local function publicMessage(message, failed)
+    if publicStatus and publicStatus.Parent then
+        publicStatus.Text=tostring(message or "")
+        publicStatus.TextColor3=failed and Color3.fromRGB(255,135,135) or Color3.fromRGB(170,220,190)
+    end
+end
+
+local function loadPublicRoutes()
+    if publicBusy then return end
+    publicBusy=true
+    publicMessage("Memuat rute publik...")
+    task.spawn(function()
+        local result,err=waypointGet("WaypointRoutes",{placeId=game.PlaceId,limit=100})
+        if result and type(result.routes)=="table" then
+            publicRoutes=result.routes
+            publicMessage("Ditemukan "..#publicRoutes.." rute.")
+            if page=="PUBLIC MAP" then Feature.RefreshUI() end
+        else publicMessage(err or "Gagal memuat rute.",true) end
+        publicBusy=false
+    end)
+end
+
+local function uploadPublicRoute()
+    if publicBusy then return end
+    if #saved==0 then notify("SAVED masih kosong."); return end
+    local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
+    if name=="" then notify("Isi nama rute terlebih dahulu."); return end
+    local points={}
+    for _,item in ipairs(saved) do
+        if type(item.cf)=="table" and #item.cf>=3 then
+            local p=CFrame.new(unpack(item.cf)).Position
+            table.insert(points,{key=tostring(item.key or (#points+1)),x=p.X,y=p.Y,z=p.Z})
+        end
+    end
+    if #points==0 or #points>300 then notify("Rute harus berisi 1–300 checkpoint."); return end
+    publicBusy=true
+    publicMessage("Mengunggah "..#points.." checkpoint...")
+    task.spawn(function()
+        local result,err=waypointPost({Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,MapName=tostring(game.Name):sub(1,120),UploaderId=tostring(LocalPlayer.UserId),UploaderName=tostring(LocalPlayer.Name),Waypoints=points})
+        if result then
+            publicMessage("Upload berhasil: "..tostring(result.totalCP or #points).." CP.")
+            publicRouteNameBox.Text=""
+        else publicMessage(err or "Upload gagal.",true) end
+        publicBusy=false
+        if result then loadPublicRoutes() end
+    end)
+end
+
+local function importPublicRoute(route)
+    if publicBusy then return end
+    publicBusy=true
+    publicMessage("Mengunduh rute...")
+    task.spawn(function()
+        local result,err=waypointGet("WaypointRouteGet",{placeId=game.PlaceId,routeId=route.RouteId})
+        local record=result and result.route
+        if not record or type(record.Waypoints)~="table" then
+            publicMessage(err or "Data rute tidak tersedia.",true); publicBusy=false; return
+        end
+        local added=0
+        for _,point in ipairs(record.Waypoints) do
+            local x,y,z=tonumber(point.x),tonumber(point.y),tonumber(point.z)
+            if x and y and z then
+                local cf=CFrame.new(x,y,z); local duplicate=false
+                for _,item in ipairs(saved) do
+                    if item.cf and (CFrame.new(unpack(item.cf)).Position-cf.Position).Magnitude<2 then duplicate=true; break end
+                end
+                if not duplicate then
+                    local key=tostring(point.key or (#saved+1))
+                    table.insert(saved,{key=key,desc="Public: "..tostring(record.RouteName or "Route").." / CP "..key,cf={cf:GetComponents()},plain=false})
+                    added=added+1
+                end
+            end
+        end
+        table.sort(saved,function(a,b) return checkpointKeyLess(a.key,b.key) end)
+        persist()
+        publicMessage("Download selesai: "..added.." CP baru.")
+        notify("Public Map: "..added.." CP diimpor.")
+        publicBusy=false
+    end)
+end
+
+local function removePublicRoute(route)
+    if publicBusy then return end
+    publicBusy=true
+    publicMessage("Menghapus rute...")
+    task.spawn(function()
+        local result,err=waypointPost({Method="DELETE",PlaceId=game.PlaceId,RouteId=route.RouteId,UploaderId=tostring(LocalPlayer.UserId)})
+        if result then publicMessage("Rute berhasil dihapus.") else publicMessage(err or "Gagal menghapus.",true) end
+        publicBusy=false
+        if result then loadPublicRoutes() end
+    end)
+end
 
 local function connect(signal, callback)
     local c = signal:Connect(callback)
@@ -595,6 +715,8 @@ local function buildUI()
         if radarTab then radarTab.BackgroundColor3 = page == "RADAR" and activeColor or inactiveColor end
         if savedTab then savedTab.BackgroundColor3 = page == "SAVED" and activeColor or inactiveColor end
         if publicTab then publicTab.BackgroundColor3 = page == "PUBLIC MAP" and activeColor or inactiveColor end
+        if publicToolbar then publicToolbar.Visible = page == "PUBLIC MAP" end
+        if page == "PUBLIC MAP" then loadPublicRoutes() end
         Feature.RefreshUI()
     end
     local tabBar = make("Frame",{
@@ -629,8 +751,16 @@ local function buildUI()
     local saveHereTab = button(tabBar,"SAVE MANUAL",UDim2.fromOffset(80,25),UDim2.new(1,-80,0,0),showNamePrompt,true)
     saveHereTab.TextSize=8
 
+    publicToolbar=make("Frame",{Name="PublicToolbar",Position=UDim2.fromOffset(8,73),Size=UDim2.new(1,-16,0,68),BackgroundColor3=Color3.fromRGB(31,40,57),BorderSizePixel=0,Visible=false},panel)
+    corner(publicToolbar,7)
+    publicRouteNameBox=make("TextBox",{PlaceholderText="Nama rute publik",Text="",Position=UDim2.fromOffset(5,5),Size=UDim2.new(1,-10,0,23),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=10,ClearTextOnFocus=false},publicToolbar)
+    corner(publicRouteNameBox,5)
+    button(publicToolbar,"UPLOAD SAVED",UDim2.new(0.48,-4,0,21),UDim2.fromOffset(5,32),uploadPublicRoute,true).TextSize=9
+    button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,21),UDim2.new(0.52,0,0,32),loadPublicRoutes,false).TextSize=9
+    publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,54),Size=UDim2.new(1,-10,0,12),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},publicToolbar)
+
     list=make("ScrollingFrame",{
-        Name="WaypointList",Position=UDim2.fromOffset(8,75),Size=UDim2.new(1,-16,1,-83),
+        Name="WaypointList",Position=UDim2.fromOffset(8,145),Size=UDim2.new(1,-16,1,-153),
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
     },panel)
     make("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},list)
@@ -686,7 +816,18 @@ function Feature.RefreshUI()
         if child:IsA("Frame") then child:Destroy() end
     end
     local entries={}
-    if page=="RADAR" then
+    if page=="PUBLIC MAP" then
+        for index,route in ipairs(publicRoutes) do
+            local row=make("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
+            corner(row,6)
+            make("TextLabel",{Text=tostring(route.RouteName or "Unnamed"),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
+            make("TextLabel",{Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",Position=UDim2.fromOffset(7,20),Size=UDim2.new(1,-110,0,15),BackgroundTransparency=1,TextColor3=Color3.fromRGB(165,178,200),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},row)
+            button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true).TextSize=9
+            if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
+                button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function() removePublicRoute(route) end,false).TextSize=9
+            end
+        end
+    elseif page=="RADAR" then
         assignPlainNumbers()
         for _,data in pairs(cache) do
             if data.part and data.part.Parent then
@@ -704,14 +845,7 @@ function Feature.RefreshUI()
     elseif page=="SAVED" then
         for index,item in ipairs(saved) do table.insert(entries,{key=item.key,desc=item.desc,item=item,index=index}) end
     else
-        local info = make("TextLabel",{
-            Name="PublicMapInfo",Size=UDim2.new(1,-8,0,62),BackgroundTransparency=1,
-            Text="PUBLIC MAP SHARING\nEndpoint Firestore Waypoint belum dikonfigurasi.",
-            TextColor3=Color3.fromRGB(190,198,216),Font=Enum.Font.Gotham,
-            TextSize=11,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Center,
-            TextYAlignment=Enum.TextYAlignment.Center
-        },list)
-        info.LayoutOrder=1
+        -- Public Map routes are rendered from the active PlaceId collection.
     end
 
     for index,entry in ipairs(entries) do
@@ -845,6 +979,8 @@ function Feature.Stop()
     table.clear(connections)
     if gui then gui:Destroy() end
     gui,panel,list,nameBox,promptFrame,reopenButton=nil,nil,nil,nil,nil,nil
+    publicToolbar,publicRouteNameBox,publicStatus=nil,nil,nil
+    publicRoutes={}
     table.clear(cache)
     notify("Waypoint Manager dimatikan")
     return true
