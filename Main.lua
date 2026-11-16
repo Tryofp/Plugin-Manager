@@ -676,8 +676,8 @@ local ok, result = pcall(function()
         end
         return {
             Features = features,
-            -- Only PPESP is included; the other Interactable tools remain independent.
-            Interactables = { PPESP = interactable:IsRunning("PPESP") },
+            -- Interactable commands are outside FeatureManager, so snapshot their real runtime states separately.
+            Interactables = interactable:GetStates(),
             WalkSpeedTarget = math.clamp(tonumber(featureManager.Context.WalkSpeedTarget) or 16, 16, 100),
             SavedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             PlaceId = tostring(game.PlaceId)
@@ -857,21 +857,25 @@ local ok, result = pcall(function()
                         task.wait(0.035)
                     end
                 end
-                -- Restore PPESP separately because Interactable features are not registered
-                -- in FeatureManager. Older presets without this field stay backward-compatible.
-                if type(data.Interactables) == "table" and type(data.Interactables.PPESP) == "boolean" then
-                    local target = data.Interactables.PPESP
-                    if target and maintenanceLocks.PPESP then
-                        skipped = skipped + 1
-                    else
-                        local okSet, errSet = interactable:SetFeatureEnabled("PPESP", target)
-                        if okSet then
-                            syncInteractable("PPESP", interactable:IsRunning("PPESP"))
-                            applied = applied + 1
-                        else
-                            skipped = skipped + 1
-                            warn("[Tryo Plugin Manager] Preset load PPESP: " .. tostring(errSet))
-                            syncInteractable("PPESP", interactable:IsRunning("PPESP"))
+                -- Interactable commands are not registered in FeatureManager.
+                -- Restore each saved toggle through its own command controller.
+                if type(data.Interactables) == "table" then
+                    for _, id in ipairs(interactable:GetFeatureIds()) do
+                        local target = data.Interactables[id]
+                        if type(target) == "boolean" then
+                            if target and maintenanceLocks[id] then
+                                skipped = skipped + 1
+                            else
+                                local okSet, errSet = interactable:SetFeatureEnabled(id, target)
+                                if okSet then
+                                    applied = applied + 1
+                                else
+                                    skipped = skipped + 1
+                                    warn("[Tryo Plugin Manager] Preset load " .. tostring(id) .. ": " .. tostring(errSet))
+                                end
+                            end
+                            syncInteractable(id, interactable:IsRunning(id))
+                            task.wait(0.035)
                         end
                     end
                 end
