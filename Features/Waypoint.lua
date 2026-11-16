@@ -36,7 +36,8 @@ local saved = {}
 local plainNumbers = {}
 local visitedKeys = {}
 local gui, panel, list, nameBox, promptFrame, reopenButton
-local publicToolbar, publicRouteNameBox, publicSearchBox, publicUploaderSearchBox, publicStatus
+local publicToolbar, publicRouteNameBox, publicSearchBox, publicUploaderSearchBox, publicStatus, publicErrorCopyButton
+local lastPublicError = ""
 local publicRoutes, publicBusy = {}, false
 local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
 local page = "RADAR"
@@ -178,9 +179,13 @@ local notify, persist, assignPlainNumbers, checkpointKeyLess
 local function publicMessage(message, failed, clearAfter)
     publicStatusGeneration=publicStatusGeneration+1
     local generation=publicStatusGeneration
+    if failed then lastPublicError=tostring(message or "Terjadi kesalahan.") end
     if publicStatus and publicStatus.Parent then
         publicStatus.Text=tostring(message or "")
         publicStatus.TextColor3=failed and Color3.fromRGB(255,135,135) or Color3.fromRGB(170,220,190)
+    end
+    if publicErrorCopyButton and publicErrorCopyButton.Parent then
+        publicErrorCopyButton.Visible=failed==true and lastPublicError~=""
     end
     if clearAfter and clearAfter>0 then
         task.delay(clearAfter,function()
@@ -980,6 +985,23 @@ local function buildUI()
     publicUploaderSearchBox:GetPropertyChangedSignal("Text"):Connect(onPublicSearchChanged)
     publicStatus=make("TextLabel",{Text="PUBLIC MAP",Position=UDim2.fromOffset(5,55),Size=UDim2.new(1,-76,0,9),BackgroundTransparency=1,TextColor3=Color3.fromRGB(170,220,190),Font=Enum.Font.Gotham,TextSize=7,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},publicToolbar)
 
+    publicErrorCopyButton=button(publicToolbar,"SALIN ERROR",UDim2.fromOffset(66,17),UDim2.new(1,-71,0,51),function()
+        if lastPublicError=="" then return end
+        local clipboard=(setclipboard or toclipboard or (Clipboard and Clipboard.set))
+        if type(clipboard)=="function" then
+            local ok=pcall(clipboard,lastPublicError)
+            if ok then
+                publicMessage("Error disalin ke clipboard.",false,3)
+            else
+                publicMessage("Gagal menyalin error. Coba lagi.",true,5)
+            end
+        else
+            publicMessage("Executor tidak mendukung clipboard.",true,5)
+        end
+    end,false)
+    publicErrorCopyButton.TextSize=7
+    publicErrorCopyButton.Visible=false
+
     list=make("ScrollingFrame",{
         Name="WaypointList",Position=UDim2.fromOffset(8,142),Size=UDim2.new(1,-16,1,-150),
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0)
@@ -1215,7 +1237,7 @@ function Feature.Stop()
     table.clear(connections)
     if gui then gui:Destroy() end
     gui,panel,list,nameBox,promptFrame,reopenButton=nil,nil,nil,nil,nil,nil
-    publicToolbar,publicRouteNameBox,publicSearchBox,publicUploaderSearchBox,publicStatus=nil,nil,nil,nil,nil
+    publicToolbar,publicRouteNameBox,publicSearchBox,publicUploaderSearchBox,publicStatus,publicErrorCopyButton=nil,nil,nil,nil,nil,nil
     publicRoutes={}
     table.clear(cache)
     notify("Waypoint Manager dimatikan")
