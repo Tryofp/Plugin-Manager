@@ -30,6 +30,8 @@ local IGNORE = {
 
 local Feature = { Name = "Waypoint / Checkpoint Manager" }
 local active = false
+local uiBuilding = false
+local uiBuildObjectCount = 0
 local connections = {}
 local cache = {}
 local saved = {}
@@ -43,6 +45,7 @@ local WAYPOINT_API = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h
 local page = "RADAR"
 local scanBusy = false
 local refreshQueued = false
+local refreshGeneration = 0
 local dragAction = "TryoWaypointDrag_" .. tostring(LocalPlayer.UserId)
 local dragging = false
 local dragInput, dragStart, frameStart
@@ -169,8 +172,9 @@ local function getRobloxPlaceName()
         end
     end
 
-    cachedRobloxPlaceName = "Place " .. placeId
-    return cachedRobloxPlaceName
+    -- Return a temporary fallback only. Do not cache it: a later background
+    -- retry must still be able to resolve the real Place-specific title.
+    return "Place " .. placeId
 end
 
 local publicStatusGeneration=0
@@ -215,20 +219,23 @@ local function uploadPublicRoute()
     if publicBusy then return end
     if #saved==0 then notify("SAVED masih kosong."); return end
 
-    -- Lock and return control to the UI before doing any route preparation,
-    -- Place-name lookup, JSON encoding, or network work.
+    -- Keep the button callback lightweight. Snapshot/convert checkpoint data,
+    -- build JSON, perform HTTP and verify redirects inside the worker.
+    local requestedName=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
     publicBusy=true
-    publicMessage("Menyiapkan data upload...")
-
+    publicMessage("Menyiapkan upload...")
     task.spawn(function()
-        local result,err
-        local ok,processError=pcall(function()
+        -- Let the button/UI frame complete before preparing route data.
+        task.wait()
+        local ok,result,err,pointCount,routeName=pcall(function()
+            local resolvedMapName=cachedRobloxPlaceName
+            if not resolvedMapName or resolvedMapName=="" then
+                resolvedMapName="Place "..tostring(game.PlaceId)
+            end
+            local name=requestedName
+            if name=="" then name=resolvedMapName end
             local points={}
-            local savedCount=#saved
-
-            -- Convert saved CFrames in small batches so a large route does not
-            -- monopolize a frame on lower-end devices.
-            for index,item in ipairs(saved) do
+            for _,item in ipairs(saved) do
                 if type(item.cf)=="table" and #item.cf>=3 then
                     local p=CFrame.new(unpack(item.cf)).Position
                     table.insert(points,{
@@ -237,67 +244,49 @@ local function uploadPublicRoute()
                         x=p.X,y=p.Y,z=p.Z
                     })
                 end
-                if index%30==0 then task.wait() end
             end
-
             if #points==0 or #points>300 then
-                publicMessage("Rute harus berisi 1–300 checkpoint.",true,5)
-                return
+                return nil,"Rute harus berisi 1–300 checkpoint.",#points,name
             end
-
-            -- Place-name lookup can perform several HTTP requests. Keep it
-            -- inside this worker, never in the button callback.
-            -- Never perform Roblox catalog lookups from the upload path.
-            -- The name is warmed asynchronously after the feature starts.
-            local placeName=cachedRobloxPlaceName
-            if not placeName or placeName=="" then
-                placeName="Place "..tostring(game.PlaceId)
-            end
-            local name=string.gsub((publicRouteNameBox and publicRouteNameBox.Text) or "","^%s*(.-)%s*$","%1")
-            if name=="" then name=placeName end
-
-            local uploadData={
-                Method="UPLOAD",
-                PlaceId=game.PlaceId,
-                RouteName=name,
-                MapName=placeName,
-                UploaderId=tostring(LocalPlayer.UserId),
-                UploaderName=tostring(LocalPlayer.Name),
-                Waypoints=points
-            }
 
             publicMessage("Mengunggah "..#points.." checkpoint...")
-            result,err=waypointPost(uploadData)
-
-            if not result then
-                -- The POST may have committed before an executor mishandled
-                -- the Apps Script redirect. Verify it with the existing GET.
+            local uploadData={
+                Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
+                MapName=resolvedMapName,
+                UploaderId=tostring(LocalPlayer.UserId),
+                UploaderName=tostring(LocalPlayer.Name),Waypoints=points
+            }
+            local uploaded,uploadError=waypointPost(uploadData)
+            if not uploaded then
+                -- Google Apps Script may commit the POST, then return a redirect
+                -- response that some executors incorrectly surface as HTTP 405.
                 local check=waypointGet("WaypointRoutes",{limit=100})
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
                         if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
                             and tostring(route.RouteName)==name
                             and tonumber(route.TotalCP)==#points then
-                            result={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
+                            uploaded={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
                             break
                         end
                     end
                 end
             end
+            return uploaded,uploadError,#points,name
         end)
 
-        publicBusy=false
         if not ok then
-            publicMessage("Upload gagal diproses: "..tostring(processError),true,8)
-            return
+            err=tostring(result)
+            result=nil
         end
         if result then
-            publicMessage("Upload berhasil: "..tostring(result.totalCP or (#saved)).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            publicMessage("Upload berhasil: "..tostring(result.totalCP or pointCount or 0).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
             if publicRouteNameBox then publicRouteNameBox.Text="" end
-            loadPublicRoutes()
-        elseif err then
-            publicMessage(err,true,8)
+        else
+            publicMessage(err or "Upload gagal.",true)
         end
+        publicBusy=false
+        if result then loadPublicRoutes() end
     end)
 end
 
@@ -499,6 +488,18 @@ local function getValidCheckpointPart(obj)
         end
         return obj
     end
+    -- BaseParts are inspected individually by the incremental Workspace scanner.
+    -- Avoid recursively enumerating their descendants on every scan pass.
+    if obj:IsA("BasePart") then
+        local nestedTouch = obj:FindFirstChild("TouchInterest", true)
+            or obj:FindFirstChildWhichIsA("TouchTransmitter", true)
+        local nestedPrompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if nestedTouch or nestedPrompt then return obj end
+        return nil
+    end
+
+    -- Model fallback is retained for explicitly named checkpoint containers.
+    -- The scanner filters unrelated Models before reaching this path.
     for _, descendant in ipairs(obj:GetDescendants()) do
         if descendant:IsA("BasePart") and not isIgnored(descendant.Name) then
             if descendant:FindFirstChild("TouchInterest") or descendant:FindFirstChildOfClass("TouchTransmitter")
@@ -512,6 +513,40 @@ end
 
 local function parseCheckpoint(object)
     if not object or not (object:IsA("BasePart") or object:IsA("Model")) then return nil end
+    if object:IsA("Model") then
+        local name = string.lower(object.Name)
+        local parentName = string.lower(object.Parent and object.Parent.Name or "")
+
+        -- Keep the Model fast-path filter, but allow the naming patterns that
+        -- the general checkpoint parser below already understands. Some maps
+        -- wrap touch parts in Models named CP1, Stage 2, WP3, or just "1".
+        local function isCheckpointCandidate(value)
+            if value == "" then return false end
+            if string.find(value, "checkpoint", 1, true)
+                or string.find(value, "summit", 1, true)
+                or string.find(value, "peak", 1, true)
+                or string.find(value, "finish", 1, true)
+                or string.find(value, "puncak", 1, true)
+                or string.find(value, "reset", 1, true)
+                or string.find(value, "cekpoin", 1, true)
+                or string.find(value, "waypoint", 1, true) then
+                return true
+            end
+            -- Accept whole and decimal checkpoint labels, e.g. CP1, CP 1.1,
+            -- CP-1.1, CP_1.1, Stage 2.5, and WP3.1.
+            return string.match(value, "^cp%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^stage%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^wp%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^pos%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^ring%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^%d+%.?%d*$")
+        end
+
+        local namedCandidate = (name == "checkpoint" and parentName == "checkpoint")
+            or isCheckpointCandidate(name)
+            or isCheckpointCandidate(parentName)
+        if not namedCandidate then return nil end
+    end
     -- QUEST path checkpoints: Workspace.QUEST.CP<number>.Part.
     -- The ProximityPrompt may be attached to the CP container, not the Part itself.
     if object:IsA("BasePart") and string.lower(object.Name) == "part" then
@@ -603,19 +638,18 @@ local function parseCheckpoint(object)
         if label and label.Text~="" then guiText=string.lower(label.Text) end
     end
     local combined=lowerParent.." "..lowerName.." "..guiText
+    -- Decimal suffixes are part of the checkpoint identity (1.1 != 1).
+    -- Support optional spaces, hyphens, and underscores around the number.
     local number=
-        string.match(combined,"checkpoints?%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"checkpoint(%d+%.?%d*)") or
-        string.match(combined,"checkpoint%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"cekpoin%s*[%s_]*(%d+%.?%d*)") or
-        string.match(combined,"cp%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"cp(%d+%.?%d*)") or
-        string.match(combined,"stage%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"stage(%d+%.?%d*)") or
-        string.match(combined,"pos%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"waypoint%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"wp%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"ring%s*[_]?%s*(%d+%.?%d*)")
+        string.match(combined,"checkpoints?%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"checkpoint%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"cekpoin%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"cp%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"stage%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"pos%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"waypoint%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"wp%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"ring%s*[_%-]?%s*(%d+%.?%d*)")
     if not number and guiText~="" then number=string.match(guiText,"(%d+%.?%d*)") end
     if not number then number=string.match(object.Name,"^(%d+%.?%d*)$") end
     local n=tonumber(number)
@@ -856,6 +890,12 @@ local function make(className, props, parent)
     local object = Instance.new(className)
     for k,v in pairs(props or {}) do object[k] = v end
     object.Parent = parent
+    -- During the initial panel build, yield every 12 UI instances so Roblox
+    -- can render/input between batches instead of freezing on one long frame.
+    if uiBuilding then
+        uiBuildObjectCount=uiBuildObjectCount+1
+        if uiBuildObjectCount%4==0 then task.wait() end
+    end
     return object
 end
 
@@ -917,6 +957,8 @@ local function getThemeAccent()
 end
 
 local function buildUI()
+    uiBuilding=true
+    uiBuildObjectCount=0
     local parent
     pcall(function() parent = game:GetService("CoreGui") end)
     if not parent then parent = LocalPlayer:WaitForChild("PlayerGui") end
@@ -1099,85 +1141,206 @@ local function buildUI()
             if reopenWasDragged then task.delay(0.15,function() reopenWasDragged=false end) end
         end
     end)
+    uiBuilding=false
 end
 
 function Feature.RefreshUI()
-    if not list then return end
-    for _, child in ipairs(list:GetChildren()) do
-        if child:IsA("Frame") then child:Destroy() end
-    end
-    local entries={}
-    if page=="PUBLIC MAP" then
-        local shown=0
-        local mapTerm=string.lower((publicSearchBox and publicSearchBox.Text) or "")
-        local uploaderTerm=string.lower((publicUploaderSearchBox and publicUploaderSearchBox.Text) or "")
-        for _,route in ipairs(publicRoutes) do
-            local mapHay=string.lower(tostring(route.MapName or ""))
-            local uploaderHay=string.lower(tostring(route.UploaderName or ""))
-            if (mapTerm=="" or string.find(mapHay,mapTerm,1,true)) and (uploaderTerm=="" or string.find(uploaderHay,uploaderTerm,1,true)) then
-            shown=shown+1
-            local index=shown
-            local row=make("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
-            corner(row,6)
-            make("TextLabel",{Text=(function() local title=tostring(route.RouteName or "Unnamed"); title=string.gsub(title,"[ ]+[Rr][Oo][Uu][Tt][Ee]$",""); return title end)(),Position=UDim2.fromOffset(7,2),Size=UDim2.new(1,-110,0,17),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,239,248),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
-            make("TextLabel",{Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",Position=UDim2.fromOffset(7,20),Size=UDim2.new(1,-110,0,15),BackgroundTransparency=1,TextColor3=Color3.fromRGB(165,178,200),Font=Enum.Font.Gotham,TextSize=8,TextXAlignment=Enum.TextXAlignment.Left},row)
-            local getButton=button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function() importPublicRoute(route) end,true)
-            getButton.Text="GET"
-            getButton.TextSize=9
-            if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
-                button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function() removePublicRoute(route) end,false).TextSize=9
-            end
-            end
-        end
-    elseif page=="RADAR" then
-        assignPlainNumbers()
-        for _,data in pairs(cache) do
-            if data.part and data.part.Parent then
-                local key=data.plain and (data.number or 1) or data.key
-                local already=false
-                for _,item in ipairs(saved) do
-                    if item.cf and (CFrame.new(unpack(item.cf)).Position-data.part.Position).Magnitude<3 then already=true; break end
-                end
-                if not already then table.insert(entries,{key=key,desc=data.desc,part=data.part,data=data}) end
-            end
-        end
-        table.sort(entries,function(a,b)
-            return checkpointKeyLess(a.key,b.key)
-        end)
-    elseif page=="SAVED" then
-        for index,item in ipairs(saved) do table.insert(entries,{key=item.key,desc=item.desc,item=item,index=index}) end
-    else
-        -- Public Map routes are rendered from the active PlaceId collection.
-    end
+    if not list or not list.Parent or not active then return end
 
-    for index,entry in ipairs(entries) do
-        local row=make("Frame",{Size=UDim2.new(1,-4,0,31),BackgroundColor3=Color3.fromRGB(34,43,60),BackgroundTransparency=0.12,BorderSizePixel=0,LayoutOrder=index},list)
-        corner(row,6)
-        local keyText=entry.key=="SUMMIT" and "SUMMIT" or (entry.key=="" and "MANUAL" or "CP "..tostring(entry.key))
-        make("TextLabel",{Text=keyText,Position=UDim2.fromOffset(7,0),Size=UDim2.fromOffset(66,31),BackgroundTransparency=1,TextColor3=Color3.fromRGB(105,210,245),Font=Enum.Font.GothamBold,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left},row)
-        make("TextLabel",{Text=tostring(entry.desc),Position=UDim2.fromOffset(72,0),Size=UDim2.new(1,-157,1,0),BackgroundTransparency=1,TextColor3=Color3.fromRGB(225,230,242),Font=Enum.Font.Gotham,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},row)
-        if page=="RADAR" then
-            button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
-                local data=entry.data
-                if data and data.part and data.part.Parent then
-                    assignPlainNumbers()
-                    local key=data.plain and (data.number or 1) or data.key
-                    teleportTo(data.part.CFrame)
-                    addSaved(key,data.desc,data.part.CFrame,data.plain)
-                    notify("Berhasil Teleport & Disave!")
-                end
-            end,true)
-        else
-            button(row,"TELE",UDim2.fromOffset(45,23),UDim2.new(1,-94,0,4),function()
-                if entry.item.cf then teleportTo(CFrame.new(unpack(entry.item.cf))) end
-            end,true)
-            button(row,"DEL",UDim2.fromOffset(40,23),UDim2.new(1,-45,0,4),function()
-                table.remove(saved,entry.index); persist(); Feature.RefreshUI()
-            end,false)
+    -- Cancel any older render pass. A large map can trigger many scanner
+    -- refreshes; only the newest snapshot should continue creating rows.
+    refreshGeneration = refreshGeneration + 1
+    local generation = refreshGeneration
+    local targetList = list
+    local targetPage = page
+
+    task.spawn(function()
+        if not active or generation ~= refreshGeneration or not targetList.Parent then return end
+
+        for _, child in ipairs(targetList:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
         end
-    end
-    task.defer(function()
-        if list then list.CanvasSize=UDim2.new(0,0,0,list.UIListLayout.AbsoluteContentSize.Y+5) end
+
+        local entries = {}
+        if targetPage == "PUBLIC MAP" then
+            local mapTerm = string.lower((publicSearchBox and publicSearchBox.Text) or "")
+            local uploaderTerm = string.lower((publicUploaderSearchBox and publicUploaderSearchBox.Text) or "")
+            local shown = 0
+            for _, route in ipairs(publicRoutes) do
+                local mapHay = string.lower(tostring(route.MapName or ""))
+                local uploaderHay = string.lower(tostring(route.UploaderName or ""))
+                if (mapTerm == "" or string.find(mapHay, mapTerm, 1, true))
+                    and (uploaderTerm == "" or string.find(uploaderHay, uploaderTerm, 1, true)) then
+                    shown = shown + 1
+                    table.insert(entries, {route=route, index=shown})
+                end
+            end
+        elseif targetPage == "RADAR" then
+            assignPlainNumbers()
+
+            -- Index SAVED positions into 3-stud spatial cells. The old nested
+            -- cache x saved scan rebuilt CFrames and measured every pair, which
+            -- became expensive on maps with many checkpoints and saved routes.
+            local savedBuckets = {}
+            local function cellKey(x, y, z)
+                return tostring(x) .. ":" .. tostring(y) .. ":" .. tostring(z)
+            end
+            for _, item in ipairs(saved) do
+                if item.cf then
+                    local savedPosition = CFrame.new(unpack(item.cf)).Position
+                    local sx = math.floor(savedPosition.X / 3)
+                    local sy = math.floor(savedPosition.Y / 3)
+                    local sz = math.floor(savedPosition.Z / 3)
+                    local key = cellKey(sx, sy, sz)
+                    local bucket = savedBuckets[key]
+                    if not bucket then
+                        bucket = {}
+                        savedBuckets[key] = bucket
+                    end
+                    bucket[#bucket + 1] = savedPosition
+                end
+            end
+
+            for _, data in pairs(cache) do
+                if data.part and data.part.Parent then
+                    local position = data.part.Position
+                    local cx = math.floor(position.X / 3)
+                    local cy = math.floor(position.Y / 3)
+                    local cz = math.floor(position.Z / 3)
+                    local already = false
+
+                    -- A point less than 3 studs away can only be in this cell
+                    -- or one of its 26 neighbors.
+                    for dx = -1, 1 do
+                        for dy = -1, 1 do
+                            for dz = -1, 1 do
+                                local bucket = savedBuckets[cellKey(cx + dx, cy + dy, cz + dz)]
+                                if bucket then
+                                    for _, savedPosition in ipairs(bucket) do
+                                        local delta = savedPosition - position
+                                        if delta:Dot(delta) < 9 then
+                                            already = true
+                                            break
+                                        end
+                                    end
+                                end
+                                if already then break end
+                            end
+                            if already then break end
+                        end
+                        if already then break end
+                    end
+
+                    if not already then
+                        local key = data.plain and (data.number or 1) or data.key
+                        table.insert(entries, {key=key, desc=data.desc, part=data.part, data=data})
+                    end
+                end
+            end
+            table.sort(entries, function(a,b) return checkpointKeyLess(a.key,b.key) end)
+        elseif targetPage == "SAVED" then
+            for index, item in ipairs(saved) do
+                table.insert(entries, {key=item.key, desc=item.desc, item=item, index=index})
+            end
+        end
+
+        local function stillCurrent()
+            return active and generation == refreshGeneration and page == targetPage
+                and list == targetList and targetList.Parent ~= nil
+        end
+
+        for index, entry in ipairs(entries) do
+            if not stillCurrent() then return end
+
+            if targetPage == "PUBLIC MAP" then
+                local route = entry.route
+                local row = make("Frame", {
+                    Size=UDim2.new(1,-4,0,42), BackgroundColor3=Color3.fromRGB(34,43,60),
+                    BackgroundTransparency=0.12, BorderSizePixel=0, LayoutOrder=entry.index
+                }, targetList)
+                corner(row,6)
+                make("TextLabel", {
+                    Text=(function()
+                        local title=tostring(route.RouteName or "Unnamed")
+                        title=string.gsub(title,"[ ]+[Rr][Oo][Uu][Tt][Ee]$","")
+                        return title
+                    end)(),
+                    Position=UDim2.fromOffset(7,2), Size=UDim2.new(1,-110,0,17),
+                    BackgroundTransparency=1, TextColor3=Color3.fromRGB(235,239,248),
+                    Font=Enum.Font.GothamBold, TextSize=10, TextXAlignment=Enum.TextXAlignment.Left,
+                    TextTruncate=Enum.TextTruncate.AtEnd
+                },row)
+                make("TextLabel", {
+                    Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",
+                    Position=UDim2.fromOffset(7,20), Size=UDim2.new(1,-110,0,15),
+                    BackgroundTransparency=1, TextColor3=Color3.fromRGB(165,178,200),
+                    Font=Enum.Font.Gotham, TextSize=8, TextXAlignment=Enum.TextXAlignment.Left
+                },row)
+                local getButton=button(row,"GET",UDim2.fromOffset(42,25),UDim2.new(1,-92,0,8),function()
+                    importPublicRoute(route)
+                end,true)
+                getButton.Text="GET"
+                getButton.TextSize=9
+                if tostring(route.UploaderId)==tostring(LocalPlayer.UserId) then
+                    button(row,"DEL",UDim2.fromOffset(40,25),UDim2.new(1,-45,0,8),function()
+                        removePublicRoute(route)
+                    end,false).TextSize=9
+                end
+            else
+                local row = make("Frame", {
+                    Size=UDim2.new(1,-4,0,31), BackgroundColor3=Color3.fromRGB(34,43,60),
+                    BackgroundTransparency=0.12, BorderSizePixel=0, LayoutOrder=index
+                },targetList)
+                corner(row,6)
+                local keyText=entry.key=="SUMMIT" and "SUMMIT" or (entry.key=="" and "MANUAL" or "CP "..tostring(entry.key))
+                make("TextLabel", {
+                    Text=keyText, Position=UDim2.fromOffset(7,0), Size=UDim2.fromOffset(66,31),
+                    BackgroundTransparency=1, TextColor3=Color3.fromRGB(105,210,245),
+                    Font=Enum.Font.GothamBold, TextSize=10, TextXAlignment=Enum.TextXAlignment.Left
+                },row)
+                make("TextLabel", {
+                    Text=tostring(entry.desc), Position=UDim2.fromOffset(72,0),
+                    Size=UDim2.new(1,-157,1,0), BackgroundTransparency=1,
+                    TextColor3=Color3.fromRGB(225,230,242), Font=Enum.Font.Gotham,
+                    TextSize=10, TextXAlignment=Enum.TextXAlignment.Left,
+                    TextTruncate=Enum.TextTruncate.AtEnd
+                },row)
+                if targetPage=="RADAR" then
+                    button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
+                        local data=entry.data
+                        if data and data.part and data.part.Parent then
+                            assignPlainNumbers()
+                            local key=data.plain and (data.number or 1) or data.key
+                            teleportTo(data.part.CFrame)
+                            addSaved(key,data.desc,data.part.CFrame,data.plain)
+                            notify("Berhasil Teleport & Disave!")
+                        end
+                    end,true)
+                else
+                    button(row,"TELE",UDim2.fromOffset(45,23),UDim2.new(1,-94,0,4),function()
+                        if entry.item.cf then teleportTo(CFrame.new(unpack(entry.item.cf))) end
+                    end,true)
+                    button(row,"DEL",UDim2.fromOffset(40,23),UDim2.new(1,-45,0,4),function()
+                        table.remove(saved,entry.index)
+                        persist()
+                        Feature.RefreshUI()
+                    end,false)
+                end
+            end
+
+            -- Keep frame-time bounded on large checkpoint lists.
+            if index % 8 == 0 then
+                task.wait()
+                if not stillCurrent() then return end
+            end
+        end
+
+        if stillCurrent() then
+            local layout = targetList:FindFirstChildOfClass("UIListLayout")
+            if layout then
+                targetList.CanvasSize=UDim2.new(0,0,0,layout.AbsoluteContentSize.Y+5)
+            end
+        end
     end)
 end
 
@@ -1185,9 +1348,18 @@ function Feature.Scan()
     if scanBusy or not active then return end
     scanBusy=true
     task.spawn(function()
-        local descendants=Workspace:GetDescendants()
-        for i,object in ipairs(descendants) do
+        -- Traverse Workspace incrementally instead of materializing one huge
+        -- GetDescendants() array at once. This avoids a cold-start allocation/
+        -- traversal spike when the Waypoint window is opened on large maps.
+        local queue=Workspace:GetChildren()
+        local head=1
+        local processed=0
+        while head<=#queue do
             if not active then break end
+            local object=queue[head]
+            head=head+1
+            processed=processed+1
+
             local key,desc,part,priority,plain,identity=parseCheckpoint(object)
             if key and part and part.Parent then
                 local cacheKey=identity or (plain and part or getPath(part))
@@ -1214,8 +1386,19 @@ function Feature.Scan()
                     end
                 end
             end
-            if i%80==0 then task.wait() end
+
+            -- Add only this object's direct children, keeping traversal
+            -- incremental and yielding regularly on low-end devices.
+            if object and object.Parent then
+                for _,child in ipairs(object:GetChildren()) do
+                    queue[#queue+1]=child
+                end
+            end
+            -- Yield more frequently during cold-start scans so large maps
+            -- cannot monopolize a frame on lower-end devices.
+            if processed%12==0 then task.wait() end
         end
+        table.clear(queue)
         scanBusy=false
         assignPlainNumbers()
         refresh()
@@ -1225,15 +1408,44 @@ end
 function Feature.Start()
     if active then return true end
     active=true
-    loadSaved()
-    buildUI()
-    -- Warm the Roblox Place title in the background. Upload must never wait
-    -- for cold-start catalog/API requests; it uses the cached title or PlaceId.
-    task.delay(1,function()
-        if not active then return end
-        task.spawn(function()
-            pcall(getRobloxPlaceName)
+    -- Construct the UI in a worker so Feature.Start returns immediately.
+    -- make() yields every four objects, allowing the minimal panel shell to
+    -- render before the remaining controls are added in small batches.
+    task.spawn(function()
+        local ok,err=pcall(buildUI)
+        if not ok then
+            warn("[Waypoint] UI build failed: "..tostring(err))
+            if gui then pcall(function() gui:Destroy() end) end
+            gui,panel,list,reopenButton=nil,nil,nil,nil
+            return
+        end
+        if not active then
+            if gui then gui:Destroy() end
+            gui,panel,list,reopenButton=nil,nil,nil,nil
+            return
+        end
+        -- Saved-data decoding and scanning begin only after the controls exist.
+        task.delay(0.12,function()
+            if not active or not list then return end
+            loadSaved()
+            if not active then return end
+            Feature.RefreshUI()
+            Feature.Scan()
+            notify("Scanner checkpoint aktif")
         end)
+    end)
+    -- Resolve the exact Roblox Place name away from the UI/input thread.
+    -- Retry failures; getRobloxPlaceName() no longer permanently caches fallback.
+    task.spawn(function()
+        for attempt=1,3 do
+            if not active or (cachedRobloxPlaceName and cachedRobloxPlaceName~="") then break end
+            local ok,name=pcall(getRobloxPlaceName)
+            if ok and type(name)=="string" and name~="" and name~=("Place "..tostring(game.PlaceId)) then
+                cachedRobloxPlaceName=name
+                break
+            end
+            if attempt<3 then task.wait(20) end
+        end
     end)
     connect(Workspace.DescendantAdded,function(object)
         task.delay(0.2,function()
@@ -1260,7 +1472,6 @@ function Feature.Start()
             end
         end)
     end)
-    Feature.Scan()
     task.spawn(function()
         local lastAccent
         while active and reopenButton and reopenButton.Parent do
@@ -1274,13 +1485,13 @@ function Feature.Start()
             task.wait(2)
         end
     end)
-    notify("Scanner checkpoint aktif")
     return true
 end
 
 function Feature.Stop()
     if not active then return true end
     active=false
+    refreshGeneration = refreshGeneration + 1
     dragging=false
     reopenDragging=false
     ContextActionService:UnbindAction(dragAction)
