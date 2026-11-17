@@ -1,4 +1,4 @@
--- Tryo Plugin Manager - Standalone Script Hub
+-- Tryo Plugin Manager - Standalone
 -- Compact UI bootstrap. Independent from Infinite Yield.
 
 local BASE_URL = "https://raw.githubusercontent.com/Tryofp/Plugin-Manager/refs/heads/main/"
@@ -21,6 +21,7 @@ local ok, result = pcall(function()
     -- Read the shared LastUpdate metadata from the production Apps Script endpoint.
     -- The endpoint serves pluginMetadata.LastUpdate from Firestore.
     local HttpService = game:GetService("HttpService")
+    local TweenService = game:GetService("TweenService")
     local METADATA_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
     -- Reuse the owner allowlist already enforced by the legacy Developer Panel.
     -- Add additional trusted UserIds here when the private admin rollout is approved.
@@ -49,8 +50,26 @@ local ok, result = pcall(function()
         end)
     end
 
-    -- Public release manifest: only intentional user-facing changes create badges.
+    -- Public changelog manifest: keep this history current before every stable release.
     local RELEASES = {
+        {
+            Version = "1.0", Date = "17/11/2026", Title = "Waypoint Radar, Public Map & Stability",
+            Summary = "Rilis stabil hasil pengembangan beta2: deteksi checkpoint lebih luas, dukungan nomor desimal, pemindaian bertahap, upload Public Map yang lebih responsif, dan Changelog RGB.",
+            Changes = {
+                {Id = "WaypointModelCandidateFilter", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Filter Model menerima pola CP1, Stage 2, WP3, Pos1, Ring1, serta nama angka agar container checkpoint tidak terlewat."},
+                {Id = "WaypointDecimalLabels", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Parser mendukung CP1.1, CP 1.1, CP-1.1, CP_1.1, Stage 2.5, dan WP3.1; nomor desimal tetap menjadi identitas terpisah."},
+                {Id = "WaypointIncrementalScan", FeatureId = "WaypointManager", Type = "PERFORMANCE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Pembangunan UI berjalan asynchronous, pemindaian Workspace memberi yield berkala, refresh dan render Radar dilakukan per batch, serta pencocokan SAVED menggunakan spatial bucket."},
+                {Id = "WaypointUploadWorker", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Persiapan rute, konversi CFrame, encoding, dan HTTP dipindahkan ke worker; konversi dilakukan per batch agar callback tombol tidak membekukan UI."},
+                {Id = "WaypointUploadColdStart", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Nama Place Roblox dipanaskan di background. Upload memakai cache atau fallback PlaceId sehingga tidak menunggu lookup katalog saat tombol ditekan."},
+                {Id = "ChangelogRgbCycle", Type = "UPDATE", Tab = "Main", Feature = "Changelog!",
+                    Details = "Tulisan Changelog! kini memakai animasi RGB bertransisi halus agar pembaruan riwayat lebih mudah terlihat."}
+            }
+        },
         {
             Version = "0.9", Date = "17/11/2026", Title = "Waypoint Radar & Public Map",
             Summary = "Peningkatan deteksi checkpoint, rute AuraCP, dan katalog Waypoint lintas map.",
@@ -135,6 +154,7 @@ local ok, result = pcall(function()
             }
         }
     }
+
     local RELEASE_STATE_FILE = "TryoPluginManager_Releases.json"
     local releaseState = {Seen = {}}
     if type(readfile) == "function" and type(isfile) == "function" then
@@ -151,40 +171,6 @@ local ok, result = pcall(function()
     local function releaseKey(scope, id) return RELEASES[1].Version .. ":" .. scope .. ":" .. id end
     local function isReleaseSeen(scope, id) return releaseState.Seen[releaseKey(scope, id)] == true end
     local function markReleaseSeen(scope, id) releaseState.Seen[releaseKey(scope, id)] = true; saveReleaseState() end
-
-    local featureControllers, walkSpeedControllers
-    local RELEASE_FEATURE_BADGES = {
-        NoFallDamage = "UPDATE",
-        WaypointManager = "UPDATE"
-    }
-    local function attachFeatureReleaseBadge(control, featureId)
-        local kind = RELEASE_FEATURE_BADGES[featureId]
-        if not kind or not control or type(control.SetBadge) ~= "function" then return end
-        if isReleaseSeen("feature", featureId) then return end
-        control.SetBadge(kind)
-        control.OnBadgeActivate = function()
-            control.SetBadge(nil)
-            markReleaseSeen("feature", featureId)
-            for _, other in ipairs(featureControllers[featureId] or {}) do
-                if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
-            end
-            if featureId == "WalkSpeed" then
-                for _, other in ipairs(walkSpeedControllers or {}) do
-                    if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
-                end
-            end
-        end
-    end
-    local function attachTabReleaseBadge(tab, tabId, kind)
-        if not tab or isReleaseSeen("tab", tabId) then return end
-        tab:SetBadge(kind)
-        local previous = tab.OnActivated
-        tab.OnActivated = function()
-            tab:SetBadge(nil)
-            markReleaseSeen("tab", tabId)
-            if type(previous) == "function" then pcall(previous) end
-        end
-    end
 
 
     -- Hub tracker: record every hub load and send exit data synchronously from exit events.
@@ -275,15 +261,6 @@ local ok, result = pcall(function()
 
         local yyyy, mm, dd, hh, mi = raw:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d)")
         if yyyy and mm and dd and hh and mi then
-            -- GitHub commit dates are UTC. Display them in WIB (UTC+7).
-            local parsedOk, parsedDate = pcall(function()
-                return DateTime.fromIsoDate(raw)
-            end)
-            if parsedOk and parsedDate then
-                local jakartaTimestamp = parsedDate.UnixTimestamp + (7 * 60 * 60)
-                local formatted = os.date("!%d/%m/%y %H:%M", jakartaTimestamp)
-                if formatted then return formatted end
-            end
             return string.format("%s/%s/%s %s:%s", dd, mm, yyyy:sub(3), hh, mi)
         end
 
@@ -324,19 +301,33 @@ local ok, result = pcall(function()
     end
 
     local function readLastUpdate()
-        -- Read the latest commit directly from the public main branch.
-        -- This keeps the label tied to actual Script Hub releases, not Firestore metadata.
-        local url = "https://api.github.com/repos/Tryofp/Plugin-Manager/commits/main?_=" ..
-            tostring(DateTime.now().UnixTimestampMillis)
+        local url = METADATA_URL .. "?_=" .. tostring(DateTime.now().UnixTimestampMillis)
         local response = game:HttpGet(url)
         local decoded = HttpService:JSONDecode(response or "{}")
-        assert(type(decoded) == "table" and type(decoded.commit) == "table",
-            "GitHub did not return valid main branch commit metadata")
+        assert(type(decoded) == "table", "Metadata response is not a JSON object")
 
-        local commit = decoded.commit
-        local raw = (commit.committer and commit.committer.date) or
-            (commit.author and commit.author.date)
-        assert(raw ~= nil and tostring(raw) ~= "", "Latest main commit date is missing")
+        -- The public endpoint normally returns a flat { LastUpdate = value } map.
+        -- Accept common casing/nesting variants too, so a wrapper response does not
+        -- silently turn a valid Firestore value into a dash.
+        local raw = decoded.LastUpdate or decoded.lastUpdate or decoded.last_update
+        local containers = { decoded.metadata, decoded.Metadata, decoded.data, decoded.Data }
+        for _, container in ipairs(containers) do
+            if raw == nil and type(container) == "table" then
+                raw = container.LastUpdate or container.lastUpdate or container.last_update
+            end
+        end
+        if raw == nil then
+            for key, value in pairs(decoded) do
+                if tostring(key):lower():gsub("[^a-z]", "") == "lastupdate" then
+                    raw = value
+                    break
+                end
+            end
+        end
+        if type(raw) == "table" then
+            raw = raw.Value or raw.value or raw.Timestamp or raw.timestamp or raw.updatedAt
+        end
+        assert(raw ~= nil and tostring(raw) ~= "", "LastUpdate key is missing or empty in metadata response")
         return formatLastUpdate(raw)
     end
 
@@ -399,9 +390,44 @@ local ok, result = pcall(function()
 
     local featureManager = FeatureManager.new()
     featureManager.Context.FeatureManager = featureManager
-    featureControllers = {}
-    walkSpeedControllers = {}
-    local maintenanceEntries = {}
+    local featureControllers = {}
+    local walkSpeedControllers = {}
+
+local RELEASE_FEATURE_BADGES = {
+        NoFallDamage = "UPDATE",
+        WaypointManager = "UPDATE"
+    }
+    local function attachFeatureReleaseBadge(control, featureId)
+        local kind = RELEASE_FEATURE_BADGES[featureId]
+        if not kind or not control or type(control.SetBadge) ~= "function" then return end
+        if isReleaseSeen("feature", featureId) then return end
+        control.SetBadge(kind)
+        control.OnBadgeActivate = function()
+            control.SetBadge(nil)
+            markReleaseSeen("feature", featureId)
+            for _, other in ipairs(featureControllers[featureId] or {}) do
+                if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
+            end
+            if featureId == "WalkSpeed" then
+                for _, other in ipairs(walkSpeedControllers or {}) do
+                    if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
+                end
+            end
+        end
+    end
+    local function attachTabReleaseBadge(tab, tabId, kind)
+        if not tab or isReleaseSeen("tab", tabId) then return end
+        tab:SetBadge(kind)
+        local previous = tab.OnActivated
+        tab.OnActivated = function()
+            tab:SetBadge(nil)
+            markReleaseSeen("tab", tabId)
+            if type(previous) == "function" then pcall(previous) end
+        end
+    end
+
+
+        local maintenanceEntries = {}
     local maintenanceLocks = {}
 
     local function registerMaintenanceControl(featureId, displayName, control, kind)
@@ -459,7 +485,7 @@ local ok, result = pcall(function()
                 local success, err = featureManager:SetEnabled(featureId, enabled)
                 if not success then
                     warn("[Tryo Plugin Manager] " .. featureId .. ": " .. tostring(err))
-                    reportRuntimeError(featureId, "main/Runtime/FeatureManager.lua", err)
+                    reportRuntimeError(featureId, "beta2/Runtime/FeatureManager.lua", err)
                 end
                 syncFeature(featureId, featureManager:IsEnabled(featureId))
             end
@@ -493,7 +519,7 @@ local ok, result = pcall(function()
                 local success, err = featureManager:SetEnabled("WalkSpeed", enabled)
                 if not success then
                     warn("[Tryo Plugin Manager] WalkSpeed: " .. tostring(err))
-                    reportRuntimeError("WalkSpeed", "main/Features/Tools.lua", err)
+                    reportRuntimeError("WalkSpeed", "beta2/Features/Tools.lua", err)
                 end
                 for _, item in ipairs(walkSpeedControllers) do item.Set(featureManager:IsEnabled("WalkSpeed"), true) end
             end
@@ -518,7 +544,7 @@ local ok, result = pcall(function()
                 local success, err = interactable:SetFeatureEnabled(id, enabled)
                 if not success then
                     warn("[Tryo Plugin Manager] " .. id .. ": " .. tostring(err))
-                    reportRuntimeError(id, "main/Features/Interactable.lua", err)
+                    reportRuntimeError(id, "beta2/Features/Interactable.lua", err)
                 end
             end
         })
@@ -532,12 +558,36 @@ local ok, result = pcall(function()
     local mainTab = window:CreateTab("Main", "⌂")
     attachTabReleaseBadge(mainTab, "Main", "UPDATE")
     mainTab:CreateSection("QUICK ACCESS")
-    mainTab:CreateButton({
+    local changelogButton = mainTab:CreateButton({
         Name = "Changelog!",
         Callback = function()
             if window and not window.Destroyed then window:ShowChangelog(RELEASES) end
         end
     })
+    -- Subtle RGB text cycle to make updated release notes easy to notice.
+    local changelogColors = {
+        Color3.fromRGB(90, 220, 255),
+        Color3.fromRGB(125, 125, 255),
+        Color3.fromRGB(205, 115, 255),
+        Color3.fromRGB(255, 125, 175),
+        Color3.fromRGB(105, 235, 175),
+        Color3.fromRGB(255, 205, 105)
+    }
+    changelogButton.TextStrokeColor3 = Color3.fromRGB(12, 17, 27)
+    changelogButton.TextStrokeTransparency = 0.55
+    task.spawn(function()
+        local colorIndex = 1
+        while changelogButton.Parent do
+            local tween = TweenService:Create(
+                changelogButton,
+                TweenInfo.new(0.85, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {TextColor3 = changelogColors[colorIndex]}
+            )
+            tween:Play()
+            tween.Completed:Wait()
+            colorIndex = colorIndex % #changelogColors + 1
+        end
+    end)
     addFeatureToggle(mainTab, "WaypointManager", waypoint, "Waypoint")
     mainTab:CreateDropdown({
         Name = "TELEPORT",
@@ -584,15 +634,13 @@ local ok, result = pcall(function()
             end})
         end
     })
-    local f1Menu
-    f1Menu = mainTab:CreateDropdown({
+    mainTab:CreateDropdown({
         Name = "F1Lock",
         Build = function(panel)
             addFeatureToggle(mainTab, "F1Lock", cameraTools.F1Lock, "F1 Toggle", panel)
             addFeatureToggle(mainTab, "ForceUnlockCamera", cameraTools.ForceUnlockCamera, "Lock Kamera", panel)
         end
     })
-    
 
     local mountainTab = window:CreateTab("Gunung", "▲")
     attachTabReleaseBadge(mountainTab, "Gunung", "UPDATE")
@@ -733,7 +781,7 @@ local ok, result = pcall(function()
         end
         return {
             Features = features,
-            -- Interactable commands are managed outside FeatureManager.
+            -- Interactable commands are outside FeatureManager, so snapshot their real runtime states separately.
             Interactables = interactable:GetStates(),
             WalkSpeedTarget = math.clamp(tonumber(featureManager.Context.WalkSpeedTarget) or 16, 16, 100),
             SavedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
@@ -915,7 +963,7 @@ local ok, result = pcall(function()
                     end
                 end
                 -- Interactable commands are not registered in FeatureManager.
-                -- Restore each saved state through its own command controller.
+                -- Restore each saved toggle through its own command controller.
                 if type(data.Interactables) == "table" then
                     for _, id in ipairs(interactable:GetFeatureIds()) do
                         local target = data.Interactables[id]
@@ -927,6 +975,9 @@ local ok, result = pcall(function()
                                 local okSet, errSet = interactable:SetFeatureEnabled(id, target)
                                 if okSet then
                                     applied = applied + 1
+                                    -- The command controller confirms that the requested state was applied.
+                                    -- Use that result for the toggle indicator instead of a potentially stale
+                                    -- internal running flag immediately after command startup.
                                     uiEnabled = target
                                 else
                                     skipped = skipped + 1
@@ -1322,5 +1373,5 @@ local ok, result = pcall(function()
 end)
 
 if not ok then
-    warn("[Tryo Script Hub] " .. tostring(result))
+    warn("[Tryo Plugin Manager] " .. tostring(result))
 end
