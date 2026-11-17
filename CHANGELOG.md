@@ -1,5 +1,20 @@
 # Changelog — Tryo Standalone Script Hub
 
+## Eksperimen beta2 — Waypoint Radar & Stabilitas (17/11/2026)
+> Catatan pengembangan khusus beta2. Bagian ini bukan nomor rilis stabil dan tidak mengubah riwayat V0.x.
+
+### Waypoint Radar — Deteksi & Performa
+- **FIX — Model checkpoint:** filter kandidat Model kini menerima nama seperti `CP1`, `Stage 2`, `WP3`, `Pos1`, `Ring1`, serta nama angka saja. Model atau parent Model dengan pola tersebut tidak lagi langsung terlewat oleh filter awal.
+- **UPDATE — Nomor checkpoint desimal:** parser menerima variasi seperti `CP1.1`, `CP 1.1`, `CP-1.1`, `CP_1.1`, `Stage 2.5`, dan `WP3.1`. Nomor desimal dipertahankan sebagai identitas tersendiri, sehingga CP1.1 tidak disamakan dengan CP1.
+- **PERFORMANCE — Pemindaian bertahap:** pembangunan UI dan pemindaian Workspace dijalankan bertahap; proses scan memberi jeda berkala, refresh Radar diringkas, daftar ditampilkan per batch, dan pencocokan checkpoint tersimpan memakai spatial bucket. Tujuannya mengurangi lonjakan kerja dalam satu frame pada map besar/perangkat mobile.
+- **FIX — Upload Public Map:** persiapan data, konversi CFrame, encoding, dan HTTP dipindahkan dari callback tombol ke worker. Konversi rute dilakukan per batch agar tombol/UI tidak tertahan saat rute berisi banyak CP.
+- **FIX — Cold-start upload:** pencarian nama Place Roblox dipanaskan di background setelah Waypoint aktif. Proses upload memakai nama yang sudah tersimpan di cache atau fallback PlaceId, bukan menunggu lookup katalog saat tombol ditekan.
+
+### Status Pengujian
+- Source perubahan di atas sudah diterapkan pada branch beta2.
+- Pemeriksaan struktur/source dilakukan; hasil pengujian in-game untuk seluruh variasi nama checkpoint dan skenario upload belum dianggap lulus menyeluruh.
+- Catatan ini dipisahkan dari riwayat rilis resmi agar saat promosi beta2 ke main, perubahan eksperimen dapat ditinjau dan dipindahkan secara utuh.
+
 ## V0.9 — 17/11/2026
 ### Waypoint Radar & Public Map
 - **UPDATE — Checkpoint biasa:** `Workspace.Checkpoint.Checkpoint` kini dikenali dan diberi nomor CP1, CP2, dan seterusnya berdasarkan urutan ketinggian.
