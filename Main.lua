@@ -52,45 +52,86 @@ local ok, result = pcall(function()
     -- Public changelog manifest: keep this history current before every stable release.
     local RELEASES = {
         {
-            Version = "0.6", Date = "15/11/2026", Title = "Movement & Visual Update",
-            Summary = "Pembaruan sistem gerakan, perlindungan jatuh, dan pengaturan visual lingkungan.",
+            Version = "0.9", Date = "17/11/2026", Title = "Waypoint Radar & Public Map",
+            Summary = "Peningkatan deteksi checkpoint, rute AuraCP, dan katalog Waypoint lintas map.",
             Changes = {
-                {Id="WalkSpeed", Type="UPDATE", Feature="WalkSpeed", Details="WalkSpeed menggunakan pemantauan GetPropertyChangedSignal seperti loopws dan otomatis dipasang kembali setelah respawn."},
-                {Id="NoFallDamage", Type="NEW", Feature="No Fall Damage", Details="Perlindungan jatuh tinggi berdasarkan jarak turun dari titik puncak, tanpa memperlambat lompatan normal."},
-                {Id="Fullbright", Type="UPDATE", Feature="Brightness & Ambient", Details="Pengaturan brightness dan ambient lokal digabung dalam satu kontrol."},
-                {Id="VisualFog", Type="NEW", Feature="No Fog", Details="Mengurangi fog dan efek Atmosphere yang sudah ada secara lokal."},
-                {Id="VisualTime", Type="NEW", Feature="Daylight", Details="Mengatur waktu lingkungan ke siang hari secara lokal."},
-                {Id="VisualShadows", Type="NEW", Feature="Disable Shadows", Details="Menonaktifkan GlobalShadows secara lokal."},
-                {Id="VisualPostFX", Type="NEW", Feature="Disable Post FX", Details="Menonaktifkan efek Bloom, Blur, Color Correction, Depth of Field, dan Sun Rays yang sudah ada."}
+                {Id = "PlainCheckpointSequence", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Checkpoint biasa pada Workspace.Checkpoint.Checkpoint kini dikenali dan diberi nomor CP1, CP2, dan seterusnya berdasarkan urutan ketinggian; deteksi CP bernomor dan Summit tetap dipertahankan."},
+                {Id = "AuraCPRouteDetection", FeatureId = "WaypointManager", Type = "NEW", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Radar mendukung deteksi checkpoint rute AuraCP dengan nomor desimal tanpa mengubah klasifikasi Summit."},
+                {Id = "WaypointPublicMap", FeatureId = "WaypointManager", Type = "NEW", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Public Map terhubung ke Firestore, mendukung pencarian rute, metadata nama Place Roblox, katalog lintas map, validasi PlaceId, serta unggah, ambil, dan hapus rute."}
+            }
+        },
+
+        {
+            Version = "0.8", Date = "16/11/2026", Title = "Preset, Waypoint & Sound Fixes",
+            Summary = "Perbaikan pemulihan preset Interactable, deteksi checkpoint QUEST, dan kontrol mute suara.",
+            Changes = {
+                {Id = "InteractablePresetRestore", Type = "UPDATE", Tab = "Presets", Feature = "Preset Manager",
+                    Details = "Preset kini menyimpan dan memulihkan ketujuh status Interactable; indikator toggle mengikuti hasil Load."},
+                {Id = "QuestWaypointDetection", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Radar mengenali Workspace.QUEST.CP<number>.Part dan Workspace.QUEST.CPSUMMIT.Part, termasuk pencarian ProximityPrompt pada ancestor terkait."},
+                {Id = "MuteAllSounds", FeatureId = "MuteMapSounds", Type = "UPDATE", Tab = "Horor", Feature = "Mute Sound",
+                    Details = "Mute Sound membisukan seluruh objek Sound di Workspace dan SoundService, termasuk suara karakter, checkpoint, dan respawn."}
+            }
+        },
+        {
+            Version = "0.7", Date = "15/11/2026", Title = "Changelog & Tab Organization",
+            Summary = "Penyempurnaan navigasi fitur dan riwayat pembaruan Script Hub.",
+            Changes = {
+                {Id = "ScrollableChangelog", Type = "NEW", Tab = "Main", Feature = "Changelog!",
+                    Details = "Riwayat versi kini dibuka melalui jendela khusus yang dapat di-scroll, dengan kartu terpisah untuk setiap versi dan rincian perubahannya."},
+                {Id = "NoFallDamageTab", FeatureId = "NoFallDamage", Type = "UPDATE", Tab = "Tools", Feature = "No Fall Damage",
+                    Details = "No Fall Damage dipindahkan dari tab Horor ke Tools agar lebih mudah ditemukan."},
+                {Id = "VisualEnvironmentMountain", Type = "UPDATE", Tab = "Gunung", Feature = "Visual Environment",
+                    Details = "Visual Environment kini tersedia di tab Gunung dan tetap tersedia di tab Horor."}
+            }
+        },
+        {
+            Version = "0.6", Date = "15/11/2026", Title = "Movement & Visual Update",
+            Summary = "Peningkatan sistem WalkSpeed, perlindungan jatuh, dan kontrol lingkungan visual.",
+            Changes = {
+                {Id = "WalkSpeedLoop", FeatureId = "WalkSpeed", Type = "UPDATE", Tab = "Main", Feature = "WalkSpeed",
+                    Details = "WalkSpeed kini menggunakan PropertyChangedSignal seperti loopws Infinite Yield dan dipasang ulang otomatis setelah respawn."},
+                {Id = "NoFallDamage", FeatureId = "NoFallDamage", Type = "NEW", Tab = "Horor", Feature = "No Fall Damage",
+                    Details = "Perlindungan jatuh tinggi dengan ambang berdasarkan jarak turun dari titik puncak, tanpa memperlambat lompatan normal."},
+                {Id = "VisualEnvironment", FeatureId = "VisualEnvironment", Type = "NEW", Tab = "Horor", Feature = "Visual Environment",
+                    Details = "Peningkatan Full Bright menjadi kontrol visual modular: Brightness & Ambient, No Fog, Daylight, Disable Shadows, dan Disable Post FX."}
             }
         },
         {
             Version = "0.5", Date = "15/11/2026", Title = "Admin Detector Status Update",
-            Summary = "Peningkatan kejelasan hasil pemeriksaan awal Admin Detector.",
+            Summary = "Pemeriksaan awal Admin Detector kini memberikan status ketika belum ada admin/staff yang terdeteksi.",
             Changes = {
-                {Id="AdminDetector", Type="UPDATE", Feature="Admin Detector", Details="Setelah pemindaian awal selesai tanpa menemukan admin atau staff, hub menampilkan notifikasi status aman."}
+                {Id = "AdminDetectorSafeStatus", FeatureId = "AdminDetector", Type = "UPDATE", Tab = "Tools", Feature = "Admin Detector",
+                    Details = "Setelah pemindaian awal selesai, notifikasi status aman ditampilkan jika belum ada admin/staff yang terdeteksi."}
             }
         },
         {
             Version = "0.4", Date = "15/11/2026", Title = "Preset Manager",
-            Summary = "Sistem preset berbasis slot untuk menyimpan dan memulihkan konfigurasi fitur.",
+            Summary = "Pengelolaan preset slot untuk menyimpan dan memuat konfigurasi fitur.",
             Changes = {
-                {Id="Presets", Type="NEW", Feature="Preset Manager", Details="Mendukung penyimpanan, pemuatan, pengeditan nama, dan penghapusan preset. Lima slot tersedia di awal dan slot tambahan dapat dibuat tanpa batas."}
+                {Id = "PresetManager", Type = "NEW", Tab = "Presets", Feature = "Preset Manager",
+                    Details = "Lima slot awal, slot tambahan tanpa batas, serta fungsi SAVE, LOAD, EDIT, dan DELETE dengan penyimpanan lokal."}
             }
         },
         {
             Version = "0.3", Date = "15/11/2026", Title = "UI & Waypoint Improvements",
-            Summary = "Penyempurnaan tampilan agar lebih nyaman digunakan di perangkat mobile.",
+            Summary = "Penyempurnaan tampilan Script Hub dan pengalaman penggunaan Waypoint.",
             Changes = {
-                {Id="ResponsiveUI", Type="UPDATE", Feature="Responsive UI", Details="Skala dan tata letak window menyesuaikan ukuran viewport perangkat."},
-                {Id="WaypointManager", Type="UPDATE", Feature="Waypoint", Details="Tampilan waypoint dibuat lebih ringkas dan responsif, termasuk penyesuaian bubble dan penomoran checkpoint biasa."}
+                {Id = "ResponsiveUI", Type = "UPDATE", Tab = "Main", Feature = "Tampilan Script Hub",
+                    Details = "Penyempurnaan ukuran jendela responsif dan posisi bubble TPM agar lebih nyaman digunakan."},
+                {Id = "WaypointResponsive", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Tampilan Waypoint dibuat lebih ringkas dan responsif, termasuk penyesuaian posisi tombol dan tab."}
             }
         },
         {
             Version = "0.2", Date = "14/11/2026", Title = "Camera Tools Update",
             Summary = "Peningkatan Force Unlock Camera dan sistem navigasi rilis publik.",
             Changes = {
-                {Id="ForceUnlockCamera", Type="UPDATE", Feature="Lock Kamera", Details="Force Unlock Camera menangani pergantian CurrentCamera dan memulihkan tipe kamera asal saat fitur dimatikan."}
+                {Id = "ForceUnlockCamera", Type = "UPDATE", Tab = "Main", Feature = "Lock Kamera",
+                    Details = "Force Unlock Camera kini menangani pergantian CurrentCamera dan memulihkan tipe kamera asal saat fitur dimatikan."}
             }
         }
     }
@@ -331,7 +372,42 @@ local ok, result = pcall(function()
     featureManager.Context.FeatureManager = featureManager
     local featureControllers = {}
     local walkSpeedControllers = {}
-    local maintenanceEntries = {}
+
+local RELEASE_FEATURE_BADGES = {
+        NoFallDamage = "UPDATE",
+        WaypointManager = "UPDATE"
+    }
+    local function attachFeatureReleaseBadge(control, featureId)
+        local kind = RELEASE_FEATURE_BADGES[featureId]
+        if not kind or not control or type(control.SetBadge) ~= "function" then return end
+        if isReleaseSeen("feature", featureId) then return end
+        control.SetBadge(kind)
+        control.OnBadgeActivate = function()
+            control.SetBadge(nil)
+            markReleaseSeen("feature", featureId)
+            for _, other in ipairs(featureControllers[featureId] or {}) do
+                if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
+            end
+            if featureId == "WalkSpeed" then
+                for _, other in ipairs(walkSpeedControllers or {}) do
+                    if other ~= control and type(other.SetBadge) == "function" then other.SetBadge(nil) end
+                end
+            end
+        end
+    end
+    local function attachTabReleaseBadge(tab, tabId, kind)
+        if not tab or isReleaseSeen("tab", tabId) then return end
+        tab:SetBadge(kind)
+        local previous = tab.OnActivated
+        tab.OnActivated = function()
+            tab:SetBadge(nil)
+            markReleaseSeen("tab", tabId)
+            if type(previous) == "function" then pcall(previous) end
+        end
+    end
+
+
+        local maintenanceEntries = {}
     local maintenanceLocks = {}
 
     local function registerMaintenanceControl(featureId, displayName, control, kind)
@@ -396,6 +472,7 @@ local ok, result = pcall(function()
         })
         featureControllers[featureId] = featureControllers[featureId] or {}
         table.insert(featureControllers[featureId], control)
+        attachFeatureReleaseBadge(control, featureId)
         registerMaintenanceControl(featureId, displayName or definition.Name or featureId, control, "feature")
         return control
     end
@@ -428,6 +505,7 @@ local ok, result = pcall(function()
             end
         })
         table.insert(walkSpeedControllers, control)
+        attachFeatureReleaseBadge(control, "WalkSpeed")
         registerMaintenanceControl("WalkSpeed", "WalkSpeed", control, "feature")
         control.Set(featureManager:IsEnabled("WalkSpeed"), true)
     end
@@ -458,20 +536,7 @@ local ok, result = pcall(function()
     local presetsTab = window:CreateTab("Presets", "▣")
 
     local mainTab = window:CreateTab("Main", "⌂")
-    local release = RELEASES[1]
-    local cameraChange
-    for _, version in ipairs(RELEASES) do
-        for _, change in ipairs(version.Changes or {}) do
-            if change.Id == "ForceUnlockCamera" then cameraChange = change; break end
-        end
-        if cameraChange then break end
-    end
-    cameraChange = cameraChange or {Type = "UPDATE"}
-    if not isReleaseSeen("tab", "Main") then mainTab:SetBadge(cameraChange.Type) end
-    mainTab.OnActivated = function()
-        mainTab:SetBadge(nil)
-        markReleaseSeen("tab", "Main")
-    end
+    attachTabReleaseBadge(mainTab, "Main", "UPDATE")
     mainTab:CreateSection("QUICK ACCESS")
     mainTab:CreateButton({
         Name = "Changelog!",
@@ -525,40 +590,31 @@ local ok, result = pcall(function()
             end})
         end
     })
-    local f1Menu
-    f1Menu = mainTab:CreateDropdown({
+    mainTab:CreateDropdown({
         Name = "F1Lock",
         Build = function(panel)
             addFeatureToggle(mainTab, "F1Lock", cameraTools.F1Lock, "F1 Toggle", panel)
-            local forceUnlockControl = addFeatureToggle(mainTab, "ForceUnlockCamera", cameraTools.ForceUnlockCamera, "Lock Kamera", panel)
-            if not isReleaseSeen("feature", "ForceUnlockCamera") then
-                forceUnlockControl.SetBadge(cameraChange.Type)
-            end
-            forceUnlockControl.OnBadgeActivate = function()
-                forceUnlockControl.SetBadge(nil)
-                markReleaseSeen("feature", "ForceUnlockCamera")
-                f1Menu.SetBadge(nil)
-                markReleaseSeen("menu", "F1Lock")
-            end
+            addFeatureToggle(mainTab, "ForceUnlockCamera", cameraTools.ForceUnlockCamera, "Lock Kamera", panel)
         end
     })
-    if not isReleaseSeen("menu", "F1Lock") then f1Menu.SetBadge(cameraChange.Type) end
-    f1Menu.OnExpanded = function(expanded)
-        if expanded then
-            f1Menu.SetBadge(nil)
-            markReleaseSeen("menu", "F1Lock")
-        end
-    end
 
     local mountainTab = window:CreateTab("Gunung", "▲")
+    attachTabReleaseBadge(mountainTab, "Gunung", "UPDATE")
     mountainTab:CreateSection("MOUNTAIN QUICK ACCESS")
     addFeatureToggle(mountainTab, "WaypointManager", waypoint, "Waypoint")
     addFeatureToggle(mountainTab, "PlayerESP", espFeatures.PlayerESP)
     addFeatureToggle(mountainTab, "InfiniteJump", toolFeatures.InfiniteJump)
     addFeatureToggle(mountainTab, "InstantPrompt", instantPrompt, "Instant Prompt")
     addWalkSpeed(mountainTab)
-    mountainTab:CreateDropdown({
+    local mountainVisualEnvironmentMenu
+    mountainVisualEnvironmentMenu = mountainTab:CreateDropdown({
         Name = "Visual Environment",
+        OnExpanded = function(expanded)
+            if expanded and mountainVisualEnvironmentMenu then
+                mountainVisualEnvironmentMenu.SetBadge(nil)
+                markReleaseSeen("menu", "VisualEnvironmentGunung")
+            end
+        end,
         Build = function(panel)
             addFeatureToggle(mountainTab, "Fullbright", toolFeatures.Fullbright, "Brightness & Ambient", panel)
             addFeatureToggle(mountainTab, "VisualFog", toolFeatures.VisualFog, "No Fog", panel)
@@ -567,10 +623,14 @@ local ok, result = pcall(function()
             addFeatureToggle(mountainTab, "VisualPostFX", toolFeatures.VisualPostFX, "Disable Post FX", panel)
         end
     })
+    if not isReleaseSeen("menu", "VisualEnvironmentGunung") then
+        mountainVisualEnvironmentMenu.SetBadge("UPDATE")
+    end
     addInteractableToggle(mountainTab, "PPESP", "PPESP")
     addFeatureToggle(mountainTab, "Spectate", soundViewFeatures.Spectate, "Spectator")
 
     local horrorTab = window:CreateTab("Horor", "◈")
+    attachTabReleaseBadge(horrorTab, "Horor", "UPDATE")
     horrorTab:CreateSection("HORROR QUICK ACCESS")
     horrorTab:CreateDropdown({
         Name = "Interactable",
@@ -612,6 +672,7 @@ local ok, result = pcall(function()
     addFeatureToggle(horrorTab, "CodeFinder", codeFinder, "Code Finder")
 
     local toolsTab = window:CreateTab("Tools", "⚒")
+    attachTabReleaseBadge(toolsTab, "Tools", "UPDATE")
     toolsTab:CreateSection("UTILITY")
     addFeatureToggle(toolsTab, "AdminDetector", adminDetector, "Admin Detect")
     addFeatureToggle(toolsTab, "NoFallDamage", toolFeatures.NoFallDamage, "No Fall Damage")
