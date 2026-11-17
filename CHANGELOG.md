@@ -7,8 +7,8 @@
 - **NEW — AuraCP route detection:** radar mengenali checkpoint rute AuraCP dengan nomor desimal tanpa mengubah klasifikasi Summit.
 - **NEW — Public Map:** integrasi Firestore untuk pencarian rute, metadata nama Place Roblox, katalog lintas map, validasi PlaceId, serta unggah, ambil, dan hapus rute.
 
-Catatan rilis resmi untuk branch `main`. Riwayat terbaru berada di bagian atas dan disinkronkan
-dengan manifest `RELEASES` di `Main.lua`.
+Riwayat rilis resmi disinkronkan dari branch `main`. Riwayat terbaru berada di bagian atas dan
+mengikuti manifest `RELEASES` yang digunakan Script Hub.
 
 ## V0.8 — 16/11/2026
 ### Preset Manager
