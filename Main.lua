@@ -21,6 +21,7 @@ local ok, result = pcall(function()
     -- Read the shared LastUpdate metadata from the production Apps Script endpoint.
     -- The endpoint serves pluginMetadata.LastUpdate from Firestore.
     local HttpService = game:GetService("HttpService")
+    local TweenService = game:GetService("TweenService")
     local METADATA_URL = "https://script.google.com/macros/s/AKfycbxJzU3MiL_o9PjkF4h-prSw-P8vLVfJqGFXM7pFJOPzIzJXaGmu6z6oK0oJl54a6bQy0Q/exec"
     -- Reuse the owner allowlist already enforced by the legacy Developer Panel.
     -- Add additional trusted UserIds here when the private admin rollout is approved.
@@ -538,12 +539,36 @@ local RELEASE_FEATURE_BADGES = {
     local mainTab = window:CreateTab("Main", "⌂")
     attachTabReleaseBadge(mainTab, "Main", "UPDATE")
     mainTab:CreateSection("QUICK ACCESS")
-    mainTab:CreateButton({
+    local changelogButton = mainTab:CreateButton({
         Name = "Changelog!",
         Callback = function()
             if window and not window.Destroyed then window:ShowChangelog(RELEASES) end
         end
     })
+    -- Subtle RGB text cycle to make updated release notes easy to notice.
+    local changelogColors = {
+        Color3.fromRGB(90, 220, 255),
+        Color3.fromRGB(125, 125, 255),
+        Color3.fromRGB(205, 115, 255),
+        Color3.fromRGB(255, 125, 175),
+        Color3.fromRGB(105, 235, 175),
+        Color3.fromRGB(255, 205, 105)
+    }
+    changelogButton.TextStrokeColor3 = Color3.fromRGB(12, 17, 27)
+    changelogButton.TextStrokeTransparency = 0.55
+    task.spawn(function()
+        local colorIndex = 1
+        while changelogButton.Parent do
+            local tween = TweenService:Create(
+                changelogButton,
+                TweenInfo.new(0.85, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {TextColor3 = changelogColors[colorIndex]}
+            )
+            tween:Play()
+            tween.Completed:Wait()
+            colorIndex = colorIndex % #changelogColors + 1
+        end
+    end)
     addFeatureToggle(mainTab, "WaypointManager", waypoint, "Waypoint")
     mainTab:CreateDropdown({
         Name = "TELEPORT",
