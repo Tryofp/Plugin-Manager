@@ -532,11 +532,13 @@ local function parseCheckpoint(object)
                 or string.find(value, "waypoint", 1, true) then
                 return true
             end
-            return string.match(value, "^cp%s*[_%-]?%s*%d+")
-                or string.match(value, "^stage%s*[_%-]?%s*%d+")
-                or string.match(value, "^wp%s*[_%-]?%s*%d+")
-                or string.match(value, "^pos%s*[_%-]?%s*%d+")
-                or string.match(value, "^ring%s*[_%-]?%s*%d+")
+            -- Accept whole and decimal checkpoint labels, e.g. CP1, CP 1.1,
+            -- CP-1.1, CP_1.1, Stage 2.5, and WP3.1.
+            return string.match(value, "^cp%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^stage%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^wp%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^pos%s*[_%-]?%s*%d+%.?%d*$")
+                or string.match(value, "^ring%s*[_%-]?%s*%d+%.?%d*$")
                 or string.match(value, "^%d+%.?%d*$")
         end
 
@@ -636,19 +638,18 @@ local function parseCheckpoint(object)
         if label and label.Text~="" then guiText=string.lower(label.Text) end
     end
     local combined=lowerParent.." "..lowerName.." "..guiText
+    -- Decimal suffixes are part of the checkpoint identity (1.1 != 1).
+    -- Support optional spaces, hyphens, and underscores around the number.
     local number=
-        string.match(combined,"checkpoints?%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"checkpoint(%d+%.?%d*)") or
-        string.match(combined,"checkpoint%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"cekpoin%s*[%s_]*(%d+%.?%d*)") or
-        string.match(combined,"cp%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"cp(%d+%.?%d*)") or
-        string.match(combined,"stage%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"stage(%d+%.?%d*)") or
-        string.match(combined,"pos%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"waypoint%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"wp%s*[_]?%s*(%d+%.?%d*)") or
-        string.match(combined,"ring%s*[_]?%s*(%d+%.?%d*)")
+        string.match(combined,"checkpoints?%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"checkpoint%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"cekpoin%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"cp%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"stage%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"pos%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"waypoint%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"wp%s*[_%-]?%s*(%d+%.?%d*)") or
+        string.match(combined,"ring%s*[_%-]?%s*(%d+%.?%d*)")
     if not number and guiText~="" then number=string.match(guiText,"(%d+%.?%d*)") end
     if not number then number=string.match(object.Name,"^(%d+%.?%d*)$") end
     local n=tonumber(number)
