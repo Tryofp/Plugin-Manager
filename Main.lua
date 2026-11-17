@@ -136,6 +136,34 @@ local ok, result = pcall(function()
             }
         }
     }
+
+    -- beta2-only experiments are displayed in Changelog without changing the
+    -- stable release manifest or its version/badge identity.
+    local BETA2_EXPERIMENTS = {
+        Version = "0.9-BETA2", Date = "17/11/2026",
+        Title = "Eksperimen Waypoint Radar & Stabilitas",
+        Summary = "Penyempurnaan eksperimental deteksi checkpoint dan pengurangan stutter pada pemindaian serta upload Public Map.",
+        Changes = {
+            {Id = "WaypointModelCandidateFilter", Type = "FIX", Tab = "Gunung", Feature = "Waypoint",
+                Details = "Filter Model kini menerima pola CP1, Stage 2, WP3, Pos1, Ring1, dan nama angka saja agar container checkpoint tidak terlewat."},
+            {Id = "WaypointDecimalLabels", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint",
+                Details = "Parser mendukung label desimal seperti CP1.1, CP 1.1, CP-1.1, CP_1.1, Stage 2.5, dan WP3.1; nomor desimal tetap menjadi identitas terpisah."},
+            {Id = "WaypointIncrementalScan", Type = "PERFORMANCE", Tab = "Gunung", Feature = "Waypoint",
+                Details = "UI dibangun secara asynchronous, scan Workspace dilakukan bertahap dengan yield, refresh dan render Radar dibatch, serta pencocokan SAVED memakai spatial bucket untuk mengurangi beban frame."},
+            {Id = "WaypointUploadWorker", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                Details = "Persiapan rute, konversi CFrame, encoding, dan HTTP dipindahkan ke worker; konversi dilakukan per batch agar callback tombol tidak membekukan UI."},
+            {Id = "WaypointUploadColdStart", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                Details = "Nama Place Roblox dipanaskan di background. Upload memakai cache atau fallback PlaceId sehingga tidak menunggu lookup katalog saat tombol ditekan."}
+        }
+    }
+    local function getChangelogEntries()
+        local entries = {BETA2_EXPERIMENTS}
+        for _, release in ipairs(RELEASES) do
+            table.insert(entries, release)
+        end
+        return entries
+    end
+
     local RELEASE_STATE_FILE = "TryoPluginManager_Releases.json"
     local releaseState = {Seen = {}}
     if type(readfile) == "function" and type(isfile) == "function" then
@@ -542,7 +570,7 @@ local RELEASE_FEATURE_BADGES = {
     local changelogButton = mainTab:CreateButton({
         Name = "Changelog!",
         Callback = function()
-            if window and not window.Destroyed then window:ShowChangelog(RELEASES) end
+            if window and not window.Destroyed then window:ShowChangelog(getChangelogEntries()) end
         end
     })
     -- Subtle RGB text cycle to make updated release notes easy to notice.
