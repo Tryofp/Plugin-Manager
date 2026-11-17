@@ -133,6 +133,22 @@ local function getRobloxPlaceName()
     local universeData = getJson("https://apis.roblox.com/universes/v1/places/"..placeId.."/universe")
     local universeId = universeData and tostring(universeData.universeId or universeData.UniverseId or "")
     if universeId and universeId ~= "" then
+        -- Public Games API resolves the actual experience title without creator
+        -- authentication. This is more reliable than GetProductInfo(PlaceId),
+        -- which can expose a generic place label such as "UGC".
+        local gamesData = getJson("https://games.roblox.com/v1/games?universeIds="..universeId)
+        local games = gamesData and (gamesData.data or gamesData.Data)
+        if type(games) == "table" then
+            for _, gameInfo in ipairs(games) do
+                local experienceName = tostring(gameInfo.name or gameInfo.Name or "")
+                experienceName = string.gsub(experienceName, "^%s*(.-)%s*$", "%1")
+                if experienceName ~= "" and string.lower(experienceName) ~= "ugc" then
+                    cachedRobloxPlaceName = experienceName:sub(1,120)
+                    return cachedRobloxPlaceName
+                end
+            end
+        end
+
         local cursor = nil
         for page = 1, 10 do
             local url = "https://develop.roblox.com/v1/universes/"..universeId.."/places?isUniverseCreation=false&limit=100&sortOrder=Asc"
@@ -229,6 +245,14 @@ local function uploadPublicRoute()
         task.wait()
         local ok,result,err,pointCount,routeName=pcall(function()
             local resolvedMapName=cachedRobloxPlaceName
+            if not resolvedMapName or resolvedMapName=="" then
+                -- Resolve again at upload time. The background startup lookup
+                -- may still be running when the user presses UPLOAD.
+                local resolveOk, resolved = pcall(getRobloxPlaceName)
+                if resolveOk and type(resolved)=="string" and resolved~="" then
+                    resolvedMapName=resolved
+                end
+            end
             if not resolvedMapName or resolvedMapName=="" then
                 resolvedMapName="Place "..tostring(game.PlaceId)
             end
