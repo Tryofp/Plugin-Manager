@@ -190,8 +190,72 @@ local ok, result = pcall(function()
     local LocalPlayer = Players.LocalPlayer
     local trackerSessionStart = os.time()
     local trackerExitSent = false
-    local trackerMapName = tostring(game.Name or "Unknown Map")
+    local trackerMapName = "Place " .. tostring(game.PlaceId)
     local trackerRequest = request or http_request or (syn and syn.request)
+
+    -- Resolve the actual Place name by PlaceId. game.Name can be a generic
+    -- experience label (for example "UGC"), while GetProductInfo may return
+    -- the universe title instead of the individual Place title.
+    local function getTrackerPlaceName()
+        local placeId = tostring(game.PlaceId)
+        local function getJson(url)
+            if type(trackerRequest) ~= "function" then return nil end
+            local ok, response = pcall(trackerRequest, {
+                Url = url,
+                Method = "GET",
+                Headers = {["Accept"] = "application/json"},
+                FollowRedirects = true
+            })
+            if not ok or type(response) ~= "table" then return nil end
+            local code = tonumber(response.StatusCode or response.Status or 0) or 0
+            if code < 200 or code >= 300 then return nil end
+            local body = response.Body or response.body
+            if type(body) ~= "string" or body == "" then return nil end
+            local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+            return decodedOk and type(decoded) == "table" and decoded or nil
+        end
+
+        -- Convert the current PlaceId to its UniverseId, then match the exact
+        -- PlaceId in Roblox's Places catalog (not just the experience root).
+        local universeData = getJson("https://apis.roblox.com/universes/v1/places/" .. placeId .. "/universe")
+        local universeId = universeData and tostring(universeData.universeId or universeData.UniverseId or "")
+        if universeId ~= "" then
+            local cursor = nil
+            for page = 1, 10 do
+                local url = "https://develop.roblox.com/v1/universes/" .. universeId ..
+                    "/places?isUniverseCreation=false&limit=100&sortOrder=Asc"
+                if cursor and cursor ~= "" then
+                    url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+                end
+                local placesData = getJson(url)
+                if not placesData then break end
+                local places = placesData.data or placesData.Data
+                if type(places) == "table" then
+                    for _, placeInfo in ipairs(places) do
+                        local id = tostring(placeInfo.id or placeInfo.Id or "")
+                        local name = tostring(placeInfo.name or placeInfo.Name or ""):gsub("^%s*(.-)%s*$", "%1")
+                        if id == placeId and name ~= "" and string.lower(name) ~= "ugc" then
+                            return name:sub(1, 120)
+                        end
+                    end
+                end
+                cursor = placesData.nextPageCursor or placesData.NextPageCursor
+                if not cursor or cursor == "" then break end
+            end
+        end
+
+        -- Secondary fallback. Reject generic UGC rather than saving it.
+        local ok, info = pcall(function()
+            return MarketplaceService:GetProductInfo(game.PlaceId)
+        end)
+        if ok and type(info) == "table" then
+            local name = tostring(info.Name or ""):gsub("^%s*(.-)%s*$", "%1")
+            if name ~= "" and string.lower(name) ~= "ugc" then
+                return name:sub(1, 120)
+            end
+        end
+        return "Place " .. placeId
+    end
 
     local function getTrackerDevice()
         if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
@@ -203,14 +267,6 @@ local ok, result = pcall(function()
         end
         return "Unknown Device"
     end
-
-    -- Resolve the game title ahead of time; never wait for this during shutdown.
-    task.spawn(function()
-        pcall(function()
-            local info = MarketplaceService:GetProductInfo(game.PlaceId)
-            if info and info.Name then trackerMapName = info.Name end
-        end)
-    end)
 
     local function sendTrackerData(isLeaving)
         if isLeaving then
@@ -243,8 +299,15 @@ local ok, result = pcall(function()
         end)
     end
 
-    -- Load logging can run asynchronously; exit logging remains synchronous.
-    task.spawn(function() sendTrackerData(false) end)
+    -- Resolve the exact Place title before the first HubLoad record is sent,
+    -- preventing an immediate generic "UGC" value from being saved to Firestore.
+    task.spawn(function()
+        local ok, name = pcall(getTrackerPlaceName)
+        if ok and type(name) == "string" and name ~= "" then
+            trackerMapName = name
+        end
+        sendTrackerData(false)
+    end)
 
     local function replaceTrackerConnection(key, signal, callback)
         local previous = _G[key]
