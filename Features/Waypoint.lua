@@ -516,15 +516,33 @@ local function parseCheckpoint(object)
     if object:IsA("Model") then
         local name = string.lower(object.Name)
         local parentName = string.lower(object.Parent and object.Parent.Name or "")
-        local namedCandidate = name == "checkpoint" and parentName == "checkpoint"
-            or string.find(name, "checkpoint", 1, true)
-            or string.find(name, "summit", 1, true)
-            or string.find(name, "peak", 1, true)
-            or string.find(name, "finish", 1, true)
-            or string.find(name, "puncak", 1, true)
-            or string.find(name, "reset", 1, true)
-            or string.find(parentName, "summit", 1, true)
-            or string.find(parentName, "reset", 1, true)
+
+        -- Keep the Model fast-path filter, but allow the naming patterns that
+        -- the general checkpoint parser below already understands. Some maps
+        -- wrap touch parts in Models named CP1, Stage 2, WP3, or just "1".
+        local function isCheckpointCandidate(value)
+            if value == "" then return false end
+            if string.find(value, "checkpoint", 1, true)
+                or string.find(value, "summit", 1, true)
+                or string.find(value, "peak", 1, true)
+                or string.find(value, "finish", 1, true)
+                or string.find(value, "puncak", 1, true)
+                or string.find(value, "reset", 1, true)
+                or string.find(value, "cekpoin", 1, true)
+                or string.find(value, "waypoint", 1, true) then
+                return true
+            end
+            return string.match(value, "^cp%s*[_%-]?%s*%d+")
+                or string.match(value, "^stage%s*[_%-]?%s*%d+")
+                or string.match(value, "^wp%s*[_%-]?%s*%d+")
+                or string.match(value, "^pos%s*[_%-]?%s*%d+")
+                or string.match(value, "^ring%s*[_%-]?%s*%d+")
+                or string.match(value, "^%d+%.?%d*$")
+        end
+
+        local namedCandidate = (name == "checkpoint" and parentName == "checkpoint")
+            or isCheckpointCandidate(name)
+            or isCheckpointCandidate(parentName)
         if not namedCandidate then return nil end
     end
     -- QUEST path checkpoints: Workspace.QUEST.CP<number>.Part.
