@@ -53,6 +53,50 @@ local ok, result = pcall(function()
     -- Public changelog manifest: keep this history current before every stable release.
     local RELEASES = {
         {
+            Version = "1.2", Date = "19/11/2026", Title = "Waypoint Auto-Save & Saved Integrity",
+            Summary = "Auto-Save checkpoint polos memprioritaskan notifikasi checkpoint di tengah layar, sementara data SAVED tidak ditimpa atau dinomori ulang otomatis.",
+            Changes = {
+                {Id = "WaypointCenteredCheckpointNotice", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Radar",
+                    Details = "Untuk checkpoint polos tanpa nomor atau BillboardGui, pembacaan teks CHECKPOINT N yang terlihat dan paling dekat dengan tengah layar menjadi prioritas. Nomor Radar menjadi fallback jika notifikasi tidak tersedia."},
+                {Id = "WaypointSavedAppendOnly", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint SAVED",
+                    Details = "Checkpoint yang sudah tersimpan tidak lagi diganti nomor, deskripsi, atau posisinya oleh Auto-Save/TELE. Duplikat diabaikan, nomor dipertahankan setelah reload, dan penghapusan hanya melalui DEL."},
+                {Id = "WaypointHybridAutoSave", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint Auto-Save",
+                    Details = "Touch, ProximityPrompt, dan TELE memantau notifikasi hingga 2 detik dengan polling 0,1 detik. Logika checkpoint bernomor dan Summit tetap dipertahankan."}
+            }
+        },
+        {
+            Version = "1.1", Date = "18/11/2026", Title = "Collaborative Public Map",
+            Summary = "Public Map kini memakai satu peta bersama per PlaceId, mendukung pembaruan CP oleh komunitas, dan menampilkan editor terakhir.",
+            Changes = {
+                {Id = "PublicMapCollaborativeUpdate", FeatureId = "WaypointManager", Type = "NEW", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Tombol UPDATE memungkinkan pemain memperbarui seluruh data checkpoint peta yang sudah ada. Jumlah CP boleh bertambah atau berkurang; uploader pertama tetap tercatat sebagai pemilik awal."},
+                {Id = "PublicMapEditorAttribution", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Daftar Public Map menampilkan uploader asli dan editor terakhir. Nama editor tersimpan di database dan terlihat oleh pemain lain setelah daftar dimuat ulang."},
+                {Id = "PublicMapDuplicateGuard", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Satu PlaceId hanya dapat memiliki satu peta publik. Upload ulang ditolak dengan pesan bahwa map sudah ada di database, tanpa menimpa uploader atau data peta."},
+                {Id = "WaypointIgnoreKeywords", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Radar",
+                    Details = "Filter objek non-checkpoint diperluas dengan kata kunci Pilih, ikan, maks, max, dan penggiling agar objek yang tidak relevan tidak masuk Radar atau SAVED."}
+            }
+        },
+        {
+            Version = "1.0", Date = "17/11/2026", Title = "Waypoint Radar, Public Map & Stability",
+            Summary = "Rilis stabil hasil pengembangan beta2: deteksi checkpoint lebih luas, dukungan nomor desimal, pemindaian bertahap, upload Public Map yang lebih responsif, dan Changelog RGB.",
+            Changes = {
+                {Id = "WaypointModelCandidateFilter", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Filter Model menerima pola CP1, Stage 2, WP3, Pos1, Ring1, serta nama angka agar container checkpoint tidak terlewat."},
+                {Id = "WaypointDecimalLabels", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Parser mendukung CP1.1, CP 1.1, CP-1.1, CP_1.1, Stage 2.5, dan WP3.1; nomor desimal tetap menjadi identitas terpisah."},
+                {Id = "WaypointIncrementalScan", FeatureId = "WaypointManager", Type = "PERFORMANCE", Tab = "Gunung", Feature = "Waypoint",
+                    Details = "Pembangunan UI berjalan asynchronous, pemindaian Workspace memberi yield berkala, refresh dan render Radar dilakukan per batch, serta pencocokan SAVED menggunakan spatial bucket."},
+                {Id = "WaypointUploadWorker", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Persiapan rute, konversi CFrame, encoding, dan HTTP dipindahkan ke worker; konversi dilakukan per batch agar callback tombol tidak membekukan UI."},
+                {Id = "WaypointUploadColdStart", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Nama Place Roblox dipanaskan di background. Upload memakai cache atau fallback PlaceId sehingga tidak menunggu lookup katalog saat tombol ditekan."},
+                {Id = "ChangelogRgbCycle", Type = "UPDATE", Tab = "Main", Feature = "Changelog!",
+                    Details = "Tulisan Changelog! kini memakai animasi RGB bertransisi halus agar pembaruan riwayat lebih mudah terlihat."}
+            }
+        },
+        {
             Version = "0.9", Date = "17/11/2026", Title = "Waypoint Radar & Public Map",
             Summary = "Peningkatan deteksi checkpoint, rute AuraCP, dan katalog Waypoint lintas map.",
             Changes = {
