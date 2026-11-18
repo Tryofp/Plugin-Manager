@@ -867,19 +867,16 @@ assignPlainNumbers = function()
             elseif not data.number then table.insert(pending, data) end
         end
     end
-    local hrp = getHRP()
+    -- Plain checkpoints often share the exact same name/path (for example
+    -- Workspace.Checkpoint.Checkpoint). Do not number them by player distance:
+    -- that can make CP 2 become CP 1 when the player spawns closer to it.
+    -- Use a stable world-position order so the whole cluster gets consistent
+    -- numbering regardless of the player's current location.
     table.sort(pending, function(a,b)
-        if hrp then
-            local da = (a.part.Position - hrp.Position).Magnitude
-            local db = (b.part.Position - hrp.Position).Magnitude
-            if math.abs(da-db) > 0.01 then return da < db end
-        end
         local ap,bp=a.part.Position,b.part.Position
-        if ap.Y==bp.Y then
-            if ap.X==bp.X then return ap.Z<bp.Z end
-            return ap.X<bp.X
-        end
-        return ap.Y<bp.Y
+        if math.abs(ap.X-bp.X)>0.01 then return ap.X<bp.X end
+        if math.abs(ap.Y-bp.Y)>0.01 then return ap.Y<bp.Y end
+        return ap.Z<bp.Z
     end)
     for _, data in ipairs(pending) do
         local token = positionToken(data.part.Position)
