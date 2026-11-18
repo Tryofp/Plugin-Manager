@@ -936,22 +936,61 @@ local function addSaved(key, description, cf, isPlain, identity)
 end
 
 -- Hybrid Auto-Save for unnamed checkpoints:
--- Keep MAIN's Radar-assigned number as the default. If the game displays
--- a real "Checkpoint N" notification after touching/teleporting, prefer it.
+-- The game notification in the middle of the screen is the authoritative
+-- number when available. Ignore stale/hidden checkpoint text elsewhere in UI.
 local function getDisplayedCheckpointNumber()
     local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return nil end
-    local found=nil
+    local camera=Workspace.CurrentCamera
+    if not playerGui or not camera then return nil end
+
+    local viewport=camera.ViewportSize
+    if viewport.X<=0 or viewport.Y<=0 then return nil end
+    local center=Vector2.new(viewport.X*0.5,viewport.Y*0.5)
+    local bestNumber=nil
+    local bestDistance=math.huge
+
+    local function isActuallyVisible(object)
+        local current=object
+        while current and current~=playerGui do
+            if current:IsA("GuiObject") and not current.Visible then return false end
+            if current:IsA("ScreenGui") and not current.Enabled then return false end
+            current=current.Parent
+        end
+        return current==playerGui
+    end
+
     pcall(function()
         for _,item in ipairs(playerGui:GetDescendants()) do
-            if item:IsA("TextLabel") or item:IsA("TextButton") then
+            if (item:IsA("TextLabel") or item:IsA("TextButton"))
+                and isActuallyVisible(item)
+                and (tonumber(item.TextTransparency) or 0)<1 then
+
                 local value=string.gsub(tostring(item.Text or ""),"[%p]"," ")
                 local number=tonumber(string.match(string.lower(value),"checkpoint%s*#?%s*(%d+)"))
-                if number and number>=1 and number<=500 then found=number end
+                if number and number>=1 and number<=500 then
+                    local size=item.AbsoluteSize
+                    local position=item.AbsolutePosition
+                    if size.X>0 and size.Y>0 then
+                        local itemCenter=position+size*0.5
+                        local dx=math.abs(itemCenter.X-center.X)/viewport.X
+                        local dy=math.abs(itemCenter.Y-center.Y)/viewport.Y
+
+                        -- Only consider text in the central screen region.
+                        -- This excludes corner notifications, menus and HUD labels.
+                        if dx<=0.30 and dy<=0.30 then
+                            local distance=(dx*dx)+(dy*dy)
+                            if distance<bestDistance then
+                                bestDistance=distance
+                                bestNumber=number
+                            end
+                        end
+                    end
+                end
             end
         end
     end)
-    return found
+
+    return bestNumber
 end
 
 local function saveFromData(data, detectedNumber)
