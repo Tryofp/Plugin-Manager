@@ -1,5 +1,14 @@
 # Changelog — Tryo Standalone Script Hub
 
+## V1.1 — 18/11/2026
+### Collaborative Public Map & Waypoint Filter
+- **NEW — UPDATE Public Map:** pemain dapat memperbarui data checkpoint pada peta publik yang sudah ada. Seluruh daftar CP diganti mengikuti SAVED terbaru, termasuk jika jumlah CP bertambah atau berkurang.
+- **UPDATE — Satu peta per PlaceId:** setiap map memiliki satu data publik bersama. Upload pertama menetapkan uploader asli; upload ulang oleh siapa pun ditolak dan tidak membuat salinan baru.
+- **NEW — Editor terakhir:** nama uploader asli tetap dipertahankan, sementara editor terakhir beserta waktu edit disimpan terpisah dan ditampilkan kepada semua pemain saat daftar Public Map dimuat atau di-refresh.
+- **FIX — Deteksi upload duplikat:** pemeriksaan awal mencegah POST berulang untuk map yang sudah ada dan menghindari jalur redirect yang sebelumnya dapat memunculkan HTTP 405.
+- **FIX — Ignore keywords:** Radar mengabaikan nama objek yang mengandung `Pilih`, `ikan`, `maks`, `max`, dan `penggiling` tanpa membedakan huruf besar/kecil.
+- **Status pengujian:** alur UPDATE dan tampilan editor lintas pemain telah dikonfirmasi pengguna di beta2. Pemeriksaan source dilakukan sebelum promosi; pengujian tambahan pada beragam map tetap disarankan.
+
 ## V1.0 — 17/11/2026
 ### Waypoint Radar — Deteksi & Performa
 - **FIX — Model checkpoint:** filter kandidat Model menerima nama seperti `CP1`, `Stage 2`, `WP3`, `Pos1`, `Ring1`, serta nama angka saja agar container checkpoint tidak terlewat.
