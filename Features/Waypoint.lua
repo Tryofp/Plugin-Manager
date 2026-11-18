@@ -1,4 +1,4 @@
--- Tryo beta2 Waypoint / Checkpoint Manager
+-- Tryo Waypoint / Checkpoint Manager
 -- Standalone implementation. No Infinite Yield dependency.
 
 local Players = game:GetService("Players")
@@ -25,7 +25,8 @@ local IGNORE = {
     "effect","butter","head","torso","humanoid","character","arm","leg","face","hair","holder","neon","oreo","view",
     "prop","decoration","wall","roof","ceiling","window","door","table","chair","badge","particle","sparkle","fire",
     "smoke","cewe","cowo","refresh","ava","chinese","bubble","ball","chinematic","cinematic","dance","male","female",
-    "outfit","suguhan","big","small","sesi","trend","potret","player","douyin","jurnal","pedang"
+    "outfit","suguhan","big","small","sesi","trend","potret","player","douyin","jurnal","pedang",
+    "pilih","ikan","maks","max","penggiling"
 }
 
 local Feature = { Name = "Waypoint / Checkpoint Manager" }
@@ -205,7 +206,7 @@ local function loadPublicRoutes()
     publicBusy=true
     publicMessage("Memuat Rute ... ( Harap bersabar )")
     task.spawn(function()
-        local result,err=waypointGet("WaypointRoutes",{limit=100})
+        local result,err=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
         if result and type(result.routes)=="table" then
             publicRoutes=result.routes
             publicMessage("Ditemukan "..#publicRoutes.." rute ( Silahkan UPLOAD, GET atau DEL )")
@@ -249,22 +250,41 @@ local function uploadPublicRoute()
                 return nil,"Rute harus berisi 1–300 checkpoint.",#points,name
             end
 
+            -- Check the global catalogue before POST. A PlaceId can only have
+            -- one public map, regardless of who uploaded it or how many CP it has.
+            -- This also avoids a needless POST/Google redirect (which some
+            -- executors incorrectly surface as HTTP 405) on repeated uploads.
+            local existingCheck=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
+            if existingCheck and type(existingCheck.routes)=="table" then
+                for _,route in ipairs(existingCheck.routes) do
+                    if tostring(route.PlaceId)==tostring(game.PlaceId) then
+                        return nil,"Map dengan nama yang sama sudah ada di database.",#points,name
+                    end
+                end
+            end
+
             publicMessage("Mengunggah "..#points.." checkpoint...")
             local uploadData={
                 Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
                 MapName=resolvedMapName,
                 UploaderId=tostring(LocalPlayer.UserId),
-                UploaderName=tostring(LocalPlayer.Name),Waypoints=points
+                UploaderName=tostring(LocalPlayer.Name),Waypoints=points,UploadPolicy="collaborative-map-v2"
             }
             local uploaded,uploadError=waypointPost(uploadData)
-            if not uploaded then
+            local normalizedUploadError=string.lower(tostring(uploadError or ""))
+            normalizedUploadError=string.gsub(normalizedUploadError,"[%p%s]","")
+            local isDuplicateError=string.find(normalizedUploadError,
+                "mapdengannamayangsamadidatabase",1,true)~=nil
+            if not uploaded and not isDuplicateError then
                 -- Google Apps Script may commit the POST, then return a redirect
                 -- response that some executors incorrectly surface as HTTP 405.
-                local check=waypointGet("WaypointRoutes",{limit=100})
+                -- Only verify a possible committed upload when the server did
+                -- not explicitly reject it as a duplicate.
+                local check=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
-                        if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
-                            and tostring(route.RouteName)==name
+                        if tostring(route.PlaceId)==tostring(game.PlaceId)
+                            and tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
                             and tonumber(route.TotalCP)==#points then
                             uploaded={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
                             break
@@ -280,10 +300,76 @@ local function uploadPublicRoute()
             result=nil
         end
         if result then
-            publicMessage("Upload berhasil: "..tostring(result.totalCP or pointCount or 0).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            if result.updated then
+                publicMessage("CP map ini sudah diperbarui ke database.")
+            else
+                publicMessage("Upload berhasil: "..tostring(result.totalCP or pointCount or 0).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            end
             if publicRouteNameBox then publicRouteNameBox.Text="" end
         else
             publicMessage(err or "Upload gagal.",true)
+        end
+        publicBusy=false
+        if result then loadPublicRoutes() end
+    end)
+end
+
+local function updatePublicRoute()
+    if publicBusy then return end
+    if #saved==0 then notify("SAVED masih kosong."); return end
+
+    publicBusy=true
+    publicMessage("Menyiapkan pembaruan CP...")
+    task.spawn(function()
+        task.wait()
+        local ok,result,err,pointCount=pcall(function()
+            local points={}
+            for _,item in ipairs(saved) do
+                if type(item.cf)=="table" and #item.cf>=3 then
+                    local p=CFrame.new(unpack(item.cf)).Position
+                    table.insert(points,{
+                        key=tostring(item.key or (#points+1)),
+                        desc=tostring(item.desc or ""):sub(1,120),
+                        x=p.X,y=p.Y,z=p.Z
+                    })
+                end
+            end
+            if #points==0 or #points>300 then
+                return nil,"Rute harus berisi 1–300 checkpoint.",#points
+            end
+
+            publicMessage("Memperbarui "..#points.." checkpoint ke Public Map...")
+            local updateData={
+                Method="UPDATE",PlaceId=game.PlaceId,
+                UploaderId=tostring(LocalPlayer.UserId),
+                EditorName=tostring(LocalPlayer.Name),
+                Waypoints=points,UploadPolicy="collaborative-map-v2"
+            }
+            local updated,updateError=waypointPost(updateData)
+            if not updated and tostring(updateError or "")~="Map tidak ditemukan di Public Map." then
+                local check=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
+                if check and type(check.routes)=="table" then
+                    for _,route in ipairs(check.routes) do
+                        if tostring(route.PlaceId)==tostring(game.PlaceId)
+                            and tonumber(route.TotalCP)==#points
+                            and tostring(route.EditorId or "")==tostring(LocalPlayer.UserId) then
+                            updated={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true,updated=true}
+                            break
+                        end
+                    end
+                end
+            end
+            return updated,updateError,#points
+        end)
+
+        if not ok then
+            err=tostring(result)
+            result=nil
+        end
+        if result then
+            publicMessage("CP map ini sudah diperbarui ke database ("..tostring(result.totalCP or pointCount or 0).." CP).")
+        else
+            publicMessage(err or "Pembaruan gagal.",true)
         end
         publicBusy=false
         if result then loadPublicRoutes() end
@@ -387,7 +473,7 @@ local function removePublicRoute(route)
         local result,err=waypointPost({Method="DELETE",PlaceId=route.PlaceId or game.PlaceId,RouteId=route.RouteId,UploaderId=tostring(LocalPlayer.UserId)})
         if not result then
             -- Confirm whether DELETE committed despite a broken Apps Script redirect.
-            local check=waypointGet("WaypointRoutes",{limit=100})
+            local check=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
             if check and type(check.routes)=="table" then
                 local stillExists=false
                 for _,item in ipairs(check.routes) do
@@ -1058,8 +1144,9 @@ local function buildUI()
 
     publicToolbar=make("Frame",{Name="PublicToolbar",Position=UDim2.fromOffset(8,73),Size=UDim2.new(1,-16,0,64),BackgroundColor3=Color3.fromRGB(31,40,57),BorderSizePixel=0,Visible=false},panel)
     corner(publicToolbar,7)
-    button(publicToolbar,"UPLOAD",UDim2.new(0.48,-4,0,22),UDim2.fromOffset(5,5),uploadPublicRoute,true).TextSize=9
-    button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,22),UDim2.new(0.52,0,0,5),loadPublicRoutes,false).TextSize=9
+    button(publicToolbar,"UPLOAD",UDim2.new(0.32,-5,0,22),UDim2.fromOffset(5,5),uploadPublicRoute,true).TextSize=9
+    button(publicToolbar,"UPDATE",UDim2.new(0.32,-5,0,22),UDim2.new(0.34,0,0,5),updatePublicRoute,true).TextSize=9
+    button(publicToolbar,"REFRESH",UDim2.new(0.32,-5,0,22),UDim2.new(0.68,0,0,5),loadPublicRoutes,false).TextSize=9
     publicSearchBox=make("TextBox",{PlaceholderText="PENCARIAN MAP",Text="",Position=UDim2.fromOffset(5,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
     corner(publicSearchBox,5)
     publicUploaderSearchBox=make("TextBox",{PlaceholderText="PENCARIAN UPLOADER",Text="",Position=UDim2.new(0.5,2,0,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
@@ -1271,7 +1358,7 @@ function Feature.RefreshUI()
                     TextTruncate=Enum.TextTruncate.AtEnd
                 },row)
                 make("TextLabel", {
-                    Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",
+                    Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP"..(tostring(route.EditorName or "")~="" and (" • Edited: "..tostring(route.EditorName)) or ""),
                     Position=UDim2.fromOffset(7,20), Size=UDim2.new(1,-110,0,15),
                     BackgroundTransparency=1, TextColor3=Color3.fromRGB(165,178,200),
                     Font=Enum.Font.Gotham, TextSize=8, TextXAlignment=Enum.TextXAlignment.Left
