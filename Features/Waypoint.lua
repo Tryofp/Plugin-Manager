@@ -254,7 +254,7 @@ local function uploadPublicRoute()
                 Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
                 MapName=resolvedMapName,
                 UploaderId=tostring(LocalPlayer.UserId),
-                UploaderName=tostring(LocalPlayer.Name),Waypoints=points,UploadPolicy="single-per-map-v1"
+                UploaderName=tostring(LocalPlayer.Name),Waypoints=points
             }
             local uploaded,uploadError=waypointPost(uploadData)
             if not uploaded and tostring(uploadError or "")~="Map dengan nama yang sama sudah ada di database." then
@@ -264,8 +264,7 @@ local function uploadPublicRoute()
                 local check=waypointGet("WaypointRoutes",{limit=100})
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
-                        if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
-                            and tostring(route.PlaceId)==tostring(game.PlaceId)
+                        if tostring(route.PlaceId)==tostring(game.PlaceId)
                             and tonumber(route.TotalCP)==#points then
                             uploaded={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
                             break
@@ -289,6 +288,68 @@ local function uploadPublicRoute()
             if publicRouteNameBox then publicRouteNameBox.Text="" end
         else
             publicMessage(err or "Upload gagal.",true)
+        end
+        publicBusy=false
+        if result then loadPublicRoutes() end
+    end)
+end
+
+local function updatePublicRoute()
+    if publicBusy then return end
+    if #saved==0 then notify("SAVED masih kosong."); return end
+
+    publicBusy=true
+    publicMessage("Menyiapkan pembaruan CP...")
+    task.spawn(function()
+        task.wait()
+        local ok,result,err,pointCount=pcall(function()
+            local points={}
+            for _,item in ipairs(saved) do
+                if type(item.cf)=="table" and #item.cf>=3 then
+                    local p=CFrame.new(unpack(item.cf)).Position
+                    table.insert(points,{
+                        key=tostring(item.key or (#points+1)),
+                        desc=tostring(item.desc or ""):sub(1,120),
+                        x=p.X,y=p.Y,z=p.Z
+                    })
+                end
+            end
+            if #points==0 or #points>300 then
+                return nil,"Rute harus berisi 1–300 checkpoint.",#points
+            end
+
+            publicMessage("Memperbarui "..#points.." checkpoint ke Public Map...")
+            local updateData={
+                Method="UPDATE",PlaceId=game.PlaceId,
+                UploaderId=tostring(LocalPlayer.UserId),
+                EditorName=tostring(LocalPlayer.Name),
+                Waypoints=points
+            }
+            local updated,updateError=waypointPost(updateData)
+            if not updated and tostring(updateError or "")~="Map tidak ditemukan di Public Map." then
+                local check=waypointGet("WaypointRoutes",{limit=100})
+                if check and type(check.routes)=="table" then
+                    for _,route in ipairs(check.routes) do
+                        if tostring(route.PlaceId)==tostring(game.PlaceId)
+                            and tonumber(route.TotalCP)==#points
+                            and tostring(route.EditorId or "")==tostring(LocalPlayer.UserId) then
+                            updated={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true,updated=true}
+                            break
+                        end
+                    end
+                end
+            end
+            return updated,updateError,#points
+        end)
+
+        if not ok then
+            err=tostring(result)
+            result=nil
+        end
+        if result then
+            publicMessage("CP map ini sudah diperbarui ke database ("..tostring(result.totalCP or pointCount or 0).." CP).")
+        else
+            publicMessage(err or "Pembaruan gagal.",true)
         end
         publicBusy=false
         if result then loadPublicRoutes() end
@@ -1063,8 +1124,9 @@ local function buildUI()
 
     publicToolbar=make("Frame",{Name="PublicToolbar",Position=UDim2.fromOffset(8,73),Size=UDim2.new(1,-16,0,64),BackgroundColor3=Color3.fromRGB(31,40,57),BorderSizePixel=0,Visible=false},panel)
     corner(publicToolbar,7)
-    button(publicToolbar,"UPLOAD",UDim2.new(0.48,-4,0,22),UDim2.fromOffset(5,5),uploadPublicRoute,true).TextSize=9
-    button(publicToolbar,"REFRESH",UDim2.new(0.48,-4,0,22),UDim2.new(0.52,0,0,5),loadPublicRoutes,false).TextSize=9
+    button(publicToolbar,"UPLOAD",UDim2.new(0.32,-5,0,22),UDim2.fromOffset(5,5),uploadPublicRoute,true).TextSize=9
+    button(publicToolbar,"UPDATE",UDim2.new(0.32,-5,0,22),UDim2.new(0.34,0,0,5),updatePublicRoute,true).TextSize=9
+    button(publicToolbar,"REFRESH",UDim2.new(0.32,-5,0,22),UDim2.new(0.68,0,0,5),loadPublicRoutes,false).TextSize=9
     publicSearchBox=make("TextBox",{PlaceholderText="PENCARIAN MAP",Text="",Position=UDim2.fromOffset(5,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
     corner(publicSearchBox,5)
     publicUploaderSearchBox=make("TextBox",{PlaceholderText="PENCARIAN UPLOADER",Text="",Position=UDim2.new(0.5,2,0,32),Size=UDim2.new(0.5,-7,0,21),BackgroundColor3=Color3.fromRGB(43,53,72),TextColor3=Color3.new(1,1,1),PlaceholderColor3=Color3.fromRGB(155,165,185),Font=Enum.Font.Gotham,TextSize=8,ClearTextOnFocus=false},publicToolbar)
