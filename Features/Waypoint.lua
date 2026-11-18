@@ -1431,11 +1431,14 @@ function Feature.RefreshUI()
                     button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
                         local data=entry.data
                         if data and data.part and data.part.Parent then
-                            assignPlainNumbers()
-                            local key=data.plain and (data.number or 1) or data.key
+                            -- Teleport is navigation, not checkpoint progression.
+                            -- For unnamed/plain checkpoints, the displayed game
+                            -- notification is the authoritative CP number and is
+                            -- only available after the player actually touches it.
+                            -- Auto-saving a guessed spatial number here can overwrite
+                            -- a correct manual-save key and create duplicate entries.
                             teleportTo(data.part.CFrame)
-                            addSaved(key,data.desc,data.part.CFrame,data.plain)
-                            notify("Berhasil Teleport & Disave!")
+                            notify("Teleport berhasil. CP tanpa nomor disimpan saat disentuh manual.")
                         end
                     end,true)
                 else
