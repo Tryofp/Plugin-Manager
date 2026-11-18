@@ -53,6 +53,20 @@ local ok, result = pcall(function()
     -- Public changelog manifest: keep this history current before every stable release.
     local RELEASES = {
         {
+            Version = "1.1", Date = "18/11/2026", Title = "Collaborative Public Map",
+            Summary = "Public Map kini memakai satu peta bersama per PlaceId, mendukung pembaruan CP oleh komunitas, dan menampilkan editor terakhir.",
+            Changes = {
+                {Id = "PublicMapCollaborativeUpdate", FeatureId = "WaypointManager", Type = "NEW", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Tombol UPDATE memungkinkan pemain memperbarui seluruh data checkpoint peta yang sudah ada. Jumlah CP boleh bertambah atau berkurang; uploader pertama tetap tercatat sebagai pemilik awal."},
+                {Id = "PublicMapEditorAttribution", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Daftar Public Map menampilkan uploader asli dan editor terakhir. Nama editor tersimpan di database dan terlihat oleh pemain lain setelah daftar dimuat ulang."},
+                {Id = "PublicMapDuplicateGuard", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Public Map",
+                    Details = "Satu PlaceId hanya dapat memiliki satu peta publik. Upload ulang ditolak dengan pesan bahwa map sudah ada di database, tanpa menimpa uploader atau data peta."},
+                {Id = "WaypointIgnoreKeywords", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Radar",
+                    Details = "Filter objek non-checkpoint diperluas dengan kata kunci Pilih, ikan, maks, max, dan penggiling agar objek yang tidak relevan tidak masuk Radar atau SAVED."}
+            }
+        },
+        {
             Version = "1.0", Date = "17/11/2026", Title = "Waypoint Radar, Public Map & Stability",
             Summary = "Rilis stabil hasil pengembangan beta2: deteksi checkpoint lebih luas, dukungan nomor desimal, pemindaian bertahap, upload Public Map yang lebih responsif, dan Changelog RGB.",
             Changes = {
