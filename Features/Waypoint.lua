@@ -953,11 +953,49 @@ local function addSaved(key, description, cf, isPlain, identity)
     notify("Tersimpan: " .. tostring(key))
 end
 
-local function saveFromData(data)
+-- Some games expose the real stage number only in their on-screen
+-- "CHECKPOINT 1" notification, while every trigger Part has the same name.
+-- Read that game-provided label after touch and bind it to the touched Part.
+local function getDisplayedCheckpointNumber()
+    local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return nil end
+    local found=nil
+    pcall(function()
+        for _,item in ipairs(playerGui:GetDescendants()) do
+            if item:IsA("TextLabel") or item:IsA("TextButton") then
+                local value=string.gsub(tostring(item.Text or ""),"[%p]"," ")
+                local number=string.match(string.lower(value),"checkpoint%s*#?%s*(%d+)")
+                number=tonumber(number)
+                if number and number>=1 and number<=500 then
+                    found=number
+                end
+            end
+        end
+    end)
+    return found
+end
+
+local function saveFromData(data, detectedNumber)
     if not data or not data.part or not data.part.Parent then return end
-    assignPlainNumbers()
+    if data.plain and detectedNumber then
+        local token=positionToken(data.part.Position)
+        data.number=detectedNumber
+        plainNumbers[token]=detectedNumber
+    else
+        assignPlainNumbers()
+    end
     local key = data.plain and (data.number or 1) or data.key
     addSaved(key, data.desc, data.part.CFrame, data.plain, data.identity)
+end
+
+local function saveTouchedCheckpoint(data)
+    if not data then return end
+    -- Let the game's checkpoint notification update before reading its label.
+    task.delay(0.18,function()
+        if not active or not data.part or not data.part.Parent then return end
+        local displayedNumber=getDisplayedCheckpointNumber()
+        saveFromData(data,displayedNumber)
+    end)
 end
 
 local function teleportTo(cf)
@@ -1458,14 +1496,14 @@ function Feature.Scan()
                             local hum=char and char:FindFirstChildOfClass("Humanoid")
                             if char and hit:IsDescendantOf(char) and hum and hum.Health>0 then
                                 lastTouch=tick()
-                                saveFromData(cache[cacheKey])
+                                saveTouchedCheckpoint(cache[cacheKey])
                             end
                         end)
                     end
                     local prompt=getCheckpointPrompt(part)
                     if prompt then
                         connect(prompt.Triggered,function(player)
-                            if player==LocalPlayer then saveFromData(cache[cacheKey]) end
+                            if player==LocalPlayer then saveTouchedCheckpoint(cache[cacheKey]) end
                         end)
                     end
                 end
