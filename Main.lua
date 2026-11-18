@@ -53,6 +53,18 @@ local ok, result = pcall(function()
     -- Public changelog manifest: keep this history current before every stable release.
     local RELEASES = {
         {
+            Version = "1.2", Date = "19/11/2026", Title = "Waypoint Auto-Save & Saved Integrity",
+            Summary = "Auto-Save checkpoint polos memprioritaskan notifikasi checkpoint di tengah layar, sementara data SAVED tidak ditimpa atau dinomori ulang otomatis.",
+            Changes = {
+                {Id = "WaypointCenteredCheckpointNotice", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint Radar",
+                    Details = "Untuk checkpoint polos tanpa nomor atau BillboardGui, pembacaan teks CHECKPOINT N yang terlihat dan paling dekat dengan tengah layar menjadi prioritas. Nomor Radar menjadi fallback jika notifikasi tidak tersedia."},
+                {Id = "WaypointSavedAppendOnly", FeatureId = "WaypointManager", Type = "FIX", Tab = "Gunung", Feature = "Waypoint SAVED",
+                    Details = "Checkpoint yang sudah tersimpan tidak lagi diganti nomor, deskripsi, atau posisinya oleh Auto-Save/TELE. Duplikat diabaikan, nomor dipertahankan setelah reload, dan penghapusan hanya melalui DEL."},
+                {Id = "WaypointHybridAutoSave", FeatureId = "WaypointManager", Type = "UPDATE", Tab = "Gunung", Feature = "Waypoint Auto-Save",
+                    Details = "Touch, ProximityPrompt, dan TELE memantau notifikasi hingga 2 detik dengan polling 0,1 detik. Logika checkpoint bernomor dan Summit tetap dipertahankan."}
+            }
+        },
+        {
             Version = "1.1", Date = "18/11/2026", Title = "Collaborative Public Map",
             Summary = "Public Map kini memakai satu peta bersama per PlaceId, mendukung pembaruan CP oleh komunitas, dan menampilkan editor terakhir.",
             Changes = {
