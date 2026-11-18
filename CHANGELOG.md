@@ -1,5 +1,12 @@
 # Changelog — Tryo Standalone Script Hub
 
+## V1.2 — 19/11/2026
+### Waypoint Auto-Save & Saved Integrity
+- **FIX — Deteksi teks checkpoint tengah layar:** untuk checkpoint polos tanpa nomor atau BillboardGui, Auto-Save memprioritaskan teks CHECKPOINT N yang terlihat dan paling dekat dengan tengah layar. Nomor Radar menjadi fallback jika notifikasi tidak tersedia.
+- **FIX — SAVED append-only:** checkpoint yang sudah tersimpan tidak lagi diganti nomor, deskripsi, atau posisinya oleh Auto-Save/TELE. Entri duplikat diabaikan dan nomor tersimpan dipertahankan setelah pemuatan ulang.
+- **UPDATE — Hybrid Auto-Save:** sentuhan, ProximityPrompt, dan TELE menunggu notifikasi hingga 2 detik dengan polling setiap 0,1 detik. Logika checkpoint bernomor dan Summit tetap dipertahankan.
+- **Status pengujian:** pengguna telah mengonfirmasi di beta2 bahwa checkpoint polos pada map tanpa nomor CP tersimpan sesuai urutan notifikasi tengah layar.
+
 ## V1.1 — 18/11/2026
 ### Collaborative Public Map & Waypoint Filter
 - **NEW — UPDATE Public Map:** pemain dapat memperbarui data checkpoint pada peta publik yang sudah ada. Seluruh daftar CP diganti mengikuti SAVED terbaru, termasuk jika jumlah CP bertambah atau berkurang.
