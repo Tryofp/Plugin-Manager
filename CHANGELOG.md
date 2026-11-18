@@ -1,5 +1,12 @@
 # Changelog — Tryo Standalone Script Hub
 
+## V1.2 — 19/11/2026
+### Waypoint Auto-Save & Saved Integrity
+- **FIX — Deteksi teks checkpoint tengah layar:** checkpoint polos tanpa nomor atau BillboardGui memakai teks CHECKPOINT N yang terlihat dan paling dekat dengan tengah layar sebagai prioritas; nomor Radar menjadi fallback.
+- **FIX — SAVED append-only:** data yang sudah tersimpan tidak ditimpa atau dinomori ulang oleh Auto-Save/TELE. Duplikat diabaikan, nomor dipertahankan setelah reload, dan penghapusan hanya melalui DEL.
+- **UPDATE — Hybrid Auto-Save:** touch, ProximityPrompt, dan TELE menunggu notifikasi hingga 2 detik dengan polling 0,1 detik. Logika checkpoint bernomor dan Summit tetap dipertahankan.
+- **Status pengujian:** pengguna mengonfirmasi deteksi dan urutan checkpoint polos berhasil di beta2.
+
 ## Eksperimen beta2 — Waypoint Radar & Stabilitas (17/11/2026)
 > Catatan pengembangan khusus beta2. Bagian ini bukan nomor rilis stabil dan tidak mengubah riwayat V0.x.
 
