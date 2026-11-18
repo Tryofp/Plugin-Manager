@@ -265,6 +265,7 @@ local function uploadPublicRoute()
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
                         if tostring(route.PlaceId)==tostring(game.PlaceId)
+                            and tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
                             and tonumber(route.TotalCP)==#points then
                             uploaded={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
                             break
