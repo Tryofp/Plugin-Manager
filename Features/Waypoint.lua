@@ -801,30 +801,16 @@ local function loadSaved()
     end
     saved = unique
 
-    local used = {}
-    for _, item in ipairs(saved) do
-        local n = tonumber(item.key)
-        if n and not item.plain then used[n] = true end
-    end
-    local plains = {}
+    -- Preserve every saved key exactly as written. Rebuilding the scanner
+    -- after respawn/restart must not renumber or reorder saved checkpoint data.
     for _, item in ipairs(saved) do
         if item.cf and (item.plain or item.key == "CP+" or item.desc == "Checkpoint - Checkpoint") then
-            table.insert(plains, item)
+            item.plain = true
+            local savedNumber = tonumber(item.key)
+            if savedNumber then
+                plainNumbers[positionToken(CFrame.new(unpack(item.cf)).Position)] = savedNumber
+            end
         end
-    end
-    table.sort(plains, function(a,b)
-        local ap = CFrame.new(unpack(a.cf)).Position
-        local bp = CFrame.new(unpack(b.cf)).Position
-        if ap.Y == bp.Y then return ap.X == bp.X and ap.Z < bp.Z or ap.X < bp.X end
-        return ap.Y < bp.Y
-    end)
-    local nextNumber = 1
-    for _, item in ipairs(plains) do
-        while used[nextNumber] do nextNumber = nextNumber + 1 end
-        item.key, item.plain = nextNumber, true
-        plainNumbers[positionToken(CFrame.new(unpack(item.cf)).Position)] = nextNumber
-        used[nextNumber] = true
-        nextNumber = nextNumber + 1
     end
 end
 
@@ -926,27 +912,19 @@ local function addSaved(key, description, cf, isPlain, identity)
     local visitKey=tostring(key).."_"..math.floor(pos.X).."_"..math.floor(pos.Y).."_"..math.floor(pos.Z)
     visitedKeys[visitKey]=true
     identity = identity or savedRouteIdentity({desc=description})
-    if identity then
-        for _, item in ipairs(saved) do
-            local existingId = item.id or savedRouteIdentity(item)
-            if existingId == identity then
-                item.id = identity
-                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
-                persist()
-                refresh()
-                return
-            end
-        end
-    else
-        for _, item in ipairs(saved) do
-            if not item.id and item.cf and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3 then
-                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
-                persist()
-                refresh()
-                return
-            end
+
+    -- SAVED is append-only: once a checkpoint is recorded, Auto-Save/TELE
+    -- must never rename, replace, or rewrite it. Only the user's DEL action
+    -- is allowed to remove an existing entry.
+    for _, item in ipairs(saved) do
+        local sameIdentity = identity and (item.id or savedRouteIdentity(item)) == identity
+        local samePosition = item.cf
+            and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3
+        if sameIdentity or samePosition then
+            return false
         end
     end
+
     table.insert(saved, {key=key, desc=description, cf={cf:GetComponents()}, plain=isPlain == true, id=identity})
     table.sort(saved, function(a,b)
         return checkpointKeyLess(a.key, b.key)
@@ -954,13 +932,94 @@ local function addSaved(key, description, cf, isPlain, identity)
     persist()
     refresh()
     notify("Tersimpan: " .. tostring(key))
+    return true
 end
 
-local function saveFromData(data)
+-- The centered in-game checkpoint notification is authoritative for unnamed
+-- checkpoints. Ignore hidden GUI elements and unrelated corner HUD text.
+local function getDisplayedCheckpointNumber()
+    local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    local camera=Workspace.CurrentCamera
+    if not playerGui or not camera then return nil end
+
+    local viewport=camera.ViewportSize
+    if viewport.X<=0 or viewport.Y<=0 then return nil end
+    local center=Vector2.new(viewport.X*0.5,viewport.Y*0.5)
+    local bestNumber=nil
+    local bestDistance=math.huge
+
+    local function isActuallyVisible(object)
+        local current=object
+        while current and current~=playerGui do
+            if current:IsA("GuiObject") and not current.Visible then return false end
+            if current:IsA("ScreenGui") and not current.Enabled then return false end
+            current=current.Parent
+        end
+        return current==playerGui
+    end
+
+    pcall(function()
+        for _,item in ipairs(playerGui:GetDescendants()) do
+            if (item:IsA("TextLabel") or item:IsA("TextButton"))
+                and isActuallyVisible(item)
+                and (tonumber(item.TextTransparency) or 0)<1 then
+                local value=string.gsub(tostring(item.Text or ""),"[%p]"," ")
+                local number=tonumber(string.match(string.lower(value),"checkpoint%s*#?%s*(%d+)"))
+                if number and number>=1 and number<=500 then
+                    local size=item.AbsoluteSize
+                    local position=item.AbsolutePosition
+                    if size.X>0 and size.Y>0 then
+                        local itemCenter=position+size*0.5
+                        local dx=math.abs(itemCenter.X-center.X)/viewport.X
+                        local dy=math.abs(itemCenter.Y-center.Y)/viewport.Y
+                        if dx<=0.30 and dy<=0.30 then
+                            local distance=(dx*dx)+(dy*dy)
+                            if distance<bestDistance then
+                                bestDistance=distance
+                                bestNumber=number
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return bestNumber
+end
+
+local function saveFromData(data, detectedNumber)
     if not data or not data.part or not data.part.Parent then return end
     assignPlainNumbers()
+    if data.plain and detectedNumber then
+        data.number=detectedNumber
+        plainNumbers[positionToken(data.part.Position)]=detectedNumber
+    end
     local key = data.plain and (data.number or 1) or data.key
     addSaved(key, data.desc, data.part.CFrame, data.plain, data.identity)
+end
+
+local function saveTouchedCheckpoint(data)
+    if not data then return end
+    task.spawn(function()
+        if not active or not data.part or not data.part.Parent then return end
+        assignPlainNumbers()
+        local radarNumber=data.plain and data.number or nil
+        local latestDisplayed=nil
+        local startedAt=tick()
+        repeat
+            if not active or not data.part or not data.part.Parent then return end
+            local displayed=getDisplayedCheckpointNumber()
+            if displayed then
+                latestDisplayed=displayed
+                if data.plain and radarNumber and displayed~=radarNumber then
+                    saveFromData(data,displayed)
+                    return
+                end
+            end
+            task.wait(0.1)
+        until tick()-startedAt>=2
+        saveFromData(data,latestDisplayed)
+    end)
 end
 
 local function teleportTo(cf)
@@ -1396,10 +1455,8 @@ function Feature.RefreshUI()
                     button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
                         local data=entry.data
                         if data and data.part and data.part.Parent then
-                            assignPlainNumbers()
-                            local key=data.plain and (data.number or 1) or data.key
                             teleportTo(data.part.CFrame)
-                            addSaved(key,data.desc,data.part.CFrame,data.plain)
+                            saveTouchedCheckpoint(data)
                             notify("Berhasil Teleport & Disave!")
                         end
                     end,true)
@@ -1461,14 +1518,14 @@ function Feature.Scan()
                             local hum=char and char:FindFirstChildOfClass("Humanoid")
                             if char and hit:IsDescendantOf(char) and hum and hum.Health>0 then
                                 lastTouch=tick()
-                                saveFromData(cache[cacheKey])
+                                saveTouchedCheckpoint(cache[cacheKey])
                             end
                         end)
                     end
                     local prompt=getCheckpointPrompt(part)
                     if prompt then
                         connect(prompt.Triggered,function(player)
-                            if player==LocalPlayer then saveFromData(cache[cacheKey]) end
+                            if player==LocalPlayer then saveTouchedCheckpoint(cache[cacheKey]) end
                         end)
                     end
                 end
@@ -1549,11 +1606,11 @@ function Feature.Start()
                             if not active or tick()-lastTouch<1 then return end
                             local char=LocalPlayer.Character
                             local hum=char and char:FindFirstChildOfClass("Humanoid")
-                            if char and hit:IsDescendantOf(char) and hum and hum.Health>0 then lastTouch=tick(); saveFromData(cache[cacheKey]) end
+                            if char and hit:IsDescendantOf(char) and hum and hum.Health>0 then lastTouch=tick(); saveTouchedCheckpoint(cache[cacheKey]) end
                         end)
                     end
                     local prompt=getCheckpointPrompt(part)
-                    if prompt then connect(prompt.Triggered,function(player) if player==LocalPlayer then saveFromData(cache[cacheKey]) end end) end
+                    if prompt then connect(prompt.Triggered,function(player) if player==LocalPlayer then saveTouchedCheckpoint(cache[cacheKey]) end end) end
                     assignPlainNumbers(); refresh()
                 end
             end
