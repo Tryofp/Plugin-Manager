@@ -257,14 +257,15 @@ local function uploadPublicRoute()
                 UploaderName=tostring(LocalPlayer.Name),Waypoints=points
             }
             local uploaded,uploadError=waypointPost(uploadData)
-            if not uploaded then
+            if not uploaded and tostring(uploadError or "")~="Map dengan nama yang sama sudah ada di database." then
                 -- Google Apps Script may commit the POST, then return a redirect
                 -- response that some executors incorrectly surface as HTTP 405.
+                -- Never reinterpret an explicit duplicate rejection as success.
                 local check=waypointGet("WaypointRoutes",{limit=100})
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
                         if tostring(route.UploaderId)==tostring(LocalPlayer.UserId)
-                            and tostring(route.RouteName)==name
+                            and tostring(route.PlaceId)==tostring(game.PlaceId)
                             and tonumber(route.TotalCP)==#points then
                             uploaded={status="success",totalCP=route.TotalCP,verifiedAfterRedirect=true}
                             break
@@ -280,7 +281,11 @@ local function uploadPublicRoute()
             result=nil
         end
         if result then
-            publicMessage("Upload berhasil: "..tostring(result.totalCP or pointCount or 0).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            if result.updated then
+                publicMessage("CP map ini sudah diperbarui ke database.")
+            else
+                publicMessage("Upload berhasil: "..tostring(result.totalCP or pointCount or 0).." CP"..(result.verifiedAfterRedirect and " (terverifikasi)." or "."))
+            end
             if publicRouteNameBox then publicRouteNameBox.Text="" end
         else
             publicMessage(err or "Upload gagal.",true)
