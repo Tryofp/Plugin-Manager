@@ -801,30 +801,16 @@ local function loadSaved()
     end
     saved = unique
 
-    local used = {}
-    for _, item in ipairs(saved) do
-        local n = tonumber(item.key)
-        if n and not item.plain then used[n] = true end
-    end
-    local plains = {}
+    -- Preserve every saved key exactly as written. Rebuilding the scanner
+    -- after respawn/restart must not renumber or reorder saved checkpoint data.
     for _, item in ipairs(saved) do
         if item.cf and (item.plain or item.key == "CP+" or item.desc == "Checkpoint - Checkpoint") then
-            table.insert(plains, item)
+            item.plain = true
+            local savedNumber = tonumber(item.key)
+            if savedNumber then
+                plainNumbers[positionToken(CFrame.new(unpack(item.cf)).Position)] = savedNumber
+            end
         end
-    end
-    table.sort(plains, function(a,b)
-        local ap = CFrame.new(unpack(a.cf)).Position
-        local bp = CFrame.new(unpack(b.cf)).Position
-        if ap.Y == bp.Y then return ap.X == bp.X and ap.Z < bp.Z or ap.X < bp.X end
-        return ap.Y < bp.Y
-    end)
-    local nextNumber = 1
-    for _, item in ipairs(plains) do
-        while used[nextNumber] do nextNumber = nextNumber + 1 end
-        item.key, item.plain = nextNumber, true
-        plainNumbers[positionToken(CFrame.new(unpack(item.cf)).Position)] = nextNumber
-        used[nextNumber] = true
-        nextNumber = nextNumber + 1
     end
 end
 
@@ -926,27 +912,19 @@ local function addSaved(key, description, cf, isPlain, identity)
     local visitKey=tostring(key).."_"..math.floor(pos.X).."_"..math.floor(pos.Y).."_"..math.floor(pos.Z)
     visitedKeys[visitKey]=true
     identity = identity or savedRouteIdentity({desc=description})
-    if identity then
-        for _, item in ipairs(saved) do
-            local existingId = item.id or savedRouteIdentity(item)
-            if existingId == identity then
-                item.id = identity
-                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
-                persist()
-                refresh()
-                return
-            end
-        end
-    else
-        for _, item in ipairs(saved) do
-            if not item.id and item.cf and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3 then
-                item.key, item.desc, item.cf, item.plain = key, description, {cf:GetComponents()}, isPlain == true
-                persist()
-                refresh()
-                return
-            end
+
+    -- SAVED is append-only: once a checkpoint is recorded, Auto-Save/TELE
+    -- must never rename, replace, or rewrite it. Only the user's DEL action
+    -- is allowed to remove an existing entry.
+    for _, item in ipairs(saved) do
+        local sameIdentity = identity and (item.id or savedRouteIdentity(item)) == identity
+        local samePosition = item.cf
+            and (CFrame.new(unpack(item.cf)).Position - pos).Magnitude < 3
+        if sameIdentity or samePosition then
+            return false
         end
     end
+
     table.insert(saved, {key=key, desc=description, cf={cf:GetComponents()}, plain=isPlain == true, id=identity})
     table.sort(saved, function(a,b)
         return checkpointKeyLess(a.key, b.key)
@@ -954,6 +932,7 @@ local function addSaved(key, description, cf, isPlain, identity)
     persist()
     refresh()
     notify("Tersimpan: " .. tostring(key))
+    return true
 end
 
 -- Hybrid Auto-Save for unnamed checkpoints:
