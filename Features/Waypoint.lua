@@ -249,6 +249,19 @@ local function uploadPublicRoute()
                 return nil,"Rute harus berisi 1–300 checkpoint.",#points,name
             end
 
+            -- Check the global catalogue before POST. A PlaceId can only have
+            -- one public map, regardless of who uploaded it or how many CP it has.
+            -- This also avoids a needless POST/Google redirect (which some
+            -- executors incorrectly surface as HTTP 405) on repeated uploads.
+            local existingCheck=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
+            if existingCheck and type(existingCheck.routes)=="table" then
+                for _,route in ipairs(existingCheck.routes) do
+                    if tostring(route.PlaceId)==tostring(game.PlaceId) then
+                        return nil,"Map dengan nama yang sama sudah ada di database.",#points,name
+                    end
+                end
+            end
+
             publicMessage("Mengunggah "..#points.." checkpoint...")
             local uploadData={
                 Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
@@ -257,10 +270,15 @@ local function uploadPublicRoute()
                 UploaderName=tostring(LocalPlayer.Name),Waypoints=points,UploadPolicy="collaborative-map-v2"
             }
             local uploaded,uploadError=waypointPost(uploadData)
-            if not uploaded and tostring(uploadError or "")~="Map dengan nama yang sama sudah ada di database." then
+            local normalizedUploadError=string.lower(tostring(uploadError or ""))
+            normalizedUploadError=string.gsub(normalizedUploadError,"[%p%s]","")
+            local isDuplicateError=string.find(normalizedUploadError,
+                "mapdengannamayangsamadidatabase",1,true)~=nil
+            if not uploaded and not isDuplicateError then
                 -- Google Apps Script may commit the POST, then return a redirect
                 -- response that some executors incorrectly surface as HTTP 405.
-                -- Never reinterpret an explicit duplicate rejection as success.
+                -- Only verify a possible committed upload when the server did
+                -- not explicitly reject it as a duplicate.
                 local check=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
