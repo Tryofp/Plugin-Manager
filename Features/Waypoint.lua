@@ -1,4 +1,4 @@
--- Tryo beta2 Waypoint / Checkpoint Manager
+-- Tryo Waypoint / Checkpoint Manager
 -- Standalone implementation. No Infinite Yield dependency.
 
 local Players = game:GetService("Players")
@@ -867,16 +867,19 @@ assignPlainNumbers = function()
             elseif not data.number then table.insert(pending, data) end
         end
     end
-    -- Plain checkpoints often share the exact same name/path (for example
-    -- Workspace.Checkpoint.Checkpoint). Do not number them by player distance:
-    -- that can make CP 2 become CP 1 when the player spawns closer to it.
-    -- Use a stable world-position order so the whole cluster gets consistent
-    -- numbering regardless of the player's current location.
+    local hrp = getHRP()
     table.sort(pending, function(a,b)
+        if hrp then
+            local da = (a.part.Position - hrp.Position).Magnitude
+            local db = (b.part.Position - hrp.Position).Magnitude
+            if math.abs(da-db) > 0.01 then return da < db end
+        end
         local ap,bp=a.part.Position,b.part.Position
-        if math.abs(ap.X-bp.X)>0.01 then return ap.X<bp.X end
-        if math.abs(ap.Y-bp.Y)>0.01 then return ap.Y<bp.Y end
-        return ap.Z<bp.Z
+        if ap.Y==bp.Y then
+            if ap.X==bp.X then return ap.Z<bp.Z end
+            return ap.X<bp.X
+        end
+        return ap.Y<bp.Y
     end)
     for _, data in ipairs(pending) do
         local token = positionToken(data.part.Position)
@@ -953,9 +956,9 @@ local function addSaved(key, description, cf, isPlain, identity)
     notify("Tersimpan: " .. tostring(key))
 end
 
--- Some games expose the real stage number only in their on-screen
--- "CHECKPOINT 1" notification, while every trigger Part has the same name.
--- Read that game-provided label after touch and bind it to the touched Part.
+-- Hybrid Auto-Save for unnamed checkpoints:
+-- Keep MAIN's Radar-assigned number as the default. If the game displays
+-- a real "Checkpoint N" notification after touching/teleporting, prefer it.
 local function getDisplayedCheckpointNumber()
     local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
     if not playerGui then return nil end
@@ -964,11 +967,8 @@ local function getDisplayedCheckpointNumber()
         for _,item in ipairs(playerGui:GetDescendants()) do
             if item:IsA("TextLabel") or item:IsA("TextButton") then
                 local value=string.gsub(tostring(item.Text or ""),"[%p]"," ")
-                local number=string.match(string.lower(value),"checkpoint%s*#?%s*(%d+)")
-                number=tonumber(number)
-                if number and number>=1 and number<=500 then
-                    found=number
-                end
+                local number=tonumber(string.match(string.lower(value),"checkpoint%s*#?%s*(%d+)"))
+                if number and number>=1 and number<=500 then found=number end
             end
         end
     end)
@@ -977,12 +977,10 @@ end
 
 local function saveFromData(data, detectedNumber)
     if not data or not data.part or not data.part.Parent then return end
+    assignPlainNumbers()
     if data.plain and detectedNumber then
-        local token=positionToken(data.part.Position)
         data.number=detectedNumber
-        plainNumbers[token]=detectedNumber
-    else
-        assignPlainNumbers()
+        plainNumbers[positionToken(data.part.Position)]=detectedNumber
     end
     local key = data.plain and (data.number or 1) or data.key
     addSaved(key, data.desc, data.part.CFrame, data.plain, data.identity)
@@ -990,11 +988,9 @@ end
 
 local function saveTouchedCheckpoint(data)
     if not data then return end
-    -- Let the game's checkpoint notification update before reading its label.
     task.delay(0.18,function()
         if not active or not data.part or not data.part.Parent then return end
-        local displayedNumber=getDisplayedCheckpointNumber()
-        saveFromData(data,displayedNumber)
+        saveFromData(data,getDisplayedCheckpointNumber())
     end)
 end
 
@@ -1431,14 +1427,9 @@ function Feature.RefreshUI()
                     button(row,"TELE",UDim2.fromOffset(48,23),UDim2.new(1,-53,0,4),function()
                         local data=entry.data
                         if data and data.part and data.part.Parent then
-                            -- Teleport is navigation, not checkpoint progression.
-                            -- For unnamed/plain checkpoints, the displayed game
-                            -- notification is the authoritative CP number and is
-                            -- only available after the player actually touches it.
-                            -- Auto-saving a guessed spatial number here can overwrite
-                            -- a correct manual-save key and create duplicate entries.
                             teleportTo(data.part.CFrame)
-                            notify("Teleport berhasil. CP tanpa nomor disimpan saat disentuh manual.")
+                            saveTouchedCheckpoint(data)
+                            notify("Berhasil Teleport & Disave!")
                         end
                     end,true)
                 else
