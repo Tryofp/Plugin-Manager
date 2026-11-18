@@ -1338,7 +1338,7 @@ function Feature.RefreshUI()
                     TextTruncate=Enum.TextTruncate.AtEnd
                 },row)
                 make("TextLabel", {
-                    Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP",
+                    Text=tostring(route.UploaderName or "Unknown").." • "..tostring(route.TotalCP or 0).." CP"..(tostring(route.EditorName or "")~="" and (" • Edited: "..tostring(route.EditorName)) or ""),
                     Position=UDim2.fromOffset(7,20), Size=UDim2.new(1,-110,0,15),
                     BackgroundTransparency=1, TextColor3=Color3.fromRGB(165,178,200),
                     Font=Enum.Font.Gotham, TextSize=8, TextXAlignment=Enum.TextXAlignment.Left
