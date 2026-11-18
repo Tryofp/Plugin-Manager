@@ -1584,11 +1584,11 @@ function Feature.Start()
                             if not active or tick()-lastTouch<1 then return end
                             local char=LocalPlayer.Character
                             local hum=char and char:FindFirstChildOfClass("Humanoid")
-                            if char and hit:IsDescendantOf(char) and hum and hum.Health>0 then lastTouch=tick(); saveFromData(cache[cacheKey]) end
+                            if char and hit:IsDescendantOf(char) and hum and hum.Health>0 then lastTouch=tick(); saveTouchedCheckpoint(cache[cacheKey]) end
                         end)
                     end
                     local prompt=getCheckpointPrompt(part)
-                    if prompt then connect(prompt.Triggered,function(player) if player==LocalPlayer then saveFromData(cache[cacheKey]) end end) end
+                    if prompt then connect(prompt.Triggered,function(player) if player==LocalPlayer then saveTouchedCheckpoint(cache[cacheKey]) end end) end
                     assignPlainNumbers(); refresh()
                 end
             end
