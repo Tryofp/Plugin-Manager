@@ -254,7 +254,7 @@ local function uploadPublicRoute()
                 Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
                 MapName=resolvedMapName,
                 UploaderId=tostring(LocalPlayer.UserId),
-                UploaderName=tostring(LocalPlayer.Name),Waypoints=points
+                UploaderName=tostring(LocalPlayer.Name),Waypoints=points,UploadPolicy="single-per-map-v1"
             }
             local uploaded,uploadError=waypointPost(uploadData)
             if not uploaded and tostring(uploadError or "")~="Map dengan nama yang sama sudah ada di database." then
