@@ -205,7 +205,7 @@ local function loadPublicRoutes()
     publicBusy=true
     publicMessage("Memuat Rute ... ( Harap bersabar )")
     task.spawn(function()
-        local result,err=waypointGet("WaypointRoutes",{limit=100})
+        local result,err=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
         if result and type(result.routes)=="table" then
             publicRoutes=result.routes
             publicMessage("Ditemukan "..#publicRoutes.." rute ( Silahkan UPLOAD, GET atau DEL )")
@@ -254,14 +254,14 @@ local function uploadPublicRoute()
                 Method="UPLOAD",PlaceId=game.PlaceId,RouteName=name,
                 MapName=resolvedMapName,
                 UploaderId=tostring(LocalPlayer.UserId),
-                UploaderName=tostring(LocalPlayer.Name),Waypoints=points
+                UploaderName=tostring(LocalPlayer.Name),Waypoints=points,UploadPolicy="collaborative-map-v2"
             }
             local uploaded,uploadError=waypointPost(uploadData)
             if not uploaded and tostring(uploadError or "")~="Map dengan nama yang sama sudah ada di database." then
                 -- Google Apps Script may commit the POST, then return a redirect
                 -- response that some executors incorrectly surface as HTTP 405.
                 -- Never reinterpret an explicit duplicate rejection as success.
-                local check=waypointGet("WaypointRoutes",{limit=100})
+                local check=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
                         if tostring(route.PlaceId)==tostring(game.PlaceId)
@@ -323,11 +323,11 @@ local function updatePublicRoute()
                 Method="UPDATE",PlaceId=game.PlaceId,
                 UploaderId=tostring(LocalPlayer.UserId),
                 EditorName=tostring(LocalPlayer.Name),
-                Waypoints=points
+                Waypoints=points,UploadPolicy="collaborative-map-v2"
             }
             local updated,updateError=waypointPost(updateData)
             if not updated and tostring(updateError or "")~="Map tidak ditemukan di Public Map." then
-                local check=waypointGet("WaypointRoutes",{limit=100})
+                local check=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
                 if check and type(check.routes)=="table" then
                     for _,route in ipairs(check.routes) do
                         if tostring(route.PlaceId)==tostring(game.PlaceId)
@@ -453,7 +453,7 @@ local function removePublicRoute(route)
         local result,err=waypointPost({Method="DELETE",PlaceId=route.PlaceId or game.PlaceId,RouteId=route.RouteId,UploaderId=tostring(LocalPlayer.UserId)})
         if not result then
             -- Confirm whether DELETE committed despite a broken Apps Script redirect.
-            local check=waypointGet("WaypointRoutes",{limit=100})
+            local check=waypointGet("WaypointRoutes",{limit=100,policy="collaborative-map-v2"})
             if check and type(check.routes)=="table" then
                 local stillExists=false
                 for _,item in ipairs(check.routes) do
