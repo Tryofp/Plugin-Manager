@@ -967,9 +967,31 @@ end
 
 local function saveTouchedCheckpoint(data)
     if not data then return end
-    task.delay(0.18,function()
+    task.spawn(function()
         if not active or not data.part or not data.part.Parent then return end
-        saveFromData(data,getDisplayedCheckpointNumber())
+
+        -- Give the game up to 2 seconds to publish its checkpoint notification.
+        -- Radar remains the fallback; a displayed number that differs from
+        -- Radar takes priority as soon as it appears.
+        assignPlainNumbers()
+        local radarNumber=data.plain and data.number or nil
+        local latestDisplayed=nil
+        local startedAt=tick()
+
+        repeat
+            if not active or not data.part or not data.part.Parent then return end
+            local displayed=getDisplayedCheckpointNumber()
+            if displayed then
+                latestDisplayed=displayed
+                if data.plain and radarNumber and displayed~=radarNumber then
+                    saveFromData(data,displayed)
+                    return
+                end
+            end
+            task.wait(0.1)
+        until tick()-startedAt>=2
+
+        saveFromData(data,latestDisplayed)
     end)
 end
 
